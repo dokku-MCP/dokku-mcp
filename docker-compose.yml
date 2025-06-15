@@ -1,0 +1,18 @@
+services:
+  dokku:
+    image: dokku/dokku:latest
+    container_name: dokku-mcp-dev
+    network_mode: bridge
+    ports:
+      - "3022:22"   # SSH for git push
+      - "8080:80"   # HTTP
+      - "8443:443"  # HTTPS
+    volumes:
+      - "./docker-data/dokku:/mnt/dokku"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - "./docker-data/plugin-list:/mnt/dokku/plugin-list"
+    environment:
+      DOKKU_HOSTNAME: dokku.local
+      DOKKU_HOST_ROOT: /var/lib/dokku/home/dokku
+      DOKKU_LIB_HOST_ROOT: /var/lib/dokku/var/lib/dokku
+    restart: unless-stopped 

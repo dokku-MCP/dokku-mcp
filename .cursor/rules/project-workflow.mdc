@@ -1,0 +1,144 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Dokku MCP Server - Development Workflow
+
+## Project Overview
+
+**Model Context Protocol (MCP) server** for **Dokku** written in Go.
+Provides LLM clients with secure, structured access to Dokku applications, services, and infrastructure management.
+
+## Key Principles
+
+### Architecture
+- **Domain-Driven Design** with clear layer separation
+- **Strong typing** throughout - no `interface{}` without justification
+- **Dependency injection** for testability and flexibility
+- **Error handling** with context and proper logging
+
+### Development Flow
+1. **Start with tests** - Write failing tests first (TDD)
+2. **Implement minimal code** to make tests pass
+3. **Refactor** for clarity and performance
+4. **Document** complex logic with comments
+5. **Review** before committing
+
+### Quality Standards
+- **75% test coverage** minimum
+- **Cognitive complexity** under 25 per function
+- **All errors handled** explicitly
+- **Security validation** on all inputs
+
+## Common Development Tasks
+
+### Adding New Features
+1. **Define domain entity** in `internal/domain/`
+2. **Create repository interface** for data access
+3. **Implement infrastructure** layer
+4. **Add application handlers** for MCP
+5. **Write comprehensive tests**
+
+### File Organization
+```
+internal/
+├── domain/              # Business logic and entities
+├── application/         # Use case orchestration
+├── infrastructure/      # External system integration
+cmd/
+├── server/             # Main server entry point
+docs/
+├── architecture.md     # System design
+├── playbooks/         # Development guides
+```
+
+## Make Commands
+
+### Development
+- `make build` - Build the server
+- `make test` - Run all tests
+- `make test-coverage` - Tests with coverage report
+- `make lint` - Code linting and formatting
+- `make fmt` - Format code
+
+### Quality
+- `make test-integration` - Integration tests
+- `make cyclo` - Check complexity
+- `make security-test` - Security analysis
+
+### Debugging
+- `make debug` - Run in debug mode
+- `make profile` - Performance profiling
+
+## Configuration
+
+### Environment Variables
+All config can be set with `DOKKU_MCP_` prefix:
+- `DOKKU_MCP_HOST` - Server host
+- `DOKKU_MCP_PORT` - Server port
+- `DOKKU_MCP_LOG_LEVEL` - Logging level
+- `DOKKU_MCP_DOKKU_PATH` - Path to Dokku binary
+
+### Security Configuration
+- Define **allowed commands** in `security.allowed_commands`
+- Configure **rate limiting** in `security.rate_limit`
+- Enable **audit logging** with `security.audit.enabled`
+
+## Documentation References
+
+When working on this project, refer to:
+- **Architecture**: @docs/architecture.md
+- **Development Playbook**: @docs/playbooks/development.md
+- **Dokku Analysis**: @docs/dokku-analysis.md
+- **Project Summary**: @docs/project-summary.md
+
+## Error Handling Guidelines
+
+### Domain Errors
+```go
+type ApplicationError struct {
+    Code    string
+    Message string
+    Details map[string]interface{}
+}
+
+func (e *ApplicationError) Error() string {
+    return fmt.Sprintf("[%s] %s", e.Code, e.Message)
+}
+```
+
+### MCP Tool Errors
+- **Log detailed errors** for debugging
+- **Return safe messages** to clients
+- **Use structured responses** with error flags
+- **Include helpful guidance** when possible
+
+## Security Checklist
+
+Before committing code:
+- [ ] All inputs validated and sanitized
+- [ ] Dokku commands whitelisted
+- [ ] Error messages don't expose internals
+- [ ] Rate limiting implemented where needed
+- [ ] Audit logging for sensitive operations
+
+## Best Practices
+
+### Code Style
+- Use **descriptive variable names**
+- Keep **functions focused** and small
+- **Document complex logic** with comments
+- Follow **Go naming conventions**
+
+### Testing
+- Write **table-driven tests** for multiple scenarios
+- Use **mocks** for external dependencies
+- Test **error conditions** thoroughly
+- Maintain **high coverage** of critical paths
+
+### Performance
+- **Cache frequently accessed data** with TTL
+- Use **context for timeouts** on operations
+- **Implement pagination** for large datasets
+- **Profile performance** of critical operations

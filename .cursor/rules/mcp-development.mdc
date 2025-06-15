@@ -1,0 +1,135 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# MCP Server Development
+
+## Resource Implementation
+
+### Resource Structure
+- **URI pattern**: Use consistent scheme like `dokku://resource-type/identifier`
+- **Name and description**: Provide clear, human-readable information
+- **MIME type**: Use appropriate content types (`application/json`, `text/plain`)
+- **Metadata**: Include relevant context for LLM understanding
+
+### Resource Handler Pattern
+```go
+type ResourceHandler struct {
+    repository domain.Repository
+    cache      Cache
+}
+
+func (h *ResourceHandler) HandleApplications(ctx context.Context) ([]*mcp.Resource, error) {
+    // 1. Get data from domain layer
+    apps, err := h.repository.GetAll(ctx)
+    if err != nil {
+        return nil, fmt.Errorf("failed to retrieve applications: %w", err)
+    }
+    
+    // 2. Transform to MCP resources
+    resources := make([]*mcp.Resource, len(apps))
+    for i, app := range apps {
+        resources[i] = &mcp.Resource{
+            URI:         fmt.Sprintf("dokku://app/%s", app.Name()),
+            Name:        app.Name(),
+            Description: fmt.Sprintf("Dokku Application: %s", app.Name()),
+            MimeType:    "application/json",
+        }
+    }
+    
+    return resources, nil
+}
+```
+
+## Tool Implementation
+
+### Tool Definition
+```go
+func (t *DeployTool) Definition() *mcp.ToolDefinition {
+    return &mcp.ToolDefinition{
+        Name:        "deploy_application",
+        Description: "Deploy a Dokku application from Git repository",
+        InputSchema: map[string]interface{}{
+            "type": "object",
+            "properties": map[string]interface{}{
+                "app_name": map[string]interface{}{
+                    "type":        "string",
+                    "description": "Name of the application to deploy",
+                },
+                "git_ref": map[string]interface{}{
+                    "type":        "string",
+                    "description": "Git reference to deploy (optional)",
+                    "default":     "main",
+                },
+            },
+            "required": []string{"app_name"},
+        },
+    }
+}
+```
+
+### Tool Execution Pattern
+```go
+func (t *DeployTool) Execute(ctx context.Context, params map[string]interface{}) (*mcp.ToolResult, error) {
+    // 1. Validate and extract parameters
+    appName, ok := params["app_name"].(string)
+    if !ok || appName == "" {
+        return nil, errors.New("app_name parameter is required")
+    }
+    
+    // 2. Execute business logic through domain layer
+    deployment, err := t.deployService.Deploy(ctx, appName, domain.DeployOptions{
+        GitRef: getStringParam(params, "git_ref"),
+    })
+    if err != nil {
+        return &mcp.ToolResult{
+            Content: []map[string]interface{}{
+                {
+                    "type": "text",
+                    "text": fmt.Sprintf("Deployment failed: %v", err),
+                },
+            },
+            IsError: true,
+        }, nil
+    }
+    
+    // 3. Return structured result
+    return &mcp.ToolResult{
+        Content: []map[string]interface{}{
+            {
+                "type": "text",
+                "text": fmt.Sprintf("✅ Deployment successful: %s", deployment.ID),
+            },
+        },
+    }, nil
+}
+```
+
+## Security Guidelines
+
+### Input Validation
+- **Validate all parameters** before processing
+- **Sanitize command arguments** for Dokku execution
+- **Check permissions** for requested operations
+- **Rate limit** tool executions
+
+### Error Handling
+- **Never expose internal errors** to MCP clients
+- **Log detailed errors** for debugging
+- **Return user-friendly messages** in tool results
+- **Use structured error responses**
+
+## Best Practices
+
+### Performance
+- **Cache resource data** with appropriate TTL
+- **Use context for timeouts** on long operations
+- **Implement pagination** for large datasets
+- **Batch operations** when possible
+
+### Monitoring
+- **Log all tool executions** with client context
+- **Track resource access patterns**
+- **Monitor response times** and error rates
+- **Include request IDs** for tracing

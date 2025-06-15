@@ -1,0 +1,83 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Domain-Driven Design Architecture
+
+## Layer Responsibilities
+
+### Domain Layer (`internal/domain/`)
+- **Business entities** with validation and behavior
+- **Repository interfaces** (not implementations)
+- **Domain services** for complex business logic
+- **Value objects** and domain events
+- **No dependencies** on infrastructure or application layers
+
+### Application Layer (`internal/application/`)
+- **Use case orchestration** and business workflow coordination
+- **Command and query handlers** for external requests
+- **Application services** that coordinate domain services
+- **DTOs and mappers** for data transformation
+- **Depends only on domain layer**
+
+### Infrastructure Layer (`internal/infrastructure/`)
+- **Repository implementations** using external systems
+- **External service clients** (Dokku CLI, databases)
+- **Framework-specific code** (HTTP handlers, serialization)
+- **Configuration and logging** setup
+- **Implements interfaces** defined in domain/application layers
+
+## Dependency Rules
+
+```
+Infrastructure → Application → Domain
+       ↑              ↑
+   (implements)  (orchestrates)
+```
+
+- **Domain layer** depends on nothing else
+- **Application layer** depends only on domain
+- **Infrastructure layer** depends on application and domain
+- **Use dependency injection** to wire implementations
+
+## Patterns to Follow
+
+### Repository Pattern
+```go
+// Domain layer - interface definition
+type ApplicationRepository interface {
+    GetByName(ctx context.Context, name string) (*Application, error)
+    Save(ctx context.Context, app *Application) error
+}
+
+// Infrastructure layer - implementation
+type dokkuApplicationRepository struct {
+    client DokkuClient
+}
+
+func (r *dokkuApplicationRepository) GetByName(ctx context.Context, name string) (*Application, error) {
+    // Implementation using Dokku client
+}
+```
+
+### Service Pattern
+```go
+// Domain layer - business service
+type DeploymentService interface {
+    Deploy(ctx context.Context, appName string, options DeployOptions) (*Deployment, error)
+}
+
+// Application layer - use case orchestration
+type ApplicationHandler struct {
+    deployService DeploymentService
+    appRepo       ApplicationRepository
+}
+```
+
+### Entity Design
+- **Encapsulate state** with private fields
+- **Provide behavior methods** for state changes
+- **Validate invariants** in constructors and setters
+- **Use value objects** for complex attributes
+

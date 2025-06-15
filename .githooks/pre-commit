@@ -1,0 +1,175 @@
+#!/bin/bash
+set -e
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+echo -e "${YELLOW}🔍 Running pre-commit checks...${NC}"
+
+STAGED_GO_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.go$' || true)
+
+if [ -z "$STAGED_GO_FILES" ]; then
+    echo -e "${GREEN}✅ No Go files modified${NC}"
+    exit 0
+fi
+
+echo -e "${YELLOW}📝 Go files to check: $(echo $STAGED_GO_FILES | wc -w)${NC}"
+
+echo -e "${BLUE}🎨 Auto-formatting code...${NC}"
+if command -v goimports >/dev/null 2>&1; then
+    goimports -w $STAGED_GO_FILES
+    echo -e "${GREEN}  ✓ goimports applied${NC}"
+else
+    gofmt -w $STAGED_GO_FILES
+    echo -e "${GREEN}  ✓ gofmt applied${NC}"
+fi
+
+# Re-stage formatted files
+git add $STAGED_GO_FILES
+
+echo -e "${BLUE}🔍 Checking syntax...${NC}"
+for file in $STAGED_GO_FILES; do
+    if ! go run -o /dev/null "$file" 2>/dev/null; then
+        if ! gofmt -e "$file" >/dev/null 2>&1; then
+            echo -e "${RED}❌ Syntax error in $file${NC}"
+            exit 1
+        fi
+    fi
+done
+echo -e "${GREEN}  ✓ Syntax validated${NC}"
+
+echo -e "${BLUE}🔎 Static analysis (go vet)...${NC}"
+for file in $STAGED_GO_FILES; do
+    if ! go vet "$file" 2>/dev/null; then
+        echo -e "${RED}❌ go vet failed for $file${NC}"
+        exit 1
+    fi
+done
+echo -e "${GREEN}  ✓ go vet passed successfully${NC}"
+
+echo -e "${BLUE}🚫 Checking forbidden patterns (Strong Typing)...${NC}"
+FORBIDDEN_PATTERNS=(
+    "interface{}"
+    "any"
+    "reflect\."
+    "unsafe\."
+)
+
+VIOLATIONS_FOUND=false
+for file in $STAGED_GO_FILES; do
+    for pattern in "${FORBIDDEN_PATTERNS[@]}"; do
+        if grep -q "$pattern" "$file"; then
+            echo -e "${RED}❌ Forbidden pattern '$pattern' found in $file${NC}"
+            VIOLATIONS_FOUND=true
+        fi
+    done
+done
+
+if [ "$VIOLATIONS_FOUND" = true ]; then
+    echo -e "${YELLOW}💡 Use strongly typed interfaces according to project rules${NC}"
+    exit 1
+fi
+echo -e "${GREEN}  ✓ No forbidden patterns detected${NC}"
+
+if command -v gocyclo >/dev/null 2>&1; then
+    echo -e "${BLUE}📊 Checking cyclomatic complexity...${NC}"
+    COMPLEX_FUNCTIONS=$(gocyclo -over 20 $STAGED_GO_FILES 2>/dev/null || true)
+    if [ -n "$COMPLEX_FUNCTIONS" ]; then
+        echo -e "${YELLOW}⚠️  Functions with complexity > 20:${NC}"
+        echo "$COMPLEX_FUNCTIONS"
+        echo -e "${YELLOW}💡 Consider refactoring to reduce complexity${NC}"
+    else
+        echo -e "${GREEN}  ✓ Cyclomatic complexity acceptable${NC}"
+    fi
+else
+    echo -e "${YELLOW}  ⏭️  gocyclo not installed, complexity analysis skipped${NC}"
+fi
+
+if command -v golangci-lint >/dev/null 2>&1; then
+    echo -e "${BLUE}🔍 Linting with golangci-lint...${NC}"
+    if golangci-lint run $STAGED_GO_FILES 2>/dev/null; then
+        echo -e "${GREEN}  ✓ Linting passed successfully${NC}"
+    else
+        echo -e "${YELLOW}⚠️  Linting warnings detected${NC}"
+        echo -e "${YELLOW}💡 Run 'golangci-lint run' for details${NC}"
+    fi
+else
+    echo -e "${YELLOW}  ⏭️  golangci-lint not installed, advanced linting skipped${NC}"
+fi
+
+if command -v gosec >/dev/null 2>&1; then
+    echo -e "${BLUE}🔒 Security analysis with gosec...${NC}"
+    PACKAGES=$(for file in $STAGED_GO_FILES; do dirname "$file"; done | sort -u)
+    SECURITY_ISSUES=false
+    
+    for pkg in $PACKAGES; do
+        if ! gosec -quiet "$pkg" >/dev/null 2>&1; then
+            SECURITY_ISSUES=true
+        fi
+    done
+    
+    if [ "$SECURITY_ISSUES" = true ]; then
+        echo -e "${YELLOW}⚠️  Potential security issues detected${NC}"
+        echo -e "${YELLOW}💡 Run 'gosec ./...' for details${NC}"
+    else
+        echo -e "${GREEN}  ✓ Security analysis passed${NC}"
+    fi
+else
+    echo -e "${YELLOW}  ⏭️  gosec not installed, security analysis skipped${NC}"
+fi
+
+if command -v dupl >/dev/null 2>&1; then
+    echo -e "${BLUE}👯 Detecting duplicate code...${NC}"
+    DUPLICATES=$(dupl -threshold 50 $STAGED_GO_FILES 2>/dev/null || true)
+    if [ -n "$DUPLICATES" ]; then
+        echo -e "${YELLOW}⚠️  Duplicate code detected:${NC}"
+        echo "$DUPLICATES"
+        echo -e "${YELLOW}💡 Consider refactoring to eliminate duplication${NC}"
+    else
+        echo -e "${GREEN}  ✓ No duplicate code detected${NC}"
+    fi
+else
+    echo -e "${YELLOW}  ⏭️  dupl not installed, duplicate detection skipped${NC}"
+fi
+
+echo -e "${BLUE}🧪 Testing modified packages...${NC}"
+PACKAGES=$(for file in $STAGED_GO_FILES; do dirname "$file"; done | sort -u)
+
+TEST_FAILURES=false
+for pkg in $PACKAGES; do
+    if [ -f "$pkg"/*_test.go ]; then
+        if ! go test -short "./$pkg" >/dev/null 2>&1; then
+            echo -e "${YELLOW}⚠️  Tests failed for $pkg${NC}"
+            TEST_FAILURES=true
+        fi
+    fi
+done
+
+if [ "$TEST_FAILURES" = true ]; then
+    echo -e "${YELLOW}💡 Run 'make test' for details${NC}"
+else
+    echo -e "${GREEN}  ✓ All tests pass${NC}"
+fi
+
+echo -e "\n${GREEN}✅ All pre-commit checks completed!${NC}"
+echo -e "${GREEN}🚀 Thanks for contributing!${NC}"
+
+# Display suggested tools if not installed
+MISSING_TOOLS=()
+command -v gocyclo >/dev/null 2>&1 || MISSING_TOOLS+=("gocyclo")
+command -v golangci-lint >/dev/null 2>&1 || MISSING_TOOLS+=("golangci-lint")
+command -v gosec >/dev/null 2>&1 || MISSING_TOOLS+=("gosec")
+command -v dupl >/dev/null 2>&1 || MISSING_TOOLS+=("dupl")
+
+if [ ${#MISSING_TOOLS[@]} -gt 0 ]; then
+    echo -e "\n${BLUE}💡 Suggested tools for complete analysis:${NC}"
+    for tool in "${MISSING_TOOLS[@]}"; do
+        echo -e "   ${YELLOW}$tool${NC}"
+    done
+    echo -e "${BLUE}   Run 'make install-tools' to install them${NC}"
+fi
+
+exit 0 

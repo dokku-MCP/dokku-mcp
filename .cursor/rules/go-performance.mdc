@@ -1,0 +1,643 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Go Performance Best Practices
+
+## Memory Management
+
+### Slice Preallocation
+```go
+// GOOD: Preallocate with known capacity
+func processApplications(apps []Application) []ProcessedApp {
+    processed := make([]ProcessedApp, 0, len(apps))
+    
+    for _, app := range apps {
+        processed = append(processed, processApp(app))
+    }
+    
+    return processed
+}
+
+// BAD: Progressive growth is expensive
+func processApplicationsBad(apps []Application) []ProcessedApp {
+    var processed []ProcessedApp // Will start at zero, require multiple reallocations
+    
+    for _, app := range apps {
+        processed = append(processed, processApp(app))
+    }
+    
+    return processed
+}
+```
+
+### Buffer Reuse Pattern
+```go
+// Buffer reuse to reduce allocations
+type LogProcessor struct {
+    buffer    bytes.Buffer
+    jsonBuf   bytes.Buffer
+    mu        sync.Mutex // Protect concurrent access
+}
+
+func NewLogProcessor() *LogProcessor {
+    return &LogProcessor{
+        buffer:  bytes.Buffer{},
+        jsonBuf: bytes.Buffer{},
+    }
+}
+
+func (lp *LogProcessor) FormatLog(entry LogEntry) string {
+    lp.mu.Lock()
+    defer lp.mu.Unlock()
+    
+    lp.buffer.Reset() // Reuse buffer
+    lp.buffer.WriteString(entry.Timestamp.Format(time.RFC3339))
+    lp.buffer.WriteString(" [")
+    lp.buffer.WriteString(entry.Level)
+    lp.buffer.WriteString("] ")
+    lp.buffer.WriteString(entry.Message)
+    
+    return lp.buffer.String()
+}
+
+// Buffer pool for high concurrency
+var bufferPool = sync.Pool{
+    New: func() interface{} {
+        return &bytes.Buffer{}
+    },
+}
+
+func FormatLogConcurrent(entry LogEntry) string {
+    buf := bufferPool.Get().(*bytes.Buffer)
+    defer bufferPool.Put(buf)
+    
+    buf.Reset()
+    buf.WriteString(entry.Timestamp.Format(time.RFC3339))
+    buf.WriteString(" [")
+    buf.WriteString(entry.Level)
+    buf.WriteString("] ")
+    buf.WriteString(entry.Message)
+    
+    return buf.String()
+}
+```
+
+### String Building Optimization
+```go
+// GOOD: Use strings.Builder for string construction
+func buildDokkuCommand(command string, args []string, envVars map[string]string) string {
+    var builder strings.Builder
+    
+    // Estimate capacity to avoid reallocations
+    capacity := len(command) + 10 // command + spaces
+    for _, arg := range args {
+        capacity += len(arg) + 1 // arg + space
+    }
+    for k, v := range envVars {
+        capacity += len(k) + len(v) + 2 // key=value + space
+    }
+    
+    builder.Grow(capacity)
+    
+    // Build environment variables
+    for key, value := range envVars {
+        builder.WriteString(key)
+        builder.WriteByte('=')
+        builder.WriteString(value)
+        builder.WriteByte(' ')
+    }
+    
+    builder.WriteString(command)
+    for _, arg := range args {
+        builder.WriteByte(' ')
+        builder.WriteString(arg)
+    }
+    
+    return builder.String()
+}
+
+// BAD: Repeated string concatenation
+func buildDokkuCommandBad(command string, args []string, envVars map[string]string) string {
+    result := ""
+    
+    for key, value := range envVars {
+        result += key + "=" + value + " " // Creates new strings each time
+    }
+    
+    result += command
+    for _, arg := range args {
+        result += " " + arg // More new allocations
+    }
+    
+    return result
+}
+```
+
+## Profiling Integration
+
+### Built-in Profiling Support
+```go
+//go:build debug
+
+package main
+
+import (
+    "context"
+    "log"
+    "net/http"
+    _ "net/http/pprof" // HTTP profiling endpoints
+    "os"
+    "os/signal"
+    "syscall"
+    "time"
+)
+
+func init() {
+    // Profiling server in debug mode
+    go func() {
+        log.Println("Profiling server started on :6060")
+        log.Println("Visit http://localhost:6060/debug/pprof/ for profiling")
+        log.Println(http.ListenAndServe(":6060", nil))
+    }()
+}
+
+// Example of profiling usage in application
+func main() {
+    // Conditional profiling configuration
+    if os.Getenv("ENABLE_PROFILING") == "true" {
+        go startProfilingServer()
+    }
+    
+    // Main application logic
+    startApplication()
+}
+
+func startProfilingServer() {
+    mux := http.NewServeMux()
+    
+    // Custom profiling endpoints
+    mux.HandleFunc("/debug/pprof/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        log.Printf("Profiling request: %s", r.URL.Path)
+        http.DefaultServeMux.ServeHTTP(w, r)
+    }))
+    
+    server := &http.Server{
+        Addr:    ":6060",
+        Handler: mux,
+    }
+    
+    log.Printf("Profiling server available at http://localhost:6060/debug/pprof/")
+    if err := server.ListenAndServe(); err != nil {
+        log.Printf("Profiling server error: %v", err)
+    }
+}
+```
+
+### Benchmarking Critical Operations
+```go
+func BenchmarkApplicationDeploy(b *testing.B) {
+    service := setupDeploymentService()
+    app := createTestApplication("benchmark-app")
+    
+    b.ResetTimer()
+    b.ReportAllocs() // Report memory allocations
+    
+    for i := 0; i < b.N; i++ {
+        if err := service.Deploy(context.Background(), app); err != nil {
+            b.Fatalf("deployment failed: %v", err)
+        }
+    }
+}
+
+func BenchmarkLogFormatting(b *testing.B) {
+    processor := NewLogProcessor()
+    entry := LogEntry{
+        Timestamp: time.Now(),
+        Level:     "INFO",
+        Message:   "Log formatting performance test",
+    }
+    
+    b.ResetTimer()
+    b.ReportAllocs()
+    
+    for i := 0; i < b.N; i++ {
+        _ = processor.FormatLog(entry)
+    }
+}
+
+// Comparative benchmark between different approaches
+func BenchmarkStringBuildingConcat(b *testing.B) {
+    args := []string{"arg1", "arg2", "arg3"}
+    
+    b.ResetTimer()
+    for i := 0; i < b.N; i++ {
+        result := "command"
+        for _, arg := range args {
+            result += " " + arg
+        }
+        _ = result
+    }
+}
+
+func BenchmarkStringBuildingBuilder(b *testing.B) {
+    args := []string{"arg1", "arg2", "arg3"}
+    
+    b.ResetTimer()
+    for i := 0; i < b.N; i++ {
+        var builder strings.Builder
+        builder.WriteString("command")
+        for _, arg := range args {
+            builder.WriteByte(' ')
+            builder.WriteString(arg)
+        }
+        _ = builder.String()
+    }
+}
+```
+
+## Database Connection Optimization
+
+### Connection Pool Configuration
+```go
+func setupDatabase(dsn string) (*sql.DB, error) {
+    db, err := sql.Open("postgres", dsn)
+    if err != nil {
+        return nil, fmt.Errorf("failed to open database: %w", err)
+    }
+    
+    // Optimal connection pool configuration
+    db.SetMaxOpenConns(25)                  // Limit of open connections
+    db.SetMaxIdleConns(5)                   // Idle connections kept
+    db.SetConnMaxLifetime(5 * time.Minute)  // Max connection lifetime
+    db.SetConnMaxIdleTime(1 * time.Minute)  // Max idle time
+    
+    // Verify connectivity
+    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+    defer cancel()
+    
+    if err := db.PingContext(ctx); err != nil {
+        return nil, fmt.Errorf("database ping failed: %w", err)
+    }
+    
+    return db, nil
+}
+```
+
+### Prepared Statement Optimization
+```go
+type OptimizedRepository struct {
+    db    *sql.DB
+    stmts map[string]*sql.Stmt
+    mu    sync.RWMutex
+}
+
+func NewOptimizedRepository(db *sql.DB) *OptimizedRepository {
+    return &OptimizedRepository{
+        db:    db,
+        stmts: make(map[string]*sql.Stmt),
+    }
+}
+
+func (r *OptimizedRepository) getStmt(query string) (*sql.Stmt, error) {
+    r.mu.RLock()
+    stmt, exists := r.stmts[query]
+    r.mu.RUnlock()
+    
+    if exists {
+        return stmt, nil
+    }
+    
+    r.mu.Lock()
+    defer r.mu.Unlock()
+    
+    // Double-check after acquiring write lock
+    if stmt, exists := r.stmts[query]; exists {
+        return stmt, nil
+    }
+    
+    // Prepare query
+    stmt, err := r.db.Prepare(query)
+    if err != nil {
+        return nil, fmt.Errorf("failed to prepare query: %w", err)
+    }
+    
+    r.stmts[query] = stmt
+    return stmt, nil
+}
+
+func (r *OptimizedRepository) GetApplication(ctx context.Context, name string) (*Application, error) {
+    stmt, err := r.getStmt("SELECT id, name, status, created_at FROM applications WHERE name = ?")
+    if err != nil {
+        return nil, err
+    }
+    
+    var app Application
+    err = stmt.QueryRowContext(ctx, name).Scan(&app.ID, &app.Name, &app.Status, &app.CreatedAt)
+    if err != nil {
+        return nil, fmt.Errorf("failed to get application: %w", err)
+    }
+    
+    return &app, nil
+}
+
+func (r *OptimizedRepository) Close() error {
+    r.mu.Lock()
+    defer r.mu.Unlock()
+    
+    for _, stmt := range r.stmts {
+        stmt.Close()
+    }
+    
+    return r.db.Close()
+}
+```
+
+## Concurrency Optimization
+
+### Worker Pool Pattern
+```go
+type WorkerPool struct {
+    workers    int
+    jobQueue   chan Job
+    resultChan chan Result
+    quit       chan bool
+    wg         sync.WaitGroup
+}
+
+type Job struct {
+    ID   string
+    Data interface{}
+}
+
+type Result struct {
+    JobID string
+    Data  interface{}
+    Error error
+}
+
+func NewWorkerPool(workers int, bufferSize int) *WorkerPool {
+    return &WorkerPool{
+        workers:    workers,
+        jobQueue:   make(chan Job, bufferSize),
+        resultChan: make(chan Result, bufferSize),
+        quit:       make(chan bool),
+    }
+}
+
+func (wp *WorkerPool) Start(ctx context.Context, processor func(Job) Result) {
+    for i := 0; i < wp.workers; i++ {
+        wp.wg.Add(1)
+        go wp.worker(ctx, processor)
+    }
+}
+
+func (wp *WorkerPool) worker(ctx context.Context, processor func(Job) Result) {
+    defer wp.wg.Done()
+    
+    for {
+        select {
+        case job := <-wp.jobQueue:
+            result := processor(job)
+            select {
+            case wp.resultChan <- result:
+            case <-ctx.Done():
+                return
+            }
+        case <-wp.quit:
+            return
+        case <-ctx.Done():
+            return
+        }
+    }
+}
+
+func (wp *WorkerPool) Submit(job Job) {
+    wp.jobQueue <- job
+}
+
+func (wp *WorkerPool) Results() <-chan Result {
+    return wp.resultChan
+}
+
+func (wp *WorkerPool) Stop() {
+    close(wp.quit)
+    wp.wg.Wait()
+    close(wp.jobQueue)
+    close(wp.resultChan)
+}
+```
+
+### Efficient Context Usage
+```go
+// Pattern for operations with timeout and cancellation
+func (s *ApplicationService) DeployBatch(ctx context.Context, apps []Application) error {
+    // Create derived context with timeout
+    deployCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+    defer cancel()
+    
+    // Channel to collect errors
+    errChan := make(chan error, len(apps))
+    
+    // Limit concurrency
+    semaphore := make(chan struct{}, 5) // Max 5 simultaneous deployments
+    
+    var wg sync.WaitGroup
+    
+    for _, app := range apps {
+        wg.Add(1)
+        go func(app Application) {
+            defer wg.Done()
+            
+            // Acquire semaphore
+            select {
+            case semaphore <- struct{}{}:
+                defer func() { <-semaphore }()
+            case <-deployCtx.Done():
+                errChan <- deployCtx.Err()
+                return
+            }
+            
+            // Perform deployment
+            if err := s.deploySingle(deployCtx, app); err != nil {
+                errChan <- fmt.Errorf("deployment failed for %s: %w", app.Name, err)
+            }
+        }(app)
+    }
+    
+    // Wait for all deployments to complete
+    go func() {
+        wg.Wait()
+        close(errChan)
+    }()
+    
+    // Collect errors
+    var errors []error
+    for err := range errChan {
+        if err != nil {
+            errors = append(errors, err)
+        }
+    }
+    
+    if len(errors) > 0 {
+        return fmt.Errorf("batch deployment failed: %v", errors)
+    }
+    
+    return nil
+}
+```
+
+## Caching Strategies
+
+### In-Memory Cache with TTL
+```go
+type CacheItem struct {
+    Data      interface{}
+    ExpiresAt time.Time
+}
+
+type TTLCache struct {
+    items map[string]*CacheItem
+    mu    sync.RWMutex
+    ttl   time.Duration
+}
+
+func NewTTLCache(ttl time.Duration) *TTLCache {
+    cache := &TTLCache{
+        items: make(map[string]*CacheItem),
+        ttl:   ttl,
+    }
+    
+    // Periodic cleanup of expired items
+    go cache.cleanup()
+    
+    return cache
+}
+
+func (c *TTLCache) Get(key string) (interface{}, bool) {
+    c.mu.RLock()
+    defer c.mu.RUnlock()
+    
+    item, exists := c.items[key]
+    if !exists {
+        return nil, false
+    }
+    
+    if time.Now().After(item.ExpiresAt) {
+        return nil, false
+    }
+    
+    return item.Data, true
+}
+
+func (c *TTLCache) Set(key string, value interface{}) {
+    c.mu.Lock()
+    defer c.mu.Unlock()
+    
+    c.items[key] = &CacheItem{
+        Data:      value,
+        ExpiresAt: time.Now().Add(c.ttl),
+    }
+}
+
+func (c *TTLCache) cleanup() {
+    ticker := time.NewTicker(c.ttl / 2)
+    defer ticker.Stop()
+    
+    for range ticker.C {
+        c.mu.Lock()
+        now := time.Now()
+        for key, item := range c.items {
+            if now.After(item.ExpiresAt) {
+                delete(c.items, key)
+            }
+        }
+        c.mu.Unlock()
+    }
+}
+```
+
+## HTTP Client Optimization
+
+### Efficient HTTP Client Configuration
+```go
+func NewOptimizedHTTPClient() *http.Client {
+    transport := &http.Transport{
+        // Connection pool
+        MaxIdleConns:        100,
+        MaxIdleConnsPerHost: 10,
+        IdleConnTimeout:     90 * time.Second,
+        
+        // Connection timeouts
+        DialContext: (&net.Dialer{
+            Timeout:   30 * time.Second,
+            KeepAlive: 30 * time.Second,
+        }).DialContext,
+        
+        // Headers and compression
+        DisableCompression: false,
+        
+        // TLS timeouts
+        TLSHandshakeTimeout: 10 * time.Second,
+        
+        // Connection reuse
+        DisableKeepAlives: false,
+    }
+    
+    return &http.Client{
+        Transport: transport,
+        Timeout:   60 * time.Second,
+    }
+}
+```
+
+## Performance Monitoring
+
+### Metrics Collection
+```go
+type PerformanceMetrics struct {
+    RequestCount     int64
+    RequestDuration  time.Duration
+    ErrorCount       int64
+    ActiveGoroutines int64
+    mu               sync.RWMutex
+}
+
+func (pm *PerformanceMetrics) RecordRequest(duration time.Duration, err error) {
+    pm.mu.Lock()
+    defer pm.mu.Unlock()
+    
+    atomic.AddInt64(&pm.RequestCount, 1)
+    pm.RequestDuration += duration
+    
+    if err != nil {
+        atomic.AddInt64(&pm.ErrorCount, 1)
+    }
+}
+
+func (pm *PerformanceMetrics) GetStats() map[string]interface{} {
+    pm.mu.RLock()
+    defer pm.mu.RUnlock()
+    
+    requestCount := atomic.LoadInt64(&pm.RequestCount)
+    errorCount := atomic.LoadInt64(&pm.ErrorCount)
+    
+    var avgDuration time.Duration
+    if requestCount > 0 {
+        avgDuration = pm.RequestDuration / time.Duration(requestCount)
+    }
+    
+    return map[string]interface{}{
+        "request_count":      requestCount,
+        "error_count":        errorCount,
+        "avg_duration_ms":    avgDuration.Milliseconds(),
+        "active_goroutines":  runtime.NumGoroutine(),
+        "memory_alloc_mb":    bToMb(runtime.MemStats{}.Alloc),
+    }
+}
+
+func bToMb(b uint64) uint64 {
+    return b / 1024 / 1024
+}
+```

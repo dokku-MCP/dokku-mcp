@@ -1,0 +1,148 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  release:
+    types: [published]
+
+jobs:
+  regression-tests:
+    name: Regression Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.24'
+        cache: true
+    
+    - name: Install Dokku
+      run: |
+        wget -O- https://raw.githubusercontent.com/dokku/dokku/v0.34.0/bootstrap.sh | sudo bash
+        sudo dokku plugin:install-dependencies --core
+        sudo dokku events:on || true
+        sudo usermod -aG dokku $USER
+    
+    - name: Install tools
+      run: make install-tools
+    
+    - name: Complete regression tests
+      run: make -f Makefile.ci test-ci-regression
+    
+    - name: Final cleanup
+      if: always()
+      run: make -f Makefile.ci cleanup-ci
+
+  performance-benchmarks:
+    name: Performance Benchmarks
+    runs-on: ubuntu-latest
+    needs: [regression-tests]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.24'
+        cache: true
+    
+    - name: Install Dokku
+      run: |
+        wget -O- https://raw.githubusercontent.com/dokku/dokku/v0.34.0/bootstrap.sh | sudo bash
+        sudo dokku plugin:install-dependencies --core
+        sudo dokku events:on || true
+        sudo usermod -aG dokku $USER
+    
+    - name: Install Ginkgo
+      run: make install-ginkgo
+    
+    - name: Performance benchmarks
+      run: make -f Makefile.ci test-ci-performance
+    
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v3
+      with:
+        name: benchmark-results
+        path: |
+          *.prof
+          *.html
+    
+    - name: Cleanup
+      if: always()
+      run: make -f Makefile.ci cleanup-ci
+
+  # Build et release
+  build-and-release:
+    name: Build and Release
+    runs-on: ubuntu-latest
+    needs: [regression-tests, performance-benchmarks]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.24'
+        cache: true
+    
+    - name: Extract version
+      id: version
+      run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+    
+    - name: Build multi-platform
+      run: |
+        export VERSION=${{ steps.version.outputs.VERSION }}
+        make build-all
+    
+    - name: Generate changelog
+      run: make changelog
+    
+    - name: Create checksums
+      run: |
+        cd build
+        sha256sum * > checksums.txt
+    
+    - name: GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          build/*
+          CHANGELOG.md
+        body: |
+          ## Dokku MCP Server ${{ steps.version.outputs.VERSION }}
+          
+          ### Regression Tests ✅
+          - Unit tests: ✅
+          - Integration tests: ✅
+          - Security tests: ✅
+          - Benchmarks: ✅
+          
+          ### Available Builds
+          - Linux AMD64
+          - Linux ARM64
+          - Darwin AMD64
+          - Darwin ARM64
+          
+          ### Installation
+          ```bash
+          # Download and install
+          wget https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.VERSION }}/dokku-mcp-linux-amd64
+          chmod +x dokku-mcp-linux-amd64
+          sudo mv dokku-mcp-linux-amd64 /usr/local/bin/dokku-mcp
+          ```
+          
+          See checksums in `checksums.txt` to verify file integrity.
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 

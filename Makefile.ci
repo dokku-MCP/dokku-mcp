@@ -1,0 +1,206 @@
+# CI/CD Makefile for Dokku MCP Server
+# This file contains all CI/CD specific targets and commands
+# Include this file in the main Makefile or run directly with: make -f Makefile.ci <target>
+
+# Include main Makefile variables if running standalone
+ifndef BINARY_NAME
+include Makefile
+endif
+
+.PHONY: ci-help ci-validate test-ci-unit test-ci-integration-mock test-ci-integration-real
+.PHONY: test-ci-quality test-ci-security test-ci-performance test-pr test-main test-release
+.PHONY: debug-ci cleanup-ci validate-ci-environment
+
+# CI/CD Help
+ci-help: ## Show CI/CD specific commands
+	@printf "$(GREEN)Dokku MCP Server - CI/CD Commands$(NC)\n"
+	@printf "\n"
+	@printf "$(YELLOW)CI/CD Commands:$(NC)\n"
+	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  $(GREEN)%-25s$(NC) %s\n", $$1, $$2}' $(MAKEFILE_LIST) | grep -v "main Makefile"
+
+# CI Environment Validation
+validate-ci-environment: ## Validate CI environment setup
+	@printf "$(GREEN)✅ Validating CI environment...$(NC)\n"
+	@printf "$(YELLOW)Go version:$(NC) "; go version
+	@printf "$(YELLOW)Ginkgo:$(NC) "; ginkgo version || echo "Not installed"
+	@printf "$(YELLOW)Golangci-lint:$(NC) "; golangci-lint version || echo "Not installed"
+	@printf "$(YELLOW)Gosec:$(NC) "; gosec -version || echo "Not installed"
+	@if [ "$$DOKKU_MCP_USE_MOCK" != "true" ]; then \
+		printf "$(YELLOW)Dokku:$(NC) "; dokku version || echo "Not installed"; \
+		printf "$(YELLOW)Dokku permissions:$(NC) "; \
+		if dokku apps:list >/dev/null 2>&1; then \
+			echo "OK"; \
+		else \
+			echo "Failed - insufficient permissions"; \
+		fi; \
+	fi
+
+# Unit Tests for CI
+test-ci-unit: install-ginkgo ## Run unit tests for CI with strict validation
+	@printf "$(GREEN)🧪 Running CI unit tests (strict)...$(NC)\n"
+	ginkgo -p -r --coverprofile=coverage.out --skip-package=internal/infrastructure
+	go tool cover -html=coverage.out -o coverage.html
+	@printf "$(YELLOW)📄 Coverage report: coverage.html$(NC)\n"
+	@printf "$(YELLOW)📊 Coverage threshold check...$(NC)\n"
+	@COVERAGE=$$(go tool cover -func=coverage.out | grep total | awk '{print $$3}' | sed 's/%//'); \
+	if [ "$${COVERAGE%.*}" -lt 75 ]; then \
+		echo -e "$(RED)❌ Coverage $${COVERAGE}% is below 75% threshold$(NC)"; \
+		exit 1; \
+	else \
+		echo -e "$(GREEN)✅ Coverage $${COVERAGE}% meets threshold$(NC)"; \
+	fi
+
+# Integration Tests with Mocks (for PRs)
+test-ci-integration-mock: install-ginkgo ## Run integration tests with mocks for CI
+	@printf "$(GREEN)🧪 Running CI integration tests (Mock)...$(NC)\n"
+	DOKKU_MCP_USE_MOCK=true DOKKU_MCP_INTEGRATION_TESTS=1 ginkgo -v -tags=integration ./internal/infrastructure/dokku/
+
+# Integration Tests with Real Dokku (for main/release)
+test-ci-integration-real: install-ginkgo ## Run integration tests with real Dokku for CI
+	@printf "$(GREEN)🧪 Running CI integration tests (Real Dokku)...$(NC)\n"
+	DOKKU_MCP_USE_MOCK=false DOKKU_MCP_INTEGRATION_TESTS=1 DOKKU_HOST=localhost DOKKU_USER=dokku ginkgo -v -tags=integration ./internal/infrastructure/dokku/
+
+# Code Quality Checks for CI
+test-ci-quality: ## Run all quality checks for CI with strict validation
+	@printf "$(GREEN)🔍 Running CI quality checks...$(NC)\n"
+	@printf "$(YELLOW)Checking code formatting...$(NC)\n"
+	make fmt
+	@if [ -n "$$(git status --porcelain)" ]; then \
+		echo -e "$(RED)❌ Improperly formatted code detected$(NC)"; \
+		git diff; \
+		exit 1; \
+	fi
+	@printf "$(GREEN)✅ Code formatting OK$(NC)\n"
+	@printf "$(YELLOW)Running static analysis...$(NC)\n"
+	make vet
+	@printf "$(YELLOW)Running linting...$(NC)\n"
+	make lint
+	@printf "$(YELLOW)Checking cyclomatic complexity...$(NC)\n"
+	make cyclo
+	@printf "$(YELLOW)Checking for duplicate code...$(NC)\n"
+	make dupl
+
+# Security Tests for CI
+test-ci-security: ## Run comprehensive security tests for CI
+	@printf "$(GREEN)🔒 Running CI security tests...$(NC)\n"
+	@printf "$(YELLOW)Generating security reports...$(NC)\n"
+	gosec -fmt sarif -out gosec-report.sarif ./... || true
+	gosec -fmt json -out gosec-report.json ./... || true
+	@printf "$(YELLOW)Running security scan...$(NC)\n"
+	gosec ./...
+	@printf "$(GREEN)✅ Security tests completed$(NC)\n"
+
+# Performance Benchmarks for CI
+test-ci-performance: install-ginkgo ## Run performance benchmarks for CI
+	@printf "$(GREEN)⚡ Running CI performance benchmarks...$(NC)\n"
+	DOKKU_MCP_INTEGRATION_TESTS=1 ginkgo -focus="Performance" -tags=integration ./internal/infrastructure/dokku/
+	@printf "$(YELLOW)Generating performance profiles...$(NC)\n"
+	make profile
+	@printf "$(GREEN)✅ Performance benchmarks completed$(NC)\n"
+
+# Regression Tests (comprehensive)
+test-ci-regression: ## Run comprehensive regression test suite
+	@printf "$(GREEN)🔍 Running regression tests...$(NC)\n"
+	make test
+	make test-integration
+	make lint
+	make security-test
+	@printf "$(GREEN)✅ Regression tests completed$(NC)\n"
+
+# CI Workflows - Different test suites for different contexts
+
+# Pull Request Tests (fast, with mocks)
+test-pr: validate-ci-environment test-ci-unit test-ci-integration-mock test-ci-quality ## Complete test suite for Pull Requests
+	@printf "$(GREEN)✅ PR test suite completed successfully!$(NC)\n"
+	@printf "$(YELLOW)📊 Test Summary:$(NC)\n"
+	@printf "  • Unit tests with coverage ✅\n"
+	@printf "  • Integration tests (mocked) ✅\n"
+	@printf "  • Code quality checks ✅\n"
+
+# Main Branch Tests (comprehensive, with real infrastructure)
+test-main: validate-ci-environment test-ci-unit test-ci-integration-real test-ci-quality test-ci-security ## Complete test suite for main branch
+	@printf "$(GREEN)✅ Main branch test suite completed successfully!$(NC)\n"
+	@printf "$(YELLOW)📊 Test Summary:$(NC)\n"
+	@printf "  • Unit tests with coverage ✅\n"
+	@printf "  • Integration tests (real Dokku) ✅\n"
+	@printf "  • Code quality checks ✅\n"
+	@printf "  • Security analysis ✅\n"
+
+# Release Tests (full validation including performance)
+test-release: validate-ci-environment test-ci-regression test-ci-performance ## Complete test suite for releases
+	@printf "$(GREEN)✅ Release test suite completed successfully!$(NC)\n"
+	@printf "$(YELLOW)📊 Test Summary:$(NC)\n"
+	@printf "  • Regression tests ✅\n"
+	@printf "  • Performance benchmarks ✅\n"
+	@printf "  • Full validation ✅\n"
+
+# CI Debug and Maintenance Commands
+
+# Debug CI Environment
+debug-ci: ## Debug CI environment and configuration
+	@printf "$(GREEN)🐛 CI debug mode...$(NC)\n"
+	@printf "$(YELLOW)CI Environment Variables:$(NC)\n"
+	@echo "  CI: $$CI"
+	@echo "  GITHUB_ACTIONS: $$GITHUB_ACTIONS"
+	@echo "  DOKKU_MCP_INTEGRATION_TESTS: $$DOKKU_MCP_INTEGRATION_TESTS"
+	@echo "  DOKKU_MCP_USE_MOCK: $$DOKKU_MCP_USE_MOCK"
+	@echo "  DOKKU_HOST: $$DOKKU_HOST"
+	@echo "  DOKKU_USER: $$DOKKU_USER"
+	@echo "  DOKKU_PATH: $$DOKKU_PATH"
+	@printf "$(YELLOW)Test Applications Present:$(NC)\n"
+	@if command -v dokku >/dev/null 2>&1; then \
+		dokku apps:list | grep dokku-mcp-test || echo "  No test applications found"; \
+	else \
+		echo "  Dokku not available"; \
+	fi
+	@printf "$(YELLOW)System Info:$(NC)\n"
+	@echo "  OS: $$(uname -s)"
+	@echo "  Architecture: $$(uname -m)"
+	@echo "  Available RAM: $$(free -h 2>/dev/null | grep Mem | awk '{print $$2}' || echo 'N/A')"
+
+# CI Cleanup
+cleanup-ci: ## Comprehensive CI environment cleanup
+	@printf "$(GREEN)🧹 CI cleanup...$(NC)\n"
+	@printf "$(YELLOW)Cleaning build artifacts...$(NC)\n"
+	make clean
+	@printf "$(YELLOW)Cleaning test applications...$(NC)\n"
+	make test-integration-clean
+	@printf "$(YELLOW)Cleaning security reports...$(NC)\n"
+	@if [ -f "gosec-report.sarif" ]; then rm -f gosec-report.sarif; fi
+	@if [ -f "gosec-report.json" ]; then rm -f gosec-report.json; fi
+	@printf "$(YELLOW)Cleaning performance profiles...$(NC)\n"
+	@if [ -f "cpu.prof" ]; then rm -f cpu.prof; fi
+	@if [ -f "mem.prof" ]; then rm -f mem.prof; fi
+	@printf "$(GREEN)✅ CI cleanup completed$(NC)\n"
+
+# CI Status Check
+ci-status: ## Check CI environment status and readiness
+	@printf "$(GREEN)📊 CI Status Check$(NC)\n"
+	@printf "$(YELLOW)Environment:$(NC)\n"
+	@if [ "$$CI" = "true" ]; then \
+		echo "  Running in CI: ✅"; \
+	else \
+		echo "  Running locally: ⚠️"; \
+	fi
+	@printf "$(YELLOW)Required Tools:$(NC)\n"
+	@command -v go >/dev/null 2>&1 && echo "  Go: ✅" || echo "  Go: ❌"
+	@command -v ginkgo >/dev/null 2>&1 && echo "  Ginkgo: ✅" || echo "  Ginkgo: ❌"
+	@command -v golangci-lint >/dev/null 2>&1 && echo "  golangci-lint: ✅" || echo "  golangci-lint: ❌"
+	@command -v gosec >/dev/null 2>&1 && echo "  gosec: ✅" || echo "  gosec: ❌"
+	@if [ "$$DOKKU_MCP_USE_MOCK" != "true" ]; then \
+		command -v dokku >/dev/null 2>&1 && echo "  Dokku: ✅" || echo "  Dokku: ❌"; \
+	fi
+
+# CI Metrics Collection
+ci-metrics: ## Collect CI metrics and timing information
+	@printf "$(GREEN)📈 Collecting CI metrics...$(NC)\n"
+	@echo "Timestamp: $$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+	@echo "Commit: $$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
+	@echo "Branch: $$(git branch --show-current 2>/dev/null || echo 'unknown')"
+	@echo "Go version: $$(go version)"
+	@if [ -f "coverage.out" ]; then \
+		echo "Coverage: $$(go tool cover -func=coverage.out | grep total | awk '{print $$3}')"; \
+	fi
+
+# Default target for CI Makefile
+.DEFAULT_GOAL := ci-help 

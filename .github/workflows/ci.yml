@@ -1,0 +1,179 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-tests:
+    name: Unit Tests & Quality
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.24'
+        cache: true
+    
+    - name: Install development tools
+      run: make install-tools
+    
+    - name: Validate CI environment
+      run: make -f Makefile.ci validate-ci-environment
+    
+    - name: Check formatting
+      run: |
+        make fmt
+        git diff --exit-code
+    
+    - name: Static analysis
+      run: make vet
+    
+    - name: Linting
+      run: make lint
+    
+    - name: Cyclomatic complexity
+      run: make cyclo
+    
+    - name: Duplicate code detection  
+      run: make dupl
+    
+    - name: Security tests
+      run: make security-test
+    
+    - name: Unit tests with coverage
+      run: make -f Makefile.ci test-ci-unit
+    
+    - name: Race condition tests
+      run: make test-race
+    
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.out
+        flags: unittests
+        name: codecov-umbrella
+
+  integration-tests-mock:
+    name: Integration Tests (Mock)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.24'
+        cache: true
+    
+    - name: Install Ginkgo
+      run: make install-ginkgo
+    
+    - name: Integration tests with mocks
+      run: make -f Makefile.ci test-ci-integration-mock
+      
+  integration-tests-real:
+    name: Integration Tests (Real)
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.24'
+        cache: true
+    
+    - name: Install Dokku
+      run: |
+        wget -O- https://raw.githubusercontent.com/dokku/dokku/v0.34.0/bootstrap.sh | sudo bash
+        sudo dokku plugin:install-dependencies --core
+        
+        sudo dokku events:on || true
+        sudo usermod -aG dokku $USER
+    
+    - name: Install Ginkgo
+      run: make install-ginkgo
+    
+    - name: Integration tests with real Dokku
+      run: make -f Makefile.ci test-ci-integration-real
+        
+    - name: Clean up test applications
+      if: always()
+      run: make test-integration-clean
+
+  benchmarks:
+    name: Benchmarks
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.24'
+        cache: true
+    
+    - name: Install Dokku
+      run: |
+        wget -O- https://raw.githubusercontent.com/dokku/dokku/v0.34.0/bootstrap.sh | sudo bash
+        sudo dokku plugin:install-dependencies --core
+        sudo dokku events:on || true
+        sudo usermod -aG dokku $USER
+    
+    - name: Install Ginkgo
+      run: make install-ginkgo
+    
+    - name: Run benchmarks
+      run: make -f Makefile.ci test-ci-performance
+    
+    - name: Cleanup
+      if: always()
+      run: make -f Makefile.ci cleanup-ci
+
+  build:
+    name: Build Multi-Platform
+    runs-on: ubuntu-latest
+    needs: [unit-tests]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.24'
+        cache: true
+    
+    - name: Build multi-platform
+      run: make build-all
+    
+    - name: Test binary
+      run: |
+        ./build/dokku-mcp-linux-amd64 --version
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: binaries
+        path: build/ 

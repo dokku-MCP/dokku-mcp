@@ -1,0 +1,122 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Build directories
+build/
+dist/
+release/
+
+# Configuration files (keep examples)
+config.yaml
+config.yml
+config.json
+*.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Log files
+*.log
+logs/
+
+# Coverage reports
+coverage.out
+coverage.html
+coverage/
+
+# Profiling files
+*.prof
+*.pprof
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+
+# Documentation build artifacts
+docs/_build/
+docs/site/
+
+# Node.js (if using for documentation or tooling)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Docker
+.docker/
+docker-compose.override.yml
+
+# Kubernetes
+*.kubeconfig
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraformrc
+terraform.tfvars
+
+# Air live reload
+.air.toml
+
+# GoReleaser
+.goreleaser.yml
+
+# Mock files (keep if auto-generated)
+*_mock.go
+
+# Test cache
+.cache/
+
+# Backup files
+*.bak
+*.backup
+
+# Archive files
+*.tar.gz
+*.zip
+*.rar
+
+# Dokku local development
+docker-data/
+.env.dokku-local
+**/*dokku_mcp_test* 
