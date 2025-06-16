@@ -119,4 +119,6 @@ terraform.tfvars
 # Dokku local development
 docker-data/
 .env.dokku-local
-**/*dokku_mcp_test* 
+**/*dokku_mcp_test*
+
+dokku-mcp

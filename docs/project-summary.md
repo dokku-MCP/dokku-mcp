@@ -11,6 +11,7 @@
 - **Comprehensive documentation** and development guidelines
 
 ### 📋 Documentation & Guidelines
+- **Product specification** (`docs/product-specifications.md`)
 - **Architecture documentation** (`docs/architecture.md`)
 - **Dokku analysis** with actions, assets, and flows (`docs/dokku-analysis.md`)
 - **Development playbook** with detailed patterns and workflows (`docs/playbooks/development.md`)
@@ -19,7 +20,7 @@
 
 ### 🔧 Development Infrastructure
 - **Makefile** with comprehensive development tasks
-- **Go module** setup with proper dependencies
+- **Go plugin** setup with proper dependencies
 - **Docker** support with multi-stage builds
 - **Configuration management** with YAML and environment variables
 - **Git ignore** file for clean repository

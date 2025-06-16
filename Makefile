@@ -1,6 +1,6 @@
 BINARY_NAME=dokku-mcp
 VERSION?=v0.1.0
-ENTRYPOINT=src/interface/cmd/main.go
+ENTRYPOINT=cmd/dokku-mcp/main.go
 BUILD_DIR=build
 LDFLAGS=-ldflags "-X main.Version=$(VERSION) -X main.BuildTime=$(shell date -u '+%Y-%m-%d_%H:%M:%S')"
 
@@ -59,58 +59,42 @@ install-ginkgo: ## Install Ginkgo and Gomega
 # Development Testing Commands
 test: install-ginkgo ## Run unit tests with Ginkgo
 	@printf "$(GREEN)🧪 Running unit tests with Ginkgo...$(NC)\n"
-	ginkgo -p -r --timeout=2m --flake-attempts=2 --randomize-all --poll-progress-after=10s src/domain/ src/application/ src/interface/
+	ginkgo -p -r --timeout=2m --flake-attempts=2 --randomize-all --poll-progress-after=10s internal/domain/ internal/application/ internal/interface/
 
 test-verbose: install-ginkgo ## Run unit tests with verbose output
 	@printf "$(GREEN)🧪 Running unit tests (verbose)...$(NC)\n"
-	ginkgo -v -r --timeout=2m --flake-attempts=2 --randomize-all --poll-progress-after=10s src/domain/ src/application/ src/interface/
+	ginkgo -v -r --timeout=2m --flake-attempts=2 --randomize-all --poll-progress-after=10s internal/domain/ internal/application/ internal/interface/
 
 test-focus: install-ginkgo ## Run focused unit tests
 	@printf "$(GREEN)🧪 Running focused unit tests...$(NC)\n"
-	ginkgo -focus="$(FOCUS)" -r --timeout=2m --flake-attempts=2 --randomize-all --poll-progress-after=10s src/domain/ src/application/ src/interface/
+	ginkgo -focus="$(FOCUS)" -r --timeout=2m --flake-attempts=2 --randomize-all --poll-progress-after=10s internal/domain/ internal/application/ internal/interface/
 
 test-watch: install-ginkgo ## Run unit tests with watch mode
 	@printf "$(GREEN)👀 Watching unit tests...$(NC)\n"
-	ginkgo watch -r --timeout=2m --flake-attempts=2 --randomize-all --poll-progress-after=10s src/domain/ src/application/ src/interface/
+	ginkgo watch -r --timeout=2m --flake-attempts=2 --randomize-all --poll-progress-after=10s internal/domain/ internal/application/ internal/interface/
 
 test-coverage: install-ginkgo ## Generate test coverage report with Ginkgo
 	@printf "$(GREEN)📊 Tests with coverage (Ginkgo)...$(NC)\n"
-	ginkgo -p -r --coverprofile=coverage.out --timeout=2m --flake-attempts=2 --randomize-all --poll-progress-after=10s src/domain/ src/application/ src/interface/
+	ginkgo -p -r --coverprofile=coverage.out --timeout=2m --flake-attempts=2 --randomize-all --poll-progress-after=10s internal/domain/ internal/application/ internal/interface/
 	go tool cover -html=coverage.out -o coverage.html
 	@printf "$(YELLOW)📄 Coverage report: coverage.html$(NC)\n"
 
-test-infrastructure-unit: install-ginkgo ## Run infrastructure unit tests (non-integration)
+test-infrastructure-unit: ## Run infrastructure unit tests (non-integration)
 	@printf "$(GREEN)🧪 Running infrastructure unit tests...$(NC)\n"
-	ginkgo -p -r --timeout=2m --flake-attempts=2 --randomize-all --poll-progress-after=10s --skip-file="*_ginkgo_test.go" src/infrastructure/
+	go test -v -race -timeout=2m ./internal/infrastructure/...
 
 # Integration Testing Commands  
 test-integration: install-ginkgo ## Run integration tests with Ginkgo
 	@printf "$(GREEN)🧪 Running integration tests with Ginkgo...$(NC)\n"
-	DOKKU_MCP_INTEGRATION_TESTS=1 ginkgo -p -tags=integration --timeout=5m --flake-attempts=2 --randomize-all --poll-progress-after=15s ./src/infrastructure/dokku/
+	DOKKU_MCP_INTEGRATION_TESTS=1 ginkgo -p -tags=integration --timeout=5m --flake-attempts=2 --randomize-all --poll-progress-after=15s . internal/infrastructure/dokku/
 
 test-integration-verbose: install-ginkgo ## Run integration tests with verbose output
 	@printf "$(GREEN)🧪 Running integration tests (verbose) with Ginkgo...$(NC)\n"
-	DOKKU_MCP_INTEGRATION_TESTS=1 ginkgo -v -tags=integration --timeout=5m --flake-attempts=2 --randomize-all --poll-progress-after=15s ./src/infrastructure/dokku/
-
-test-integration-focus: install-ginkgo ## Run integration tests with focus
-	@printf "$(GREEN)🧪 Running integration tests with focus...$(NC)\n"
-	DOKKU_MCP_INTEGRATION_TESTS=1 ginkgo -focus="$(FOCUS)" -tags=integration --timeout=5m --flake-attempts=2 --randomize-all --poll-progress-after=15s ./src/infrastructure/dokku/
-
-test-integration-watch: install-ginkgo ## Run integration tests with watch
-	@printf "$(GREEN)👀 Watching integration tests...$(NC)\n"
-	DOKKU_MCP_INTEGRATION_TESTS=1 ginkgo watch -tags=integration --timeout=5m --flake-attempts=2 --randomize-all --poll-progress-after=15s ./src/infrastructure/dokku/
-
-test-integration-clean: ## Clean up integration test applications
-	@printf "$(GREEN)🧹 Cleaning up integration test applications...$(NC)\n"
-	@./scripts/cleanup-test-apps.sh
-
-test-integration-bench: install-ginkgo ## Run integration tests with benchmarks
-	@printf "$(GREEN)⚡ Running integration benchmarks...$(NC)\n"
-	DOKKU_MCP_INTEGRATION_TESTS=1 ginkgo -focus="Performance" -tags=integration --timeout=10m --flake-attempts=1 --randomize-all --poll-progress-after=30s ./src/infrastructure/dokku/
+	DOKKU_MCP_INTEGRATION_TESTS=1 ginkgo -v -tags=integration --timeout=5m --flake-attempts=2 --randomize-all --poll-progress-after=15s . internal/infrastructure/dokku/
 
 test-race: install-ginkgo ## Run tests with race detector
 	@printf "$(GREEN)🏁 Tests with race detector...$(NC)\n"
-	ginkgo -race -r --timeout=3m --flake-attempts=2 --randomize-all --poll-progress-after=10s src/domain/ src/application/ src/interface/
+	ginkgo -race -r --timeout=3m --flake-attempts=2 --randomize-all --poll-progress-after=10s internal/domain/ internal/application/ internal/interface/
 
 test-all-unit: test test-infrastructure-unit ## Run all unit tests (domain + application + interface + infrastructure unit)
 	@printf "$(GREEN)✅ All unit tests completed!$(NC)\n"
@@ -145,6 +129,17 @@ vet: ## Static code analysis
 cyclo: ## Check cyclomatic complexity
 	@printf "$(GREEN)📊 Cyclomatic complexity...$(NC)\n"
 	gocyclo -over 20 $$(find . -name "*.go" -not -path "./vendor/*" -not -path "./.git/*")
+
+dep-graph-dot: ## Generate Go import dependency graph in DOT format
+	@printf "$(GREEN)📊 Generating Go import dependency graph (DOT)...$(NC)\n"
+	mkdir -p build
+	go run cmd/depgraph/main.go > build/dep-graph.dot
+	@printf "$(YELLOW)✅ DOT graph: build/dep-graph.dot$(NC)\n"
+
+dep-graph: dep-graph-dot ## Generate PNG + SVG from DOT dependency graph
+	dot -Tpng build/dep-graph.dot -o build/dep-graph.png
+	dot -Tsvg build/dep-graph.dot -o build/dep-graph.svg
+	@printf "$(YELLOW)✅ PNG + SVG graph: build/dep-graph.{png|svg}$(NC)\n"
 
 dupl: ## Detect duplicate code
 	@printf "$(GREEN)👯 Duplicate code detection...$(NC)\n"
@@ -253,7 +248,7 @@ test-integration-local: dokku-start ## Run integration tests with local Dokku
 	@printf "$(GREEN)🧪 Running integration tests with local Dokku...$(NC)\n"
 	@if [ -f ".env.dokku-local" ]; then \
 		set -a && source .env.dokku-local && set +a && \
-		ginkgo -v -tags=integration --timeout=5m --flake-attempts=2 --randomize-all --poll-progress-after=15s ./src/infrastructure/dokku/; \
+		ginkgo -v -tags=integration --timeout=5m --flake-attempts=2 --randomize-all --poll-progress-after=15s . internal/infrastructure/dokku/; \
 	else \
 		printf "$(RED)❌ .env.dokku-local not found. Run 'make dokku-setup' first$(NC)\n"; \
 		exit 1; \
@@ -276,6 +271,6 @@ inspect: build ## Inspect the MCP server
 .DEFAULT_GOAL := help
 
 .PHONY: all build test clean install-tools setup-hooks lint fmt vet install-ginkgo
-.PHONY: test-integration test-integration-verbose test-integration-focus test-integration-watch test-integration-clean test-integration-bench test-all
+.PHONY: test-integration test-integration-verbose test-integration-local test-all
 .PHONY: test-verbose test-focus test-watch test-race test-coverage test-regression
-.PHONY: dokku-setup dokku-start dokku-stop dokku-status dokku-logs dokku-shell dokku-clean test-integration-local test-local-env
+.PHONY: dokku-setup dokku-start dokku-stop dokku-status dokku-logs dokku-shell dokku-clean test-local-env

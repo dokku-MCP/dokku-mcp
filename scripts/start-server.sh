@@ -209,7 +209,7 @@ done
 # Affichage de l'en-tête
 echo -e "${GREEN}╔════════════════════════════════════════════════╗${NC}"
 echo -e "${GREEN}║              Serveur MCP Dokku                 ║${NC}"
-echo -e "${GREEN}║          Powered by mcp-go                     ║${NC}"
+echo -e "${GREEN}║              Powered by mcp-go                 ║${NC}"
 echo -e "${GREEN}╚════════════════════════════════════════════════╝${NC}"
 echo ""
 
