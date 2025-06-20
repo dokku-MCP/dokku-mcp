@@ -229,15 +229,9 @@ dokku-clean: ## Clean local Dokku data and containers
 
 _check-type-safety:
 	@printf "$(GREEN)🚫 Checking forbidden patterns (Strong Typing)...$(NC)\n"
-	@FORBIDDEN_PATTERNS=( \
-		"interface{}" \
-		"any" \
-		"reflect\." \
-		"unsafe\." \
-	); \
-	VIOLATIONS_FOUND=false; \
+	@VIOLATIONS_FOUND=false; \
 	for file in $$(find $(GO_SRC_PATHS) -name "*.go" -not -path "./vendor/*" -not -path "./.git/*" 2>/dev/null || true); do \
-		for pattern in "$${FORBIDDEN_PATTERNS[@]}"; do \
+		for pattern in "interface{}" "any" "reflect\." "unsafe\."; do \
 			if grep -q "$$pattern" "$$file"; then \
 				printf "$(RED)❌ Forbidden pattern '$$pattern' found in $$file$(NC)\n"; \
 				VIOLATIONS_FOUND=true; \

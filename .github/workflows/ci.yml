@@ -112,12 +112,12 @@ jobs:
         run: make security-test
 
   tests:
-    name: Unit Tests
+    name: Tests - unit / integration
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        test-type: [standard, race, coverage]
+        test-type: [standard, race]
     
     steps:
       - name: Checkout code
@@ -153,7 +153,7 @@ jobs:
         run: make test-race
 
       - name: Upload coverage artifact
-        if: matrix.test-type == 'coverage'
+        if: matrix.test-type == 'standard'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
