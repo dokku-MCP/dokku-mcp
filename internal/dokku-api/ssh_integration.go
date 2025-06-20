@@ -94,6 +94,7 @@ func (m *SSHConnectionManager) TestConnection() error {
 		return fmt.Errorf("failed to prepare SSH command: %w", err)
 	}
 
+	// #nosec G204 -- Integration test, not a user command
 	cmd := exec.Command(sshArgs[0], sshArgs[1:]...)
 	cmd.Env = env
 

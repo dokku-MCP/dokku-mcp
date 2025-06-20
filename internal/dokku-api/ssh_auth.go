@@ -192,14 +192,8 @@ func (s *SSHAuthService) isKeyFileAccessible(keyPath string) bool {
 		return false
 	}
 
-	// Expand tilde in path
-	if strings.HasPrefix(keyPath, "~/") {
-		homeDir := s.getHomeDir()
-		if homeDir == "" {
-			return false
-		}
-		keyPath = filepath.Join(homeDir, keyPath[2:])
-	}
+	// Clean the keyPath to prevent path traversal
+	keyPath = filepath.Clean(keyPath)
 
 	// Check if file exists and is readable
 	info, err := os.Stat(keyPath)
@@ -217,7 +211,11 @@ func (s *SSHAuthService) isKeyFileAccessible(keyPath string) bool {
 	if err != nil {
 		return false
 	}
-	file.Close()
+	// Handle error from file.Close() (G104)
+	if cerr := file.Close(); cerr != nil {
+		s.logger.Warn("Error closing key file", "error", cerr)
+		return false
+	}
 
 	return true
 }

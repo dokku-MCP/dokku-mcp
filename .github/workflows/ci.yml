@@ -109,7 +109,7 @@ jobs:
 
       - name: Run security check
         if: matrix.check == 'security'
-        run: make security-test
+        run: make security
 
   tests:
     name: Tests - unit / integration

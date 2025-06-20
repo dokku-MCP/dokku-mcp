@@ -224,7 +224,7 @@ dokku-clean: ## Clean local Dokku data and containers
 
 .PHONY: all build test clean install-tools lint fmt vet dev debug
 .PHONY: test test-verbose test-integration-local test-all test-race
-.PHONY: dokku-setup dokku-start dokku-stop dokku-status dokku-logs dokku-shell dokku-clean
+.PHONY: setup-dokku dokku-start dokku-stop dokku-status dokku-logs dokku-shell dokku-clean
 .PHONY: security _check-security _check-type-safety _check-security-detailed docs
 
 _check-type-safety:
