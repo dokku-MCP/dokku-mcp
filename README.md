@@ -4,58 +4,66 @@
 
 ## Overview
 
-The Dokku MCP Server bridges large language models and Dokku infrastructure management by exposing Dokku capabilities through the standardized Model Context Protocol. It follows Domain-Driven Design principles and maintains a clean, extensible architecture.
+The Dokku MCP Server bridges Dokku infrastructure management and LLMs by exposing Dokku capabilities through the standardized Model Context Protocol (MCP).
+
+**Current Status**: Early development stage with core application management features implemented. The server provides MCP resources, tools, and prompts for managing Dokku applications and monitoring system status.
+
+⚠️ **Development Warning**: This is in early development with breaking changes expected. Not recommended for production use as it could potentially break your Dokku infrastructure.
 
 ## Features
 
-### Core Capabilities
-- **Application Management**: Create, deploy, scale, and monitor Dokku applications
-- **Service Management**: Manage databases, storage, and other Dokku services
-- **Infrastructure Monitoring**: Access logs, metrics, and system status
-- **Domain and SSL Management**: Configure domains and SSL certificates
-- **Environment Configuration**: Manage environment variables and application settings
-
 ### MCP Resources
-- **Applications**: Real-time application status, configuration, and deployment history
-- **Services**: Database connections, service status, and configuration
-- **Logs**: Application and system logs with filtering capabilities
-- **Metrics**: Performance metrics and resource usage data
+- **Applications**: Complete list of Dokku applications with status and summary statistics
+- **System Status**: Current Dokku server status including version, configuration, and resource usage
+- **Server Information**: Comprehensive server details including plugins, domains, and configuration
+- **Plugin List**: All installed Dokku plugins with their status and versions
 
 ### MCP Tools
-- **Deployment**: Deploy applications from Git repositories
-- **Scaling**: Adjust application process scaling
-- **Configuration**: Update environment variables and settings
-- **Service Management**: Create, backup, and restore services
-- **Monitoring**: Execute health checks and diagnostics
+- **Application Management - not tested**: 
+  - Create new applications with validation
+  - Deploy applications from Git repositories
+  - Scale application processes
+  - Configure environment variables
+  - Get comprehensive application status
+- **System Tools**:
+  - Get system status and configuration
+  - List installed Dokku plugins
 
 ### MCP Prompts
-- **Diagnostics**: Analyze application and performance issues
-- **Optimization**: Generate performance improvement recommendations
-- **Security**: Provide security audits and recommendations
-- **Operations**: Assist with common operational tasks
+- **Application Doctor**: Application health diagnosis and troubleshooting guidance
+
+## Current Development Status
+
+🚧 **Early Development Stage** - Breaking changes are expected.
+
+⚠️ **Not Production Ready** - Could potentially break your Dokku infrastructure.
+
+### What's Implemented
+- ✅ Core MCP server with mcp-go
+- ✅ Plugin architecture
+- ✅ Application management (create, deploy, scale, configure, status)
+- ✅ System status and dokku plugin information
+- ✅ Basic diagnostic prompts
+
+### Proposed planned Features
+- Dokku integration
+   - 🔄 **Services**: Database connections, service status, and configuration
+   - 🔄 **Deployments**: Deployment introspection
+   - 🔄 **Logs**: Application and system logs with filtering  
+   - 🔄 **Metrics**: Performance metrics and resource usage data
+   - 🔄 **Service Management**: Create, backup, and restore
+   - 🔄 **Advanced Monitoring**: Health checks and diagnostics
+   - 🔄 **Security Prompts**: Security audits and recommendations
+   - 🔄 **Optimization Prompts**: Performance improvement recommendations
+- Infrastructure management extras
+   - 🔄 **Workflows**: Playbooks for common use-cases available at tool command
+
 
 ## Architecture
 
-### Layered Design
-```
-┌─────────────────────────────────────┐
-│        Couche Protocole MCP         │
-│  (Transport, Sérialisation, Auth)   │
-├─────────────────────────────────────┤
-│         Couche Application          │
-│     (Handlers, Coordinateurs)       │
-├─────────────────────────────────────┤
-│          Couche Domaine             │
-│ (Entités, Services, Repositories)   │
-├─────────────────────────────────────┤
-│       Couche Infrastructure         │
-│   (CLI Dokku, Système de fichiers)  │
-└─────────────────────────────────────┘
-```
-
 ### Key Principles
 - **Domain-Driven Design** : Clear separation of business logic and infrastructure
-- **Strong Typing** : Explicit types everywhere, no `interface{}` without justification
+- **Strong Typing - target** : Explicit types everywhere, no `interface{}` without justification
 - **Error Handling** : Complete error handling with context and logging
 - **Security** : Input validation, command sanitization, and audit logging
 - **Performance** : Cache, connection pool, and resource optimization
@@ -63,12 +71,7 @@ The Dokku MCP Server bridges large language models and Dokku infrastructure mana
 
 ## Quick Start
 
-### Prerequisites
-- Go 1.21 or newer
-- Dokku installed and configured
-- Git for version control
-
-### Installation
+### Installation - No built binaries yet
 
 1. **Clone the repository**
    ```bash
@@ -98,35 +101,7 @@ The Dokku MCP Server bridges large language models and Dokku infrastructure mana
 
 ### Configuration
 
-Create a `config.yaml` file:
-
-```yaml
-# Server configuration
-host: "localhost"
-port: 8080
-log_level: "info"
-log_format: "json"
-timeout: "30s"
-
-# Dokku configuration
-dokku_path: "/usr/bin/dokku"
-
-# Cache configuration
-cache_enabled: true
-cache_ttl: "5m"
-
-# Security configuration
-security:
-  allowed_commands:
-    - "apps:list"
-    - "apps:info"
-    - "config:get"
-    - "config:set"
-    - "ps:scale"
-  rate_limit:
-    enabled: true
-    requests_per_minute: 60
-```
+Create a `config.yaml` file from config.yaml.example:
 
 ### Environment Variables
 
@@ -202,15 +177,19 @@ dokku-mcp/
 ├── cmd/                    # Entry points for the application
 │   └── server/            # Server main command
 ├── internal/              # Private application code
-│   ├── domain/            # Domain layer (business logic)
-│   │   └── application/   # Application domain
-│   ├── application/       # Application layer
-│   │   └── handlers/      # MCP request handlers
-│   └── infrastructure/    # Infrastructure layer
-│       └── dokku/        # Dokku client implementation
+│   ├── server/            # MCP server and adapter
+│   ├── server-plugin/     # Plugin system infrastructure
+│   │   ├── domain/        # Plugin interfaces and contracts
+│   │   └── application/   # Plugin registry and management
+│   ├── server-plugins/    # Actual plugin implementations
+│   │   ├── app/          # Application management plugin
+│   │   ├── core/         # Core system functionality plugin
+│   │   └── deployment/   # Deployment services (in development)
+│   ├── dokku-api/        # Dokku CLI client and API
+│   ├── shared/           # Shared domain services
+│   └── pkg/              # Package utilities
 ├── docs/                  # Documentation
-├── scripts/              # Build and deployment scripts
-└── tests/                # Test files
+└── scripts/              # Build and deployment scripts
 ```
 
 ### Development Workflow
@@ -220,21 +199,9 @@ dokku-mcp/
    git checkout -b feature/your-feature-name
    ```
 
-2. **Follow TDD approach**
-   ```bash
-   # Write tests first
-   make test
-   
-   # Implement the feature
-   # Re-run tests
-   make test
-   ```
-
 3. **Verify code quality**
    ```bash
-   make lint
-   make fmt
-   make vet
+   make check
    ```
 
 4. **Run integration tests**
@@ -246,40 +213,40 @@ dokku-mcp/
 
 ```bash
 make help                # Show all available commands
-make build               # Build the server
-make test                # Run unit tests
-make test-coverage       # Run tests with coverage
-make test-integration    # Run integration tests
-make lint                # Analyze code
-make fmt                 # Format code
-make vet                 # Run static analysis
-make clean               # Clean build artifacts
-make install-tools       # Install development tools
 ```
 
 ### Adding New Features
 
-#### 1. Add a new MCP resource
+#### 1. Add a new MCP plugin
 
-1. **Define the domain entity** in `internal/domain/`
-2. **Create the repository interface** for data access
-3. **Implement the infrastructure** in `internal/infrastructure/`
-4. **Create the MCP handler** in `internal/application/handlers/`
-5. **Add tests** for all layers
+1. **Create plugin directory** in `internal/server-plugins/your-feature/`
+2. **Implement the plugin interface** in `plugin.go`:
+   ```go
+   type YourFeaturePlugin struct {
+       // dependencies
+   }
+   
+   func (p *YourFeaturePlugin) ID() string { return "your-feature" }
+   func (p *YourFeaturePlugin) Name() string { return "Your Feature" }
+   // ... other ServerPlugin methods
+   ```
+3. **Implement provider interfaces** (ResourceProvider, ToolProvider, PromptProvider)
+4. **Register in module system** with dependency injection
+5. **Add comprehensive tests** for all functionality
 
-#### 2. Add a new MCP tool
+#### 2. Extend existing plugin
 
-1. **Define the tool structure** in `internal/application/tools/`
-2. **Implement the tool logic** with appropriate validation
-3. **Add to tool registry**
-4. **Write complete tests**
+1. **Add new resources/tools/prompts** to existing plugin in `internal/server-plugins/`
+2. **Implement handlers** with proper validation and error handling
+3. **Update domain entities** if needed in plugin's domain layer
+4. **Add tests** for new functionality
 
-#### 3. Add a plugin
+#### 3. Add domain functionality
 
-1. **Create the plugin directory** in `internal/plugins/`
-2. **Implement the plugin interface**
-3. **Register the plugin** in the main server
-4. **Add specific tests for the plugin**
+1. **Define entities and value objects** in plugin's `domain/` directory
+2. **Create repository interfaces** for data access
+3. **Implement infrastructure adapters** for Dokku CLI integration
+4. **Wire through dependency injection** in plugin module
 
 ## Tests
 
@@ -304,59 +271,27 @@ make test-coverage
 make load-test
 ```
 
-## Security
-
-### Input Validation
-- All user inputs are validated before processing
-- Dokku command parameters are sanitized
-- Resource access is controlled and audited
-
-### Audit Logging
-- All operations are logged with client identification
-- Sensitive operations require additional validation
-- Complete audit trail for compliance
-
-### Rate Limiting
-- Configurable rate limits per client
-- Protection against abuse and resource exhaustion
-- Graceful degradation under load
-
-## Monitoring
-
-### Health Checks
-```bash
-curl http://localhost:8080/health
-```
-
-### Metrics
-- Prometheus metrics endpoint: `/metrics`
-- Custom metrics for Dokku operations
-- Performance and utilization statistics
-
-### Logging
-- Structured JSON logging
-- Configurable log levels
-- Request/response tracing
-
 ## Deployment
 
 ### Binary Version
 ```bash
-make build-all
-# Binaries available in build/
+make build
+# Binary available as ./build/dokku-mcp
+```
+
+### Running the Server
+```bash
+# Default stdio mode (for MCP clients)
+./dokku-mcp
+
+# SSE mode (for web clients)
+DOKKU_MCP_TRANSPORT_TYPE=sse DOKKU_MCP_TRANSPORT_HOST=0.0.0.0 DOKKU_MCP_TRANSPORT_PORT=8080 ./dokku-mcp
 ```
 
 ### Docker
 ```bash
 docker build -t dokku-mcp .
-docker run -p 8080:8080 dokku-mcp
-```
-
-### Systemd Service
-```bash
-sudo cp scripts/dokku-mcp.service /etc/systemd/system/
-sudo systemctl enable dokku-mcp
-sudo systemctl start dokku-mcp
+docker run dokku-mcp
 ```
 
 ## Integration with MCP Clients
@@ -381,11 +316,16 @@ Add to `~/.config/claude_desktop/claude_desktop_config.json` :
 
 ### Custom MCP Clients
 
-The server uses stdio by default but can be extended to support HTTP/SSE :
+The server supports two transport modes:
 
-```go
-// Example extension for HTTP
-mcpServer.ServeHTTP(ctx, ":8080")
+**stdio (default)**: Standard input/output for direct process communication
+```bash
+./dokku-mcp
+```
+
+**SSE (Server-Sent Events)**: HTTP-based transport for web clients
+```bash
+DOKKU_MCP_TRANSPORT_TYPE=sse DOKKU_MCP_TRANSPORT_HOST=0.0.0.0 DOKKU_MCP_TRANSPORT_PORT=8080 ./dokku-mcp
 ```
 
 ## Contribution
@@ -415,7 +355,7 @@ Contributions are welcome ! Please see our [Development Playbook](docs/playbooks
 
 ## Acknowledgments
 
-- [mcp-go](https://github.com/mark3labs/mcp-go) for the excellent Go implementation of the MCP protocol
+- [mcp-go](https://github.com/mark3labs/mcp-go) for the Go implementation of the MCP protocol
 - [Dokku](https://dokku.com/) for the fantastic PaaS platform
 - MCP community for specifications and tools
 

@@ -8,11 +8,12 @@ services:
       - "8080:80"   # HTTP
       - "8443:443"  # HTTPS
     volumes:
-      - "./docker-data/dokku:/mnt/dokku"
-      - "/var/run/docker.sock:/var/run/docker.sock"
-      - "./docker-data/plugin-list:/mnt/dokku/plugin-list"
+      - "docker-data:/mnt/dokku"
     environment:
       DOKKU_HOSTNAME: dokku.local
       DOKKU_HOST_ROOT: /var/lib/dokku/home/dokku
       DOKKU_LIB_HOST_ROOT: /var/lib/dokku/var/lib/dokku
     restart: unless-stopped 
+
+volumes:
+  docker-data:

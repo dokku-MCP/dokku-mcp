@@ -1,9 +1,12 @@
 # Dokku MCP Server Configuration Example
 # Copy this file to config.yaml and modify as needed
 
-# Server configuration
-host: "localhost"
-port: 8080
+# Transport configuration (choose stdio or sse)
+transport:
+  type: "stdio"      # "stdio" or "sse"
+  host: "localhost"  # Only used for sse/HTTP
+  port: 8080         # Only used for sse/HTTP
+
 log_level: "info"        # debug, info, warn, error
 log_format: "json"       # json, text
 timeout: "30s"
@@ -12,189 +15,70 @@ timeout: "30s"
 dokku_path: "/usr/bin/dokku"
 
 # SSH configuration for Dokku connection
-# The SSH authentication in this order:
+ssh:
+  host: "localhost"
+  port: 3022
+  user: "dokku"
+  key_path: ""    # Optional - leave empty for automatic authentication fallback
+
+# SSH Authentication Priority (automatic fallback):
 # 1. ssh-agent (if available and has keys loaded)
-# 2. ~/.ssh/id_rsa (if file exists and is readable)
-# 3. ssh_key_path (if configured and accessible)
+# 2. ~/.ssh/id_rsa (if file exists and is readable)  
+# 3. ssh.key_path (if configured and accessible)
 # 4. ssh-agent as last resort
-dokku_host: "dokku.me"
-dokku_port: 22
-dokku_user: "dokku"
-# ssh_key_path: ""  # Optional - leave empty to use automatic fallback
+
+# Plugin Discovery Configuration
+plugin_discovery:
+  enabled: true               # Enable/disable plugin discovery
+  sync_interval: "5m"         # How often to check for plugin changes
+                             # Use "0" or false to disable periodic sync
+                             # Examples: "30s", "5m", "1h"
 
 # Caching configuration
 cache_enabled: true
 cache_ttl: "5m"
 
-# Security configuration
 security:
-  # List of allowed Dokku commands that can be executed
-  allowed_commands:
-    # Application management
-    - "apps:list"
-    - "apps:info"
-    - "apps:create"
-    - "apps:destroy"
-    - "apps:exists"
-    - "apps:report"
+  # List of command patterns that are forbidden (substring matching)
+  # Commands containing these patterns will be blocked
+  blacklist:
+    - "destroy"          # Blocks: apps:destroy, postgres:destroy, redis:destroy, etc.
+    - "unset"            # Blocks: config:unset
+    - "remove"           # Blocks: domains:remove, ssh-keys:remove, etc.
+    - "uninstall"        # Blocks: plugin:uninstall
     
-    # Configuration management
-    - "config:get"
-    - "config:set"
-    - "config:unset"
-    - "config:show"
-    
-    # Process scaling
-    - "ps:scale"
-    - "ps:inspect"
-    - "ps:report"
-    
-    # Domain management
-    - "domains:add"
-    - "domains:remove"
-    - "domains:report"
-    
-    # SSL management
-    - "certs:add"
-    - "certs:remove"
-    - "certs:report"
-    
-    # Service management (if plugins are installed)
-    - "postgres:list"
-    - "postgres:info"
-    - "postgres:create"
-    - "postgres:destroy"
-    - "postgres:link"
-    - "postgres:unlink"
-    
-    - "redis:list"
-    - "redis:info"
-    - "redis:create"
-    - "redis:destroy"
-    - "redis:link"
-    - "redis:unlink"
-    
-    # Log access
-    - "logs"
-    
-    # Health checks
-    - "checks:run"
-    - "checks:report"
-  
-  # Rate limiting configuration
-  rate_limit:
-    enabled: true
-    requests_per_minute: 60
-    burst_size: 10
-  
-  # Authentication (future implementation)
-  auth:
-    enabled: false
-    type: "api_key"  # api_key, oauth2, jwt
-    
-  # Audit logging
-  audit:
-    enabled: true
-    log_file: "/var/log/dokku-mcp/audit.log"
-    include_request_body: false
-    include_response_body: false
+    # You can also be more specific:
+    # - "apps:destroy"   # Only blocks exact apps:destroy command
+    # - "postgres:"      # Blocks all postgres commands
+    # - ":destroy"       # Blocks any service destroy command
 
-# MCP protocol configuration
-mcp:
-  # Maximum message size in bytes
-  max_message_size: 1048576  # 1MB
-  
-  # Request timeout
-  request_timeout: "30s"
-  
-  # Keep-alive settings
-  keep_alive: true
-  keep_alive_timeout: "60s"
-  
-  # Compression
-  compression_enabled: true
+# Example configurations for different scenarios:
 
-# Resource configuration
-resources:
-  # Application resource settings
-  applications:
-    cache_ttl: "30s"
-    include_inactive: false
-    max_list_size: 100
-  
-  # Service resource settings
-  services:
-    cache_ttl: "60s"
-    include_unlinked: false
-    max_list_size: 50
-  
-  # Log resource settings
-  logs:
-    cache_ttl: "10s"
-    max_lines: 1000
-    tail_lines: 100
-    follow_enabled: false
-  
-  # Metrics resource settings
-  metrics:
-    cache_ttl: "30s"
-    collection_interval: "15s"
-    retention_period: "24h"
+# Example 1: Local Dokku instance
+# ssh:
+#   host: "localhost"
+#   port: 22
+#   user: "dokku"
+#   key_path: ""
 
-# Tool configuration
-tools:
-  # Deployment tool settings
-  deploy:
-    timeout: "300s"
-    allow_force_deploy: false
-    max_parallel_deploys: 3
-  
-  # Scaling tool settings
-  scale:
-    timeout: "60s"
-    max_processes_per_type: 10
-    allow_zero_scale: true
-  
-  # Configuration tool settings
-  config:
-    timeout: "30s"
-    allow_sensitive_vars: false
-    blacklisted_keys:
-      - "DATABASE_URL"
-      - "SECRET_KEY"
-      - "API_KEY"
+# Example 2: Remote Dokku with custom SSH key
+# ssh:
+#   host: "dokku.mydomain.com"
+#   port: 22
+#   user: "dokku"
+#   key_path: "/home/user/.ssh/dokku_rsa"
 
-# Plugin configuration
-plugins:
-  # Database plugin settings
-  database:
-    enabled: true
-    supported_types:
-      - "postgres"
-      - "mysql"
-      - "redis"
-      - "mongodb"
-    backup_enabled: true
-    backup_retention: "7d"
-  
-  # Storage plugin settings
-  storage:
-    enabled: true
-    supported_types:
-      - "minio"
-      - "s3"
-    max_volume_size: "10G"
-  
-  # Monitoring plugin settings
-  monitoring:
-    enabled: true
-    metrics_endpoint: "/metrics"
-    health_endpoint: "/health"
-    prometheus_enabled: true
+# Example 3: Remote Dokku with custom port
+# ssh:
+#   host: "dokku.mydomain.com"
+#   port: 2222
+#   user: "dokku"
+#   key_path: ""
 
-# Development settings (only for development environment)
-development:
-  debug_mode: false
-  hot_reload: false
-  mock_dokku: false
-  fake_data: false 
+# Example 4: Development environment with longer timeouts
+# ssh:
+#   host: "dev-dokku.local"
+#   port: 22
+#   user: "dokku"
+#   key_path: ""
+# timeout: "60s" 

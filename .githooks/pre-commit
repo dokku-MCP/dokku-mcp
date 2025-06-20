@@ -42,37 +42,14 @@ done
 echo -e "${GREEN}  ✓ Syntax validated${NC}"
 
 echo -e "${BLUE}🔎 Static analysis (go vet)...${NC}"
-for file in $STAGED_GO_FILES; do
-    if ! go vet "$file" 2>/dev/null; then
-        echo -e "${RED}❌ go vet failed for $file${NC}"
+PACKAGES=$(for file in $STAGED_GO_FILES; do dirname "$file"; done | sort -u)
+for pkg in $PACKAGES; do
+    if ! go vet "./$pkg" 2>/dev/null; then
+        echo -e "${RED}❌ go vet failed for package $pkg${NC}"
         exit 1
     fi
 done
 echo -e "${GREEN}  ✓ go vet passed successfully${NC}"
-
-echo -e "${BLUE}🚫 Checking forbidden patterns (Strong Typing)...${NC}"
-FORBIDDEN_PATTERNS=(
-    "interface{}"
-    "any"
-    "reflect\."
-    "unsafe\."
-)
-
-VIOLATIONS_FOUND=false
-for file in $STAGED_GO_FILES; do
-    for pattern in "${FORBIDDEN_PATTERNS[@]}"; do
-        if grep -q "$pattern" "$file"; then
-            echo -e "${RED}❌ Forbidden pattern '$pattern' found in $file${NC}"
-            VIOLATIONS_FOUND=true
-        fi
-    done
-done
-
-if [ "$VIOLATIONS_FOUND" = true ]; then
-    echo -e "${YELLOW}💡 Use strongly typed interfaces according to project rules${NC}"
-    exit 1
-fi
-echo -e "${GREEN}  ✓ No forbidden patterns detected${NC}"
 
 if command -v gocyclo >/dev/null 2>&1; then
     echo -e "${BLUE}📊 Checking cyclomatic complexity...${NC}"
@@ -100,27 +77,6 @@ else
     echo -e "${YELLOW}  ⏭️  golangci-lint not installed, advanced linting skipped${NC}"
 fi
 
-if command -v gosec >/dev/null 2>&1; then
-    echo -e "${BLUE}🔒 Security analysis with gosec...${NC}"
-    PACKAGES=$(for file in $STAGED_GO_FILES; do dirname "$file"; done | sort -u)
-    SECURITY_ISSUES=false
-    
-    for pkg in $PACKAGES; do
-        if ! gosec -quiet "$pkg" >/dev/null 2>&1; then
-            SECURITY_ISSUES=true
-        fi
-    done
-    
-    if [ "$SECURITY_ISSUES" = true ]; then
-        echo -e "${YELLOW}⚠️  Potential security issues detected${NC}"
-        echo -e "${YELLOW}💡 Run 'gosec ./...' for details${NC}"
-    else
-        echo -e "${GREEN}  ✓ Security analysis passed${NC}"
-    fi
-else
-    echo -e "${YELLOW}  ⏭️  gosec not installed, security analysis skipped${NC}"
-fi
-
 if command -v dupl >/dev/null 2>&1; then
     echo -e "${BLUE}👯 Detecting duplicate code...${NC}"
     DUPLICATES=$(dupl -threshold 50 $STAGED_GO_FILES 2>/dev/null || true)
@@ -140,7 +96,7 @@ PACKAGES=$(for file in $STAGED_GO_FILES; do dirname "$file"; done | sort -u)
 
 TEST_FAILURES=false
 for pkg in $PACKAGES; do
-    if [ -f "$pkg"/*_test.go ]; then
+    if ls "$pkg"/*_test.go >/dev/null 2>&1; then
         if ! go test -short "./$pkg" >/dev/null 2>&1; then
             echo -e "${YELLOW}⚠️  Tests failed for $pkg${NC}"
             TEST_FAILURES=true

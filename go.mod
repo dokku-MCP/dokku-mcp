@@ -3,7 +3,6 @@ module github.com/alex-galey/dokku-mcp
 go 1.24.4
 
 require (
-	github.com/goccy/go-yaml v1.18.0
 	github.com/mark3labs/mcp-go v0.32.0
 	github.com/onsi/ginkgo/v2 v2.23.4
 	github.com/onsi/gomega v1.37.0

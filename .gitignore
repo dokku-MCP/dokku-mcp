@@ -95,9 +95,6 @@ docker-compose.override.yml
 .terraformrc
 terraform.tfvars
 
-# Air live reload
-.air.toml
-
 # GoReleaser
 .goreleaser.yml
 
@@ -122,3 +119,4 @@ docker-data/
 **/*dokku_mcp_test*
 
 dokku-mcp
+dokku-mcp-server

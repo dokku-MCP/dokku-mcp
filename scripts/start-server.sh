@@ -39,7 +39,7 @@ warn() {
 # Vérifier si Go est installé
 check_go() {
     if ! command -v go &> /dev/null; then
-        error "Go n'est pas installé. Veuillez installer Go 1.21 ou plus récent."
+        error "Go n'est pas installé. Veuillez installer Go 1.24 ou plus récent."
         exit 1
     fi
     
@@ -48,7 +48,7 @@ check_go() {
     MINOR=$(echo $GO_VERSION | cut -d. -f2)
     
     if [ "$MAJOR" -lt 1 ] || ([ "$MAJOR" -eq 1 ] && [ "$MINOR" -lt 21 ]); then
-        error "Go 1.21 ou plus récent est requis. Version installée: $GO_VERSION"
+        error "Go 1.24 ou plus récent est requis. Version installée: $GO_VERSION"
         exit 1
     fi
     
@@ -72,7 +72,7 @@ build_server() {
         make build
         success "Serveur construit avec succès"
     else
-        log "Serveur déjà construit et à jour"
+        log "Already built and up-to-date server"
     fi
 }
 

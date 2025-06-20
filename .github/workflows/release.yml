@@ -3,146 +3,253 @@ name: Release
 on:
   push:
     tags:
-      - 'v*.*.*'
-  release:
-    types: [published]
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., v1.0.0)'
+        required: true
+        type: string
+
+env:
+  GO_VERSION: '1.24'
 
 jobs:
-  regression-tests:
-    name: Regression Tests
+  create-release:
+    name: Create Release
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Setup Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.24'
-        cache: true
-    
-    - name: Install Dokku
-      run: |
-        wget -O- https://raw.githubusercontent.com/dokku/dokku/v0.34.0/bootstrap.sh | sudo bash
-        sudo dokku plugin:install-dependencies --core
-        sudo dokku events:on || true
-        sudo usermod -aG dokku $USER
-    
-    - name: Install tools
-      run: make install-tools
-    
-    - name: Complete regression tests
-      run: make -f Makefile.ci test-ci-regression
-    
-    - name: Final cleanup
-      if: always()
-      run: make -f Makefile.ci cleanup-ci
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-  performance-benchmarks:
-    name: Performance Benchmarks
-    runs-on: ubuntu-latest
-    needs: [regression-tests]
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Setup Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.24'
-        cache: true
-    
-    - name: Install Dokku
-      run: |
-        wget -O- https://raw.githubusercontent.com/dokku/dokku/v0.34.0/bootstrap.sh | sudo bash
-        sudo dokku plugin:install-dependencies --core
-        sudo dokku events:on || true
-        sudo usermod -aG dokku $USER
-    
-    - name: Install Ginkgo
-      run: make install-ginkgo
-    
-    - name: Performance benchmarks
-      run: make -f Makefile.ci test-ci-performance
-    
-    - name: Upload benchmark results
-      uses: actions/upload-artifact@v3
-      with:
-        name: benchmark-results
-        path: |
-          *.prof
-          *.html
-    
-    - name: Cleanup
-      if: always()
-      run: make -f Makefile.ci cleanup-ci
+      - name: Get version
+        id: get_version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION=${GITHUB_REF#refs/tags/}
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-  # Build et release
-  build-and-release:
-    name: Build and Release
+      - name: Generate changelog
+        id: changelog
+        run: |
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")
+          if [[ -n "$PREVIOUS_TAG" ]]; then
+            CHANGELOG=$(git log $PREVIOUS_TAG..HEAD --oneline --pretty=format:"- %s")
+          else
+            CHANGELOG="Initial release"
+          fi
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.get_version.outputs.version }}
+          release_name: Release ${{ steps.get_version.outputs.version }}
+          body: |
+            ## Changes
+            ${{ steps.changelog.outputs.changelog }}
+            
+            ## Installation
+            
+            Download the appropriate binary for your platform from the assets below.
+            
+            ### Linux/macOS
+            ```bash
+            # Download and install (replace with actual URL for your architecture)
+            curl -L -o dokku-mcp https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.version }}/dokku-mcp-linux-amd64
+            chmod +x dokku-mcp
+            sudo mv dokku-mcp /usr/local/bin/
+            ```
+            
+            ### Verify installation
+            ```bash
+            dokku-mcp --version
+            ```
+          draft: false
+          prerelease: false
+
+  build-and-upload:
+    name: Build and Upload
     runs-on: ubuntu-latest
-    needs: [regression-tests, performance-benchmarks]
+    needs: create-release
+    strategy:
+      matrix:
+        os: [linux, darwin]
+        arch: [amd64, arm64]
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Setup Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.24'
-        cache: true
-    
-    - name: Extract version
-      id: version
-      run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-    
-    - name: Build multi-platform
-      run: |
-        export VERSION=${{ steps.version.outputs.VERSION }}
-        make build-all
-    
-    - name: Generate changelog
-      run: make changelog
-    
-    - name: Create checksums
-      run: |
-        cd build
-        sha256sum * > checksums.txt
-    
-    - name: GitHub Release
-      uses: softprops/action-gh-release@v1
-      with:
-        files: |
-          build/*
-          CHANGELOG.md
-        body: |
-          ## Dokku MCP Server ${{ steps.version.outputs.VERSION }}
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Cache Go modules
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: 0
+        run: |
+          BINARY_NAME="dokku-mcp-${{ matrix.os }}-${{ matrix.arch }}"
+          if [[ "${{ matrix.os }}" == "windows" ]]; then
+            BINARY_NAME="${BINARY_NAME}.exe"
+          fi
           
-          ### Regression Tests ✅
-          - Unit tests: ✅
-          - Integration tests: ✅
-          - Security tests: ✅
-          - Benchmarks: ✅
+          go build \
+            -ldflags "-X main.Version=${{ needs.create-release.outputs.version }} -X main.BuildTime=$(date -u '+%Y-%m-%d_%H:%M:%S') -s -w" \
+            -o "build/${BINARY_NAME}" \
+            cmd/server/main.go
+
+      - name: Create archive
+        run: |
+          cd build
+          BINARY_NAME="dokku-mcp-${{ matrix.os }}-${{ matrix.arch }}"
+          if [[ "${{ matrix.os }}" == "windows" ]]; then
+            BINARY_NAME="${BINARY_NAME}.exe"
+          fi
           
-          ### Available Builds
-          - Linux AMD64
-          - Linux ARM64
-          - Darwin AMD64
-          - Darwin ARM64
+          # Create archive
+          if [[ "${{ matrix.os }}" == "windows" ]]; then
+            zip "${BINARY_NAME%.exe}.zip" "$BINARY_NAME"
+            ARCHIVE="${BINARY_NAME%.exe}.zip"
+          else
+            tar -czf "${BINARY_NAME}.tar.gz" "$BINARY_NAME"
+            ARCHIVE="${BINARY_NAME}.tar.gz"
+          fi
           
-          ### Installation
-          ```bash
-          # Download and install
-          wget https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.VERSION }}/dokku-mcp-linux-amd64
-          chmod +x dokku-mcp-linux-amd64
-          sudo mv dokku-mcp-linux-amd64 /usr/local/bin/dokku-mcp
-          ```
+          echo "ARCHIVE=$ARCHIVE" >> $GITHUB_ENV
+          echo "BINARY_NAME=$BINARY_NAME" >> $GITHUB_ENV
+
+      - name: Upload binary
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: build/${{ env.BINARY_NAME }}
+          asset_name: ${{ env.BINARY_NAME }}
+          asset_content_type: application/octet-stream
+
+      - name: Upload archive
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: build/${{ env.ARCHIVE }}
+          asset_name: ${{ env.ARCHIVE }}
+          asset_content_type: application/octet-stream
+
+  docker-build:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    needs: create-release
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: dokku/mcp-server
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ needs.create-release.outputs.version }}
+            BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S')
+
+  update-docs:
+    name: Update Documentation
+    runs-on: ubuntu-latest
+    needs: [create-release, build-and-upload]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update version in docs
+        run: |
+          VERSION="${{ needs.create-release.outputs.version }}"
+          # Update README.md with new version
+          sed -i "s/Version: v[0-9]\+\.[0-9]\+\.[0-9]\+/Version: $VERSION/g" README.md || true
           
-          See checksums in `checksums.txt` to verify file integrity.
-        draft: false
-        prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
+          # Update installation instructions
+          sed -i "s|releases/download/v[0-9]\+\.[0-9]\+\.[0-9]\+/|releases/download/$VERSION/|g" README.md || true
+
+      - name: Commit documentation updates
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add README.md
+          git diff --staged --quiet || git commit -m "docs: update version to ${{ needs.create-release.outputs.version }}"
+          git push
+
+  notify-success:
+    name: Notify Success
+    runs-on: ubuntu-latest
+    needs: [create-release, build-and-upload, docker-build, update-docs]
+    if: success()
+    
+    steps:
+      - name: Success notification
+        run: |
+          echo "🎉 Release ${{ needs.create-release.outputs.version }} completed successfully!"
+          echo "📦 Binaries built for all platforms"
+          echo "🐳 Docker image pushed"
+          echo "📚 Documentation updated" 

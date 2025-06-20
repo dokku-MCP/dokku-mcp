@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "dokku": {
+      "command": "./build/dokku-mcp",
+      "args": [],
+      "env": {
+        "DOKKU_MCP_LOG_LEVEL": "debug"
+      }
+    }
+  }
+} 

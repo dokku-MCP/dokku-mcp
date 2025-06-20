@@ -1,0 +1,12 @@
+# Dokku MCP Server API Documentation
+Generated on: Thu Jun 19 01:23:32 CEST 2025
+
+## Package: cmd
+
+
+## Package: internal
+
+
+## Package: pkg
+
+

@@ -250,17 +250,6 @@ dlv test ./internal/application/handlers
 - [ ] Performance verified (no N+1, timeouts)
 - [ ] Security verified (validation, sanitization)
 
-### Quality Metrics
-```bash
-# Cyclomatic complexity
-gocyclo -over 20 ./...
-
-# Duplicate code detection
-dupl -threshold 50 ./...
-
-# Security analysis
-gosec ./...
-```
 
 ## Deployment and Release
 
@@ -278,15 +267,3 @@ make build-all
 # Complete regression tests
 make test-regression
 ```
-
-### Pre-Production Validation
-```bash
-# Integration tests on staging environment
-make test-integration-staging
-
-# Load tests
-make load-test
-
-# Security tests
-make security-test
-``` 

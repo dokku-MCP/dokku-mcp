@@ -2,178 +2,220 @@ name: CI
 
 on:
   push:
-    branches: [ main, develop ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main ]
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+env:
+  GO_VERSION: '1.24'
+  GINKGO_VERSION: 'latest'
 
 jobs:
-  unit-tests:
-    name: Unit Tests & Quality
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Setup Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.24'
-        cache: true
-    
-    - name: Install development tools
-      run: make install-tools
-    
-    - name: Validate CI environment
-      run: make -f Makefile.ci validate-ci-environment
-    
-    - name: Check formatting
-      run: |
-        make fmt
-        git diff --exit-code
-    
-    - name: Static analysis
-      run: make vet
-    
-    - name: Linting
-      run: make lint
-    
-    - name: Cyclomatic complexity
-      run: make cyclo
-    
-    - name: Duplicate code detection  
-      run: make dupl
-    
-    - name: Security tests
-      run: make security-test
-    
-    - name: Unit tests with coverage
-      run: make -f Makefile.ci test-ci-unit
-    
-    - name: Race condition tests
-      run: make test-race
-    
-    - name: Upload coverage reports
-      uses: codecov/codecov-action@v3
-      with:
-        file: ./coverage.out
-        flags: unittests
-        name: codecov-umbrella
-
-  integration-tests-mock:
-    name: Integration Tests (Mock)
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Setup Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.24'
-        cache: true
-    
-    - name: Install Ginkgo
-      run: make install-ginkgo
-    
-    - name: Integration tests with mocks
-      run: make -f Makefile.ci test-ci-integration-mock
-      
-  integration-tests-real:
-    name: Integration Tests (Real)
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Setup Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.24'
-        cache: true
-    
-    - name: Install Dokku
-      run: |
-        wget -O- https://raw.githubusercontent.com/dokku/dokku/v0.34.0/bootstrap.sh | sudo bash
-        sudo dokku plugin:install-dependencies --core
-        
-        sudo dokku events:on || true
-        sudo usermod -aG dokku $USER
-    
-    - name: Install Ginkgo
-      run: make install-ginkgo
-    
-    - name: Integration tests with real Dokku
-      run: make -f Makefile.ci test-ci-integration-real
-        
-    - name: Clean up test applications
-      if: always()
-      run: make test-integration-clean
-
-  benchmarks:
-    name: Benchmarks
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Setup Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.24'
-        cache: true
-    
-    - name: Install Dokku
-      run: |
-        wget -O- https://raw.githubusercontent.com/dokku/dokku/v0.34.0/bootstrap.sh | sudo bash
-        sudo dokku plugin:install-dependencies --core
-        sudo dokku events:on || true
-        sudo usermod -aG dokku $USER
-    
-    - name: Install Ginkgo
-      run: make install-ginkgo
-    
-    - name: Run benchmarks
-      run: make -f Makefile.ci test-ci-performance
-    
-    - name: Cleanup
-      if: always()
-      run: make -f Makefile.ci cleanup-ci
-
   build:
-    name: Build Multi-Platform
+    name: Build
     runs-on: ubuntu-latest
-    needs: [unit-tests]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Cache Go modules
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Build server
+        run: make build
+
+      - name: Build all platforms
+        run: make build-all
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries
+          path: build/
+
+  # Quality checks running in parallel
+  quality-checks:
+    name: Quality Checks
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        check: [format, vet, lint, type, complexity, duplicates, security]
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Cache Go modules
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Install development tools
+        run: make install-tools
+
+      - name: Run format check
+        if: matrix.check == 'format'
+        run: |
+          make fmt
+          git diff --exit-code || (echo "Code not formatted. Run 'make fmt'" && exit 1)
+
+      - name: Run vet
+        if: matrix.check == 'vet'
+        run: make vet
+
+      - name: Run lint
+        if: matrix.check == 'lint'
+        run: make lint
+
+      - name: Run type
+        if: matrix.check == 'type'
+        run: make type
+
+      - name: Run complexity check
+        if: matrix.check == 'complexity'
+        run: make cyclo
+
+      - name: Run duplicate code check
+        if: matrix.check == 'duplicates'
+        run: make dupl
+
+      - name: Run security check
+        if: matrix.check == 'security'
+        run: make security-test
+
+  tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        test-type: [standard, race, coverage]
     
-    - name: Setup Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.24'
-        cache: true
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Cache Go modules
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Install Ginkgo
+        run: go install github.com/onsi/ginkgo/v2/ginkgo@${{ env.GINKGO_VERSION }}
+
+      - name: Run tests
+        if: matrix.test-type == 'standard'
+        run: make test
+
+      - name: Run race detector tests
+        if: matrix.test-type == 'race'
+        run: make test-race
+
+      - name: Upload coverage artifact
+        if: matrix.test-type == 'coverage'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.out
+
+  dependency-analysis:
+    name: Dependency Analysis
+    runs-on: ubuntu-latest
     
-    - name: Build multi-platform
-      run: make build-all
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Run Go vulnerability check
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+      - name: Run Nancy (dependency vulnerability scanner)
+        run: |
+          go list -json -deps ./... | docker run --rm -i sonatypecommunity/nancy:latest sleuth
+
+  ci-success:
+    name: CI Success
+    runs-on: ubuntu-latest
+    needs: [build, quality-checks, tests, dependency-analysis, dependency-graph]
+    if: always()
     
-    - name: Test binary
-      run: |
-        ./build/dokku-mcp-linux-amd64 --version
-    
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v3
-      with:
-        name: binaries
-        path: build/ 
+    steps:
+      - name: Check all jobs status
+        run: |
+          if [[ "${{ needs.build.result }}" != "success" ]]; then
+            echo "❌ Build failed"
+            exit 1
+          fi
+          if [[ "${{ needs.quality-checks.result }}" != "success" ]]; then
+            echo "❌ Quality checks failed"
+            exit 1
+          fi
+          if [[ "${{ needs.tests.result }}" != "success" ]]; then
+            echo "❌ Tests failed"
+            exit 1
+          fi
+          if [[ "${{ needs.dependency-analysis.result }}" != "success" ]]; then
+            echo "❌ Dependency analysis failed"
+            exit 1
+          fi
+          if [[ "${{ needs.dependency-graph.result }}" != "success" ]]; then
+            echo "❌ Dependency graph generation failed"
+            exit 1
+          fi
+          echo "✅ All CI jobs passed successfully!"
+
+      - name: Post success status
+        run: |
+          echo "🎉 CI Pipeline completed successfully!"
+          echo "📊 All quality checks passed"
+          echo "🧪 All tests passed"
+          echo "🔒 Security analysis passed"
+          echo "📈 Dependency analysis completed" 

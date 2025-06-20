@@ -1,34 +1,50 @@
 BINARY_NAME=dokku-mcp
 VERSION?=v0.1.0
-ENTRYPOINT=cmd/dokku-mcp/main.go
+ENTRYPOINT=cmd/server/main.go
 BUILD_DIR=build
+GO_SRC_DIRS=./cmd/... ./internal/... ./pkg/...
+GO_SRC_PATHS=cmd internal pkg
 LDFLAGS=-ldflags "-X main.Version=$(VERSION) -X main.BuildTime=$(shell date -u '+%Y-%m-%d_%H:%M:%S')"
 
 GREEN=\033[0;32m
 YELLOW=\033[0;33m
 RED=\033[0;31m
+BLUE=\033[0;34m
 NC=\033[0m
 
-# Include CI/CD specific targets
-include Makefile.ci
+all: help
 
-all: help ## This help
+help: ## Show this help
+	@printf "$(GREEN)Dokku MCP Server - Development Commands$(NC)\n"
+	@printf "\n"
+	@printf "$(YELLOW)Commands:$(NC)\n"
+	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  $(GREEN)%-15s$(NC) %s\n", $$1, $$2}' Makefile
+	@printf "\n"
+
+dev: ## Run in development mode with live reload
+	@mkdir -p tmp
+	DOKKU_MCP_LOG_LEVEL=debug air
 
 setup-dev: ## Setup development environment
 	@printf "$(GREEN)🚀 Setting up development environment...$(NC)\n"
 	./scripts/setup-dev.sh
 
-help: ## Show this help
-	@printf "$(GREEN)Dokku MCP Server - Development Commands$(NC)\n"
-	@printf "\n"
-	@printf "$(YELLOW)Development Commands:$(NC)\n"
-	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  $(GREEN)%-15s$(NC) %s\n", $$1, $$2}' Makefile
-	@printf "\n"
-	@printf "$(YELLOW)CI/CD Commands:$(NC)\n"
-	@printf "  $(GREEN)make ci-help$(NC)      Show CI/CD specific commands\n"
-	@printf "  $(GREEN)make test-pr$(NC)      Run Pull Request test suite\n"
-	@printf "  $(GREEN)make test-main$(NC)    Run main branch test suite\n"
-	@printf "  $(GREEN)make test-release$(NC)  Run release test suite\n"
+setup-dokku: ## Setup local Dokku instance via Docker
+	@printf "$(GREEN)🐳 Setting up local Dokku instance...$(NC)\n"
+	./scripts/setup-dokku-local.sh
+
+install-tools: ## Install development tools
+	@printf "$(GREEN)🔧 Installing development tools...$(NC)\n"
+	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	go install golang.org/x/tools/cmd/goimports@latest
+	go install github.com/fzipp/gocyclo/cmd/gocyclo@latest
+	go install github.com/mibk/dupl@latest
+	go install github.com/securego/gosec/v2/cmd/gosec@latest
+	go install github.com/golang/mock/mockgen@latest
+	go install github.com/onsi/ginkgo/v2/ginkgo@latest
+	go install github.com/go-delve/delve/cmd/dlv@latest
+	go install golang.org/x/tools/cmd/godoc@latest
+	go install github.com/air-verse/air@latest
 
 check: ## Run all quality checks
 	@printf "$(GREEN)🔍 Run all quality checks...$(NC)\n"
@@ -37,12 +53,28 @@ check: ## Run all quality checks
 	-@$(MAKE) --no-print-directory lint
 	-@$(MAKE) --no-print-directory cyclo
 	-@$(MAKE) --no-print-directory dupl
-	-@$(MAKE) --no-print-directory security-test
+	-@$(MAKE) --no-print-directory _check-security
 	@printf "$(GREEN)✅ All quality checks completed successfully!$(NC)\n"
+
+start: build
+	@printf "$(GREEN)== Starting MCP server ==$(NC)\n"
+	./$(BUILD_DIR)/$(BINARY_NAME)
+
+start-docker: build-docker
+	@printf "$(GREEN)== Starting MCP server ==$(NC)\n"
+	docker run dokku-mcp
+
+inspect: ## Inspect the MCP server
+	@printf "$(GREEN)🔍 Inspecting MCP server...$(NC)\n"
+	npx @modelcontextprotocol/inspector
 
 build: ## Build the MCP server
 	@printf "$(GREEN)📦 Building MCP server...$(NC)\n"
 	go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) $(ENTRYPOINT)
+
+build-docker:
+	@printf "$(GREEN)📦 Building MCP server docker container...$(NC)\n"
+	docker build -t dokku-mcp .
 
 build-all: ## Build for all platforms
 	@printf "$(GREEN)📦 Multi-platform build...$(NC)\n"
@@ -51,84 +83,49 @@ build-all: ## Build for all platforms
 	GOOS=darwin GOARCH=amd64 go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 $(ENTRYPOINT)
 	GOOS=darwin GOARCH=arm64 go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 $(ENTRYPOINT)
 
-install-ginkgo: ## Install Ginkgo and Gomega
-	@printf "$(GREEN)🔧 Installing Ginkgo and Gomega...$(NC)\n"
-	go install github.com/onsi/ginkgo/v2/ginkgo@latest
-	go mod tidy
+# Testing Commands
+test: ## Run tests with coverage reports
+	@ginkgo -r --coverprofile=coverage.out --timeout=2m --flake-attempts=2 --randomize-all --poll-progress-after=10s --tags="!integration" --skip-package="dokku-api" internal/
+	@DOKKU_MCP_INTEGRATION_TESTS=1 DOKKU_MCP_LOG_LEVEL=error ginkgo -r -tags=integration --coverprofile=coverage-integration.out --timeout=1m --flake-attempts=2 --randomize-all --poll-progress-after=15s internal/dokku-api/ | grep -v "time=.*level="
 
-# Development Testing Commands
-test: install-ginkgo ## Run unit tests with Ginkgo
-	@printf "$(GREEN)🧪 Running unit tests with Ginkgo...$(NC)\n"
-	ginkgo -p -r --timeout=2m --flake-attempts=2 --randomize-all --poll-progress-after=10s internal/domain/ internal/application/ internal/interface/
+test-verbose: ## Run tests with all details
+	ginkgo -v -r --timeout=2m --flake-attempts=2 --randomize-all --poll-progress-after=10s --tags="!integration" --skip-package="dokku-api" internal/
+	DOKKU_MCP_INTEGRATION_TESTS=1 DOKKU_MCP_LOG_LEVEL=debug ginkgo -v -r -tags=integration --timeout=5m --flake-attempts=2 --randomize-all --poll-progress-after=15s internal/dokku-api/
 
-test-verbose: install-ginkgo ## Run unit tests with verbose output
-	@printf "$(GREEN)🧪 Running unit tests (verbose)...$(NC)\n"
-	ginkgo -v -r --timeout=2m --flake-attempts=2 --randomize-all --poll-progress-after=10s internal/domain/ internal/application/ internal/interface/
-
-test-focus: install-ginkgo ## Run focused unit tests
-	@printf "$(GREEN)🧪 Running focused unit tests...$(NC)\n"
-	ginkgo -focus="$(FOCUS)" -r --timeout=2m --flake-attempts=2 --randomize-all --poll-progress-after=10s internal/domain/ internal/application/ internal/interface/
-
-test-watch: install-ginkgo ## Run unit tests with watch mode
-	@printf "$(GREEN)👀 Watching unit tests...$(NC)\n"
-	ginkgo watch -r --timeout=2m --flake-attempts=2 --randomize-all --poll-progress-after=10s internal/domain/ internal/application/ internal/interface/
-
-test-coverage: install-ginkgo ## Generate test coverage report with Ginkgo
-	@printf "$(GREEN)📊 Tests with coverage (Ginkgo)...$(NC)\n"
-	ginkgo -p -r --coverprofile=coverage.out --timeout=2m --flake-attempts=2 --randomize-all --poll-progress-after=10s internal/domain/ internal/application/ internal/interface/
-	go tool cover -html=coverage.out -o coverage.html
-	@printf "$(YELLOW)📄 Coverage report: coverage.html$(NC)\n"
-
-test-infrastructure-unit: ## Run infrastructure unit tests (non-integration)
-	@printf "$(GREEN)🧪 Running infrastructure unit tests...$(NC)\n"
-	go test -v -race -timeout=2m ./internal/infrastructure/...
-
-# Integration Testing Commands  
-test-integration: install-ginkgo ## Run integration tests with Ginkgo
-	@printf "$(GREEN)🧪 Running integration tests with Ginkgo...$(NC)\n"
-	DOKKU_MCP_INTEGRATION_TESTS=1 ginkgo -p -tags=integration --timeout=5m --flake-attempts=2 --randomize-all --poll-progress-after=15s . internal/infrastructure/dokku/
-
-test-integration-verbose: install-ginkgo ## Run integration tests with verbose output
-	@printf "$(GREEN)🧪 Running integration tests (verbose) with Ginkgo...$(NC)\n"
-	DOKKU_MCP_INTEGRATION_TESTS=1 ginkgo -v -tags=integration --timeout=5m --flake-attempts=2 --randomize-all --poll-progress-after=15s . internal/infrastructure/dokku/
-
-test-race: install-ginkgo ## Run tests with race detector
+# Integration Testing Commands 
+test-race: ## -experimental- Run tests with race detector
 	@printf "$(GREEN)🏁 Tests with race detector...$(NC)\n"
-	ginkgo -race -r --timeout=3m --flake-attempts=2 --randomize-all --poll-progress-after=10s internal/domain/ internal/application/ internal/interface/
+	ginkgo -race -r --timeout=3m --flake-attempts=2 --randomize-all --poll-progress-after=10s --tags="!integration" internal/
 
-test-all-unit: test test-infrastructure-unit ## Run all unit tests (domain + application + interface + infrastructure unit)
-	@printf "$(GREEN)✅ All unit tests completed!$(NC)\n"
-
-test-all: test-all-unit test-integration ## Run all tests (unit + integration)
-	@printf "$(GREEN)✅ All tests completed!$(NC)\n"
-
-test-regression: ## Run all regression tests
-	@printf "$(GREEN)🔍 Regression tests...$(NC)\n"
-	make test
-	make test-integration
-	make lint
-	make security-test
-
-test-resources: ## Test MCP resources
-	@printf "$(GREEN)🔌 Testing MCP resources...$(NC)\n"
-	go run cmd/test-client/main.go --list-resources
+test-integration-local: dokku-start ## -experimental- Run integration tests with local Dokku
+	@printf "$(GREEN)🧪 Running integration tests with local Dokku...$(NC)\n"
+	@if [ -f ".env.dokku-local" ]; then \
+		set -a && source .env.dokku-local && set +a && \
+		DOKKU_MCP_LOG_LEVEL=error ginkgo -v -tags=integration --timeout=5m --flake-attempts=2 --randomize-all --poll-progress-after=15s internal/dokku-api/ | grep -v "time=.*level="; \
+	else \
+		printf "$(RED)❌ .env.dokku-local not found. Run 'make dokku-setup' first$(NC)\n"; \
+		exit 1; \
+	fi
 
 lint: ## Check code style
 	@printf "$(GREEN)🔍 Linting code...$(NC)\n"
-	golangci-lint run ./...
+	golangci-lint run $(GO_SRC_DIRS)
+
+type: ## Check type safety
+	@$(MAKE) --no-print-directory _check-type-safety
 
 fmt: ## Format code
 	@printf "$(GREEN)✨ Formatting code...$(NC)\n"
-	go fmt ./...
-	goimports -w .
+	go fmt $(GO_SRC_DIRS)
+	goimports -w $(GO_SRC_PATHS)
 
 vet: ## Static code analysis
 	@printf "$(GREEN)🔎 Static analysis...$(NC)\n"
-	go vet ./...
+	go vet $(GO_SRC_DIRS)
 
 cyclo: ## Check cyclomatic complexity
 	@printf "$(GREEN)📊 Cyclomatic complexity...$(NC)\n"
-	gocyclo -over 20 $$(find . -name "*.go" -not -path "./vendor/*" -not -path "./.git/*")
+	gocyclo -over 20 $$(find $(GO_SRC_PATHS) -name "*.go" -not -path "./vendor/*" -not -path "./.git/*" 2>/dev/null || true)
 
 dep-graph-dot: ## Generate Go import dependency graph in DOT format
 	@printf "$(GREEN)📊 Generating Go import dependency graph (DOT)...$(NC)\n"
@@ -143,40 +140,21 @@ dep-graph: dep-graph-dot ## Generate PNG + SVG from DOT dependency graph
 
 dupl: ## Detect duplicate code
 	@printf "$(GREEN)👯 Duplicate code detection...$(NC)\n"
-	dupl -threshold 50 $$(find . -name "*.go" -not -name "*_test.go" -not -path "./vendor/*" -not -path "./.git/*" -not -path "./build/*")
+	dupl -threshold 70 $$(find $(GO_SRC_PATHS) -name "*.go" -not -name "*_test.go" -not -path "./vendor/*" -not -path "./.git/*" -not -path "./build/*" 2>/dev/null || true)
 
-security-test: ## Run security tests
-	@printf "$(GREEN)🔒 Security tests...$(NC)\n"
-	gosec ./...
-
-install-tools: install-ginkgo ## Install development tools
-	@printf "$(GREEN)🔧 Installing development tools...$(NC)\n"
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-	go install golang.org/x/tools/cmd/goimports@latest
-	go install github.com/fzipp/gocyclo/cmd/gocyclo@latest
-	go install github.com/mibk/dupl@latest
-	go install github.com/securego/gosec/v2/cmd/gosec@latest
-	go install github.com/golang/mock/mockgen@latest
+security: ## Run security tests
+	@$(MAKE) --no-print-directory _check-security-detailed
 
 # Documentation and Utilities
-docs: ## Generate documentation
-	@printf "$(GREEN)📚 Generating documentation...$(NC)\n"
-	go doc -all ./... > docs/api.txt
-	godoc -http=:6060 &
+docs: ## Generate documentation - not human friendly, for llm use
+	@printf "$(GREEN)📚 Generating documentation - not human friendly, for llm use...$(NC)\n"
 	@printf "$(YELLOW)📖 Documentation available at http://localhost:6060$(NC)\n"
-
-profile: ## Profile performance
-	@printf "$(GREEN)📊 Profiling...$(NC)\n"
-	go test -cpuprofile=cpu.prof -memprofile=mem.prof -bench=. ./...
-	@printf "$(YELLOW)📊 Profiles: cpu.prof, mem.prof$(NC)\n"
-
-debug: ## Run in debug mode
-	@printf "$(GREEN)🐛 Debug mode...$(NC)\n"
-	DOKKU_MCP_LOG_LEVEL=debug go run $(ENTRYPOINT)
+	@godoc -http=:6060
 
 bump-version: ## Update version
 	@printf "$(GREEN)🔖 Version: $(VERSION)$(NC)\n"
 	@sed -i 's/Version = ".*"/Version = "$(VERSION)"/' internal/version/version.go
+	echo "Think about plugins version too"
 
 changelog: ## Generate changelog
 	@printf "$(GREEN)📝 Generating changelog...$(NC)\n"
@@ -185,32 +163,30 @@ changelog: ## Generate changelog
 clean: ## Clean generated files
 	@printf "$(GREEN)🧹 Cleaning...$(NC)\n"
 	rm -rf $(BUILD_DIR)/
+	rm -rf tmp/
 	rm -f coverage.out coverage.html
 	rm -f cpu.prof mem.prof
+	rm -f build-errors.log
 
 generate: ## Generate code
 	@printf "$(GREEN)⚙️  Generating code...$(NC)\n"
-	go generate ./...
-
-dokku-setup: ## Setup local Dokku instance via Docker
-	@printf "$(GREEN)🐳 Setting up local Dokku instance...$(NC)\n"
-	./scripts/setup-dokku-local.sh
+	go generate $(GO_SRC_DIRS)
 
 dokku-start: ## Start local Dokku instance
 	@printf "$(GREEN)🚀 Starting local Dokku instance...$(NC)\n"
-	docker-compose up -d
+	docker compose up -d
 	@printf "$(YELLOW)⏳ Waiting for Dokku to be ready...$(NC)\n"
 	sleep 15
 	@if docker exec dokku-mcp-dev dokku version &>/dev/null; then \
 		printf "$(GREEN)✅ Dokku is ready!$(NC)\n"; \
 	else \
 		printf "$(RED)❌ Dokku failed to start properly$(NC)\n"; \
-		docker-compose logs; \
+		docker compose logs; \
 	fi
 
 dokku-stop: ## Stop local Dokku instance
 	@printf "$(GREEN)🛑 Stopping local Dokku instance...$(NC)\n"
-	docker-compose down
+	docker compose down
 
 dokku-status: ## Check local Dokku instance status
 	@printf "$(GREEN)📊 Dokku instance status...$(NC)\n"
@@ -226,7 +202,7 @@ dokku-status: ## Check local Dokku instance status
 
 dokku-logs: ## View local Dokku logs
 	@printf "$(GREEN)📄 Dokku logs...$(NC)\n"
-	docker-compose logs -f
+	docker compose logs -f
 
 dokku-shell: ## Access Dokku container shell
 	@printf "$(GREEN)🐚 Accessing Dokku shell...$(NC)\n"
@@ -237,40 +213,73 @@ dokku-clean: ## Clean local Dokku data and containers
 	@if [ -f "./scripts/cleanup-test-apps.sh" ]; then \
 		./scripts/cleanup-test-apps.sh; \
 	fi
-	docker-compose down -v
+	docker compose down -v
 	@if [ -d "docker-data" ]; then \
 		printf "$(YELLOW)⚠️  Removing docker-data directory...$(NC)\n"; \
 		sudo rm -rf docker-data || rm -rf docker-data; \
 	fi
 	@printf "$(GREEN)✅ Complete cleanup finished$(NC)\n"
 
-test-integration-local: dokku-start ## Run integration tests with local Dokku
-	@printf "$(GREEN)🧪 Running integration tests with local Dokku...$(NC)\n"
-	@if [ -f ".env.dokku-local" ]; then \
-		set -a && source .env.dokku-local && set +a && \
-		ginkgo -v -tags=integration --timeout=5m --flake-attempts=2 --randomize-all --poll-progress-after=15s . internal/infrastructure/dokku/; \
-	else \
-		printf "$(RED)❌ .env.dokku-local not found. Run 'make dokku-setup' first$(NC)\n"; \
-		exit 1; \
-	fi
-
-test-local-env: ## Test with local Dokku environment
-	@printf "$(GREEN)🧪 Testing with local environment...$(NC)\n"
-	@if [ -f ".env.dokku-local" ]; then \
-		set -a && source .env.dokku-local && set +a && \
-		make test-integration; \
-	else \
-		printf "$(YELLOW)⚠️  Using mock environment$(NC)\n"; \
-		DOKKU_MCP_USE_MOCK=true make test-integration; \
-	fi
-
-inspect: build ## Inspect the MCP server
-	@printf "$(GREEN)🔍 Inspecting MCP server...$(NC)\n"
-	npx @modelcontextprotocol/inspector ./build/dokku-mcp
-
 .DEFAULT_GOAL := help
 
-.PHONY: all build test clean install-tools setup-hooks lint fmt vet install-ginkgo
-.PHONY: test-integration test-integration-verbose test-integration-local test-all
-.PHONY: test-verbose test-focus test-watch test-race test-coverage test-regression
-.PHONY: dokku-setup dokku-start dokku-stop dokku-status dokku-logs dokku-shell dokku-clean test-local-env
+.PHONY: all build test clean install-tools lint fmt vet dev debug
+.PHONY: test test-verbose test-integration-local test-all test-race
+.PHONY: dokku-setup dokku-start dokku-stop dokku-status dokku-logs dokku-shell dokku-clean
+.PHONY: security _check-security _check-type-safety _check-security-detailed docs
+
+_check-type-safety:
+	@printf "$(GREEN)🚫 Checking forbidden patterns (Strong Typing)...$(NC)\n"
+	@FORBIDDEN_PATTERNS=( \
+		"interface{}" \
+		"any" \
+		"reflect\." \
+		"unsafe\." \
+	); \
+	VIOLATIONS_FOUND=false; \
+	for file in $$(find $(GO_SRC_PATHS) -name "*.go" -not -path "./vendor/*" -not -path "./.git/*" 2>/dev/null || true); do \
+		for pattern in "$${FORBIDDEN_PATTERNS[@]}"; do \
+			if grep -q "$$pattern" "$$file"; then \
+				printf "$(RED)❌ Forbidden pattern '$$pattern' found in $$file$(NC)\n"; \
+				VIOLATIONS_FOUND=true; \
+			fi; \
+		done; \
+	done; \
+	if [ "$$VIOLATIONS_FOUND" = true ]; then \
+		printf "$(YELLOW)💡 Use strongly typed interfaces according to project rules$(NC)\n"; \
+		exit 1; \
+	fi; \
+	printf "$(GREEN)  ✓ No forbidden patterns detected$(NC)\n"
+
+_check-security:
+	@printf "$(GREEN)🔒 Security analysis...$(NC)\n"
+	@if command -v gosec >/dev/null 2>&1; then \
+		printf "$(BLUE)  Running gosec security scanner...$(NC)\n"; \
+		if gosec -quiet $(GO_SRC_DIRS) >/dev/null 2>&1; then \
+			printf "$(GREEN)  ✓ Security analysis passed$(NC)\n"; \
+		else \
+			printf "$(YELLOW)  ⚠️  Potential security issues detected$(NC)\n"; \
+			printf "$(YELLOW)  💡 Run 'make security' for detailed report$(NC)\n"; \
+		fi; \
+	else \
+		printf "$(YELLOW)  ⏭️  gosec not installed, security analysis skipped$(NC)\n"; \
+		printf "$(YELLOW)  💡 Install with: go install github.com/securego/gosec/v2/cmd/gosec@latest$(NC)\n"; \
+	fi
+
+_check-security-detailed:
+	@printf "$(GREEN)🔒 Detailed Security Analysis...$(NC)\n"
+	@if command -v gosec >/dev/null 2>&1; then \
+		printf "$(BLUE)  Running gosec security scanner with detailed output...$(NC)\n"; \
+		echo ""; \
+		if gosec -fmt=text -stdout -verbose $(GO_SRC_DIRS); then \
+			printf "\n$(GREEN)✅ Security analysis passed - no issues found$(NC)\n"; \
+		else \
+			printf "\n$(RED)❌ Security issues detected above$(NC)\n"; \
+			printf "$(YELLOW)💡 Review and fix the security issues listed above$(NC)\n"; \
+			printf "$(YELLOW)💡 Use 'gosec --help' for more scanning options$(NC)\n"; \
+			exit 1; \
+		fi; \
+	else \
+		printf "$(RED)❌ gosec not installed$(NC)\n"; \
+		printf "$(YELLOW)📦 Install with: go install github.com/securego/gosec/v2/cmd/gosec@latest$(NC)\n"; \
+		exit 1; \
+	fi

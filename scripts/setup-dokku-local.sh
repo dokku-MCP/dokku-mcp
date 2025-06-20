@@ -15,20 +15,20 @@ if ! command -v docker &> /dev/null; then
     exit 1
 fi
 
-if ! command -v docker-compose &> /dev/null; then
+if ! command -v docker compose &> /dev/null; then
     printf "${RED}❌ Docker Compose n'est pas installé${NC}\n"
     exit 1
 fi
 
 printf "${YELLOW}🚀 Starting Dokku...${NC}\n"
-docker-compose up -d
+docker compose up -d
 
 printf "${YELLOW}⏳ Waiting for Dokku to start...${NC}\n"
 sleep 10
 
 if ! docker ps | grep -q dokku-mcp-dev; then
     printf "${RED}❌ Dokku container is not running${NC}\n"
-    docker-compose logs
+    docker compose logs
     exit 1
 fi
 
@@ -50,7 +50,9 @@ fi
 
 printf "${YELLOW}🔑 Configuring SSH keys for tests...${NC}\n"
 
-DOKKU_SSH_KEY_PATH="$HOME/.ssh/dokku_mcp_test"
+mkdir -p .ssh
+
+DOKKU_SSH_KEY_PATH=".ssh/dokku_mcp_test"
 if [ ! -f "${DOKKU_SSH_KEY_PATH}" ]; then
     printf "${YELLOW}⚠️  Generating dedicated SSH key pair for Dokku MCP tests...${NC}\n"
     ssh-keygen -t rsa -b 4096 -f "${DOKKU_SSH_KEY_PATH}" -N "" -C "dokku-mcp-test@$(hostname)"
@@ -60,6 +62,8 @@ else
 fi
 
 SSH_KEY=$(cat "${DOKKU_SSH_KEY_PATH}.pub")
+# Remove existing key first if it exists
+docker exec dokku-mcp-dev bash -c "echo '$SSH_KEY' | dokku ssh-keys:remove dokku-mcp-test" || true
 docker exec dokku-mcp-dev bash -c "echo '$SSH_KEY' | dokku ssh-keys:add dokku-mcp-test"
 
 printf "${YELLOW}🔧 Configuration SSH client...${NC}\n"
@@ -87,14 +91,46 @@ echo "$SSH_CONFIG_ENTRY" >> ~/.ssh/config
 chmod 600 ~/.ssh/config
 printf "${GREEN}✅ SSH configuration updated${NC}\n"
 
-printf "${YELLOW}🌍 env config...${NC}\n"
-cat > .env.dokku-local << EOF
-DOKKU_MCP_USE_MOCK=false
-DOKKU_HOST=127.0.0.1
-DOKKU_PORT=3022
-DOKKU_USER=dokku
-DOKKU_HOSTNAME=dokku.local
-DOKKU_MCP_INTEGRATION_TESTS=1
+printf "${YELLOW}🔧 Creating config.yaml for local Dokku...${NC}\n"
+cat > config.yaml << EOF
+# Dokku MCP Server Configuration for Local Development
+# Transport configuration
+transport:
+  type: "stdio"
+  host: "localhost"
+  port: 8080
+
+# Server configuration
+host: "localhost"
+port: 8080
+log_level: "debug"
+log_format: "json"
+timeout: "30s"
+
+# Dokku configuration
+dokku_path: "dokku"
+
+# SSH configuration for local Dokku instance
+ssh:
+  host: "127.0.0.1"
+  port: 3022
+  user: "dokku"
+  key_path: "${DOKKU_SSH_KEY_PATH}"
+
+# Plugin Discovery Configuration
+plugin_discovery:
+  enabled: true
+  sync_interval: "1m"
+
+# Caching configuration
+cache_enabled: false
+
+# Security configuration
+security:
+  blacklist:
+    - "destroy"
+    - "uninstall"
+    - "remove"
 EOF
 
 printf "${GREEN}✅ Dokku local configured successfully!${NC}\n"
@@ -103,12 +139,11 @@ printf "  • Dokku SSH: 127.0.0.1:3022\n"
 printf "  • Dokku HTTP: http://127.0.0.1:8080\n"
 printf "  • Dokku HTTPS: https://127.0.0.1:8443\n"
 printf "  • Configuration SSH: ~/.ssh/config (Host dokku.local)\n"
-printf "  • env: .env.dokku-local\n"
+printf "  • Configuration: config.yaml\n"
 printf "\n"
 printf "${YELLOW}🧪 To run integration tests with real Dokku:${NC}\n"
-printf "  source .env.dokku-local\n"
 printf "  make test-integration\n"
 printf "\n"
 printf "${YELLOW}🐛 To debug Dokku:${NC}\n"
 printf "  docker exec -it dokku-mcp-dev bash\n"
-printf "  docker-compose logs -f\n" 
+printf "  docker compose logs -f\n" 
