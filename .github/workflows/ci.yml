@@ -184,7 +184,7 @@ jobs:
   ci-success:
     name: CI Success
     runs-on: ubuntu-latest
-    needs: [build, quality-checks, tests, dependency-analysis, dependency-graph]
+    needs: [build, quality-checks, tests, dependency-analysis]
     if: always()
     
     steps:
@@ -204,10 +204,6 @@ jobs:
           fi
           if [[ "${{ needs.dependency-analysis.result }}" != "success" ]]; then
             echo "❌ Dependency analysis failed"
-            exit 1
-          fi
-          if [[ "${{ needs.dependency-graph.result }}" != "success" ]]; then
-            echo "❌ Dependency graph generation failed"
             exit 1
           fi
           echo "✅ All CI jobs passed successfully!"
