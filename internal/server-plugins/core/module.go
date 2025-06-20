@@ -7,6 +7,11 @@ import (
 	"go.uber.org/fx"
 )
 
+// PluginRegistry defines the interface for registering server plugins
+type PluginRegistry interface {
+	Register(plugin serverDomain.ServerPlugin) error
+}
+
 // CoreModule provides dependency injection for the core plugin
 var CoreModule = fx.Module("core",
 	fx.Provide(
@@ -21,18 +26,9 @@ var CoreModule = fx.Module("core",
 // RegisterCorePlugin registers the core plugin with the server plugin registry
 func RegisterCorePlugin(
 	plugin serverDomain.ServerPlugin,
-	registry interface{}, // Registry interface to avoid import cycles
+	registry PluginRegistry,
 	logger *slog.Logger,
 ) error {
 	logger.Info("Registering core plugin", "plugin_id", plugin.ID())
-
-	// Type assertion to get the registry Register method
-	if registrar, ok := registry.(interface {
-		Register(serverDomain.ServerPlugin) error
-	}); ok {
-		return registrar.Register(plugin)
-	}
-
-	logger.Warn("Registry does not support plugin registration")
-	return nil
+	return registry.Register(plugin)
 }

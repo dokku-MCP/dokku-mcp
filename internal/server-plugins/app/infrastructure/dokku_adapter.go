@@ -68,7 +68,7 @@ func (a *DokkuApplicationAdapter) GetApplications(ctx context.Context) ([]string
 }
 
 // GetApplicationInfo retrieves detailed information about an application
-func (a *DokkuApplicationAdapter) GetApplicationInfo(ctx context.Context, appName string) (map[string]interface{}, error) {
+func (a *DokkuApplicationAdapter) GetApplicationInfo(ctx context.Context, appName string) (map[string]string, error) {
 	output, err := a.ExecuteCommand(ctx, "apps:info", []string{appName})
 	if err != nil {
 		if strings.Contains(err.Error(), "exit status 1") {
@@ -80,13 +80,7 @@ func (a *DokkuApplicationAdapter) GetApplicationInfo(ctx context.Context, appNam
 	}
 
 	// Use the common function to parse key:value pairs
-	stringMap := a.parseOutputLines(output, ":")
-
-	info := make(map[string]any)
-	for key, value := range stringMap {
-		info[key] = value
-	}
-
+	info := a.parseOutputLines(output, ":")
 	return info, nil
 }
 

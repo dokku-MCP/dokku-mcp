@@ -175,7 +175,7 @@ func (s *CoreService) ClearGlobalDomains(ctx context.Context) error {
 	return s.domainRepo.ClearGlobalDomains(ctx)
 }
 
-func (s *CoreService) GetDomainsReport(ctx context.Context) (map[string]interface{}, error) {
+func (s *CoreService) GetDomainsReport(ctx context.Context) (*domain.DomainsReport, error) {
 	s.logger.Debug("Getting domains report")
 	return s.domainRepo.GetDomainsReport(ctx)
 }

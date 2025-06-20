@@ -90,7 +90,7 @@ func (r *DokkuApplicationRepository) GetByName(ctx context.Context, name *app.Ap
 		if reportInfo, reportErr := r.tryGetBasicApplicationInfo(ctx, name.Value()); reportErr == nil {
 			info = reportInfo
 		} else {
-			info = make(map[string]interface{})
+			info = make(map[string]string)
 		}
 	}
 
@@ -372,7 +372,7 @@ func min(a, b int) int {
 }
 
 // updateApplicationFromInfo updates the application with retrieved information
-func (r *DokkuApplicationRepository) updateApplicationFromInfo(app *app.Application, info map[string]interface{}, config map[string]string) error {
+func (r *DokkuApplicationRepository) updateApplicationFromInfo(app *app.Application, info map[string]string, config map[string]string) error {
 	// Apply environment variables
 	for key, value := range config {
 		if err := app.SetEnvironmentVariable(key, value); err != nil {
@@ -383,12 +383,12 @@ func (r *DokkuApplicationRepository) updateApplicationFromInfo(app *app.Applicat
 	}
 
 	// Process processes if present in information
-	if processesStr, ok := info["ps.scale"].(string); ok && processesStr != "" {
+	if processesStr, ok := info["ps.scale"]; ok && processesStr != "" {
 		r.parseProcesses(app, processesStr)
 	}
 
 	// Process domains if present
-	if domainsStr, ok := info["domains"].(string); ok && domainsStr != "" {
+	if domainsStr, ok := info["domains"]; ok && domainsStr != "" {
 		domains := strings.Split(domainsStr, " ")
 		for _, domain := range domains {
 			if domain != "" {
@@ -433,14 +433,14 @@ func (r *DokkuApplicationRepository) parseProcesses(application *app.Application
 }
 
 // tryGetBasicApplicationInfo tries to retrieve basic information
-func (r *DokkuApplicationRepository) tryGetBasicApplicationInfo(ctx context.Context, appName string) (map[string]interface{}, error) {
+func (r *DokkuApplicationRepository) tryGetBasicApplicationInfo(ctx context.Context, appName string) (map[string]string, error) {
 	output, err := r.dokku.ExecuteCommand(ctx, "apps:report", []string{appName})
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute apps:report: %w", err)
 	}
 
 	// Parse apps:report output to extract basic information
-	info := make(map[string]interface{})
+	info := make(map[string]string)
 	lines := strings.Split(string(output), "\n")
 	for _, line := range lines {
 		if strings.Contains(line, ":") {
@@ -463,9 +463,9 @@ func (r *DokkuApplicationRepository) extractEnvironmentVars(config *app.Applicat
 }
 
 // determineStateFromInfo determines the application state from Dokku output
-func (r *DokkuApplicationRepository) determineStateFromInfo(info map[string]interface{}) app.StateValue {
+func (r *DokkuApplicationRepository) determineStateFromInfo(info map[string]string) app.StateValue {
 	// Check for process scale information to determine if app is running
-	if processesStr, ok := info["ps.scale"].(string); ok && processesStr != "" {
+	if processesStr, ok := info["ps.scale"]; ok && processesStr != "" {
 		// If there are processes with scale > 0, app is likely running
 		if r.hasRunningProcesses(processesStr) {
 			return app.StateRunning
@@ -475,7 +475,7 @@ func (r *DokkuApplicationRepository) determineStateFromInfo(info map[string]inte
 	}
 
 	// Check app status if available
-	if status, ok := info["status"].(string); ok {
+	if status, ok := info["status"]; ok {
 		switch status {
 		case "running":
 			return app.StateRunning

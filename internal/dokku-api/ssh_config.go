@@ -242,18 +242,6 @@ func (s *SSHConfig) Equal(other *SSHConfig) bool {
 		s.timeout == other.timeout
 }
 
-// ToMap converts the configuration to a map for serialization
-func (s *SSHConfig) ToMap() map[string]interface{} {
-	return map[string]interface{}{
-		"host":     s.host,
-		"port":     s.port,
-		"user":     s.user,
-		"key_path": s.keyPath,
-		"timeout":  s.timeout.String(),
-		"verified": s.verified,
-	}
-}
-
 // validateSSHConfig validates SSH configuration parameters
 func validateSSHConfig(host string, port int, user string, keyPath string, timeout time.Duration) error {
 	// Host validation

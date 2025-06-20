@@ -337,3 +337,38 @@ type DeploymentOptions struct {
 	ForceClean bool
 	NoCache    bool
 }
+
+// ApplicationInfo represents application info for JSON serialization
+type ApplicationInfo struct {
+	Name       string    `json:"name"`
+	State      string    `json:"state"`
+	IsRunning  bool      `json:"is_running"`
+	IsDeployed bool      `json:"is_deployed"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+// ApplicationStatus represents detailed application status for JSON serialization
+type ApplicationStatus struct {
+	Name       string    `json:"name"`
+	State      string    `json:"state"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+	IsRunning  bool      `json:"is_running"`
+	IsDeployed bool      `json:"is_deployed"`
+	Domains    []string  `json:"domains"`
+}
+
+// ApplicationListData represents the application list resource data
+type ApplicationListData struct {
+	Applications []ApplicationInfo `json:"applications"`
+	Count        int               `json:"count"`
+}
+
+// ApplicationSummaryData represents the application summary resource data
+type ApplicationSummaryData struct {
+	TotalApps    int `json:"total_apps"`
+	RunningApps  int `json:"running_apps"`
+	StoppedApps  int `json:"stopped_apps"`
+	DeployedApps int `json:"deployed_apps"`
+}

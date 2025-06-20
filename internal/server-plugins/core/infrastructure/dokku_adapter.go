@@ -278,16 +278,47 @@ func (a *DokkuCoreAdapter) ClearGlobalDomains(ctx context.Context) error {
 	return nil
 }
 
-func (a *DokkuCoreAdapter) GetDomainsReport(ctx context.Context) (map[string]interface{}, error) {
+func (a *DokkuCoreAdapter) GetDomainsReport(ctx context.Context) (*domain.DomainsReport, error) {
 	output, err := a.client.ExecuteCommand(ctx, "domains:report", []string{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get domains report: %w", err)
 	}
 
 	// Parse the domains report output and convert to a structured format
-	report := make(map[string]interface{})
-	report["raw_output"] = string(output)
-	report["timestamp"] = time.Now()
+	report := &domain.DomainsReport{
+		RawOutput:   string(output),
+		GeneratedAt: time.Now(),
+		PerApp:      make(map[string]domain.DomainsReportSection),
+	}
+
+	// Parse the output to populate Global and PerApp sections
+	// This is a basic implementation - can be enhanced with proper parsing
+	lines := strings.Split(string(output), "\n")
+	currentApp := ""
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+
+		// Detect app sections
+		if strings.HasPrefix(line, "=====> ") && strings.HasSuffix(line, " domains information") {
+			appName := strings.TrimPrefix(line, "=====> ")
+			appName = strings.TrimSuffix(appName, " domains information")
+			currentApp = appName
+			report.PerApp[currentApp] = domain.DomainsReportSection{
+				AppName: currentApp,
+			}
+		}
+
+		// Parse global domains
+		if currentApp == "" && strings.Contains(line, "Global vhosts:") {
+			if idx := strings.Index(line, ":"); idx != -1 {
+				domainsStr := strings.TrimSpace(line[idx+1:])
+				if domainsStr != "" && domainsStr != "none" {
+					report.Global.Vhosts = strings.Fields(domainsStr)
+				}
+			}
+		}
+	}
 
 	return report, nil
 }

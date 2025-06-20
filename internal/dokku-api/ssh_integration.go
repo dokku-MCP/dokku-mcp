@@ -110,15 +110,32 @@ func (m *SSHConnectionManager) TestConnection() error {
 	return nil
 }
 
+// ConnectionInfo represents SSH connection information
+type ConnectionInfo struct {
+	Host             string        `json:"host"`
+	Port             int           `json:"port"`
+	User             string        `json:"user"`
+	KeyPath          string        `json:"key_path"`
+	Timeout          time.Duration `json:"timeout"`
+	Verified         bool          `json:"verified"`
+	AuthMethod       string        `json:"auth_method"`
+	ConnectionString string        `json:"connection_string"`
+}
+
 // GetConnectionInfo returns human-readable connection information
-func (m *SSHConnectionManager) GetConnectionInfo() map[string]interface{} {
+func (m *SSHConnectionManager) GetConnectionInfo() ConnectionInfo {
 	authMethod := m.authService.DetermineAuthMethod(m.config.KeyPath())
 
-	info := m.config.ToMap()
-	info["auth_method"] = authMethod.Description
-	info["connection_string"] = m.config.ConnectionString()
-
-	return info
+	return ConnectionInfo{
+		Host:             m.config.Host(),
+		Port:             m.config.Port(),
+		User:             m.config.User(),
+		KeyPath:          m.config.KeyPath(),
+		Timeout:          m.config.Timeout(),
+		Verified:         m.config.IsVerified(),
+		AuthMethod:       authMethod.Description,
+		ConnectionString: m.config.ConnectionString(),
+	}
 }
 
 // SSHConfigBuilder provides a fluent interface for building SSH configurations

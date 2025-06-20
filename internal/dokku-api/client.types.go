@@ -1,6 +1,7 @@
 package dokkuApi
 
 import (
+	"encoding/json"
 	"log/slog"
 	"time"
 )
@@ -22,7 +23,7 @@ type CommandResult struct {
 	KeyValueData map[string]string
 	ListData     []string
 	TableData    []map[string]string
-	JSONData     interface{}
+	JSONData     json.RawMessage
 	ParsedAt     time.Time
 }
 

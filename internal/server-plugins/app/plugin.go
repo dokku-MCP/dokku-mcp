@@ -11,7 +11,7 @@ import (
 	"github.com/alex-galey/dokku-mcp/internal/server-plugin/domain"
 	appusecases "github.com/alex-galey/dokku-mcp/internal/server-plugins/app/application"
 	appdomain "github.com/alex-galey/dokku-mcp/internal/server-plugins/app/domain"
-	app_infrastructure "github.com/alex-galey/dokku-mcp/internal/server-plugins/app/infrastructure"
+	"github.com/alex-galey/dokku-mcp/internal/server-plugins/app/infrastructure"
 	"github.com/alex-galey/dokku-mcp/internal/shared"
 	"github.com/mark3labs/mcp-go/mcp"
 	"go.uber.org/fx"
@@ -37,25 +37,17 @@ func NewAppsServerPlugin(
 }
 
 // ServerPlugin interface implementation
-func (p *AppsServerPlugin) ID() string {
-	return "apps"
-}
-
-func (p *AppsServerPlugin) Name() string {
-	return "Dokku Applications"
-}
+func (p *AppsServerPlugin) ID() string   { return "apps" }
+func (p *AppsServerPlugin) Name() string { return "Dokku Applications" }
 
 func (p *AppsServerPlugin) Description() string {
 	return "Comprehensive Dokku application management including deployment, scaling, and configuration"
 }
 
-func (p *AppsServerPlugin) Version() string {
-	return "0.1.0"
-}
+func (p *AppsServerPlugin) Version() string { return "0.1.0" }
 
-func (p *AppsServerPlugin) DokkuPluginName() string {
-	return "" // Core apps functionality - no specific plugin dependency
-}
+// Core apps functionality - no specific plugin dependency
+func (p *AppsServerPlugin) DokkuPluginName() string { return "" }
 
 // ResourceProvider implementation
 func (p *AppsServerPlugin) GetResources(ctx context.Context) ([]domain.Resource, error) {
@@ -132,21 +124,21 @@ func (p *AppsServerPlugin) handleApplicationListResource(ctx context.Context, re
 		return nil, fmt.Errorf("failed to retrieve applications: %w", err)
 	}
 
-	apps := make([]map[string]interface{}, len(applications))
+	apps := make([]appdomain.ApplicationInfo, len(applications))
 	for i, app := range applications {
-		apps[i] = map[string]interface{}{
-			"name":        app.Name().Value(),
-			"state":       app.State().Value(),
-			"is_running":  app.IsRunning(),
-			"is_deployed": app.IsDeployed(),
-			"created_at":  app.CreatedAt(),
-			"updated_at":  app.UpdatedAt(),
+		apps[i] = appdomain.ApplicationInfo{
+			Name:       app.Name().Value(),
+			State:      string(app.State().Value()),
+			IsRunning:  app.IsRunning(),
+			IsDeployed: app.IsDeployed(),
+			CreatedAt:  app.CreatedAt(),
+			UpdatedAt:  app.UpdatedAt(),
 		}
 	}
 
-	data := map[string]interface{}{
-		"applications": apps,
-		"count":        len(apps),
+	data := appdomain.ApplicationListData{
+		Applications: apps,
+		Count:        len(apps),
 	}
 
 	jsonData, err := json.MarshalIndent(data, "", "  ")
@@ -181,11 +173,11 @@ func (p *AppsServerPlugin) handleApplicationSummaryResource(ctx context.Context,
 		}
 	}
 
-	summary := map[string]interface{}{
-		"total_apps":    len(applications),
-		"running_apps":  runningApps,
-		"stopped_apps":  stoppedApps,
-		"deployed_apps": deployedApps,
+	summary := appdomain.ApplicationSummaryData{
+		TotalApps:    len(applications),
+		RunningApps:  runningApps,
+		StoppedApps:  stoppedApps,
+		DeployedApps: deployedApps,
 	}
 
 	jsonData, err := json.MarshalIndent(summary, "", "  ")
@@ -267,8 +259,8 @@ func (p *AppsServerPlugin) buildConfigureAppTool() mcp.Tool {
 		mcp.WithObject("config",
 			mcp.Required(),
 			mcp.Description("Environment variables as key-value pairs"),
-			mcp.Properties(map[string]interface{}{
-				"additionalProperties": map[string]interface{}{
+			mcp.Properties(map[string]interface{}{ // NOTE: This is a valid exception
+				"additionalProperties": map[string]interface{}{ // NOTE: This is a valid exception
 					"type": "string",
 				},
 			}),
@@ -394,7 +386,7 @@ func (p *AppsServerPlugin) handleConfigureApp(ctx context.Context, req mcp.CallT
 
 	configVars := make(map[string]string)
 	if configParam, ok := req.GetArguments()["config"]; ok {
-		if configMap, ok := configParam.(map[string]interface{}); ok {
+		if configMap, ok := configParam.(map[string]interface{}); ok { // NOTE: This is a valid exception
 			for key, value := range configMap {
 				if valueStr, ok := value.(string); ok {
 					configVars[key] = valueStr
@@ -436,14 +428,14 @@ func (p *AppsServerPlugin) handleGetAppStatus(ctx context.Context, req mcp.CallT
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to get application status: %v", err)), nil
 	}
 
-	status := map[string]interface{}{
-		"name":        app.Name().Value(),
-		"state":       app.State().Value(),
-		"created_at":  app.CreatedAt(),
-		"updated_at":  app.UpdatedAt(),
-		"is_running":  app.IsRunning(),
-		"is_deployed": app.IsDeployed(),
-		"domains":     app.GetDomains(),
+	status := appdomain.ApplicationStatus{
+		Name:       app.Name().Value(),
+		State:      string(app.State().Value()),
+		CreatedAt:  app.CreatedAt(),
+		UpdatedAt:  app.UpdatedAt(),
+		IsRunning:  app.IsRunning(),
+		IsDeployed: app.IsDeployed(),
+		Domains:    app.GetDomains(),
 	}
 
 	statusJSON, err := json.MarshalIndent(status, "", "  ")
@@ -479,7 +471,7 @@ var Module = fx.Module("app",
 		// Provide the infrastructure layer dependencies
 		fx.Annotate(
 			func(client dokkuApi.DokkuClient, logger *slog.Logger) appdomain.ApplicationRepository {
-				return app_infrastructure.NewDokkuApplicationRepository(client, logger)
+				return infrastructure.NewDokkuApplicationRepository(client, logger)
 			},
 		),
 		// Provide the main plugin - deployment service will be injected from deployment plugin

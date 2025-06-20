@@ -29,7 +29,7 @@ var _ = Describe("SSH Integration", func() {
 		Describe("NewSSHConfigFromServerConfig", func() {
 			It("should create SSH config from server config parameters", func() {
 				config, err := dokkuApi.NewSSHConfigFromServerConfig(
-					"example.com",
+					"dokku.com",
 					2222,
 					"testuser",
 					"/path/to/key",
@@ -37,7 +37,7 @@ var _ = Describe("SSH Integration", func() {
 				)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(config.Host()).To(Equal("example.com"))
+				Expect(config.Host()).To(Equal("dokku.com"))
 				Expect(config.Port()).To(Equal(2222))
 				Expect(config.User()).To(Equal("testuser"))
 				Expect(config.KeyPath()).To(Equal("/path/to/key"))
@@ -60,7 +60,7 @@ var _ = Describe("SSH Integration", func() {
 
 		Describe("BaseSSHArgs", func() {
 			It("should return correct base SSH arguments", func() {
-				config := dokkuApi.MustNewSSHConfig("example.com", 2222, "testuser", "", 30*time.Second)
+				config := dokkuApi.MustNewSSHConfig("dokku.com", 2222, "testuser", "", 30*time.Second)
 				args := config.BaseSSHArgs()
 
 				Expect(args).To(ContainElement("-o"))
@@ -79,7 +79,7 @@ var _ = Describe("SSH Integration", func() {
 		)
 
 		BeforeEach(func() {
-			sshConfig = dokkuApi.MustNewSSHConfig("example.com", 22, "testuser", "", 30*time.Second)
+			sshConfig = dokkuApi.MustNewSSHConfig("dokku.com", 22, "testuser", "", 30*time.Second)
 			manager = dokkuApi.NewSSHConnectionManager(sshConfig, logger)
 		})
 
@@ -87,7 +87,7 @@ var _ = Describe("SSH Integration", func() {
 			It("should create manager from server config", func() {
 				serverConfig := &config.ServerConfig{
 					SSH: config.SSHConfig{
-						Host:    "dokku.example.com",
+						Host:    "dokku.dokku.com",
 						Port:    22,
 						User:    "dokku",
 						KeyPath: "/path/to/key",
@@ -98,7 +98,7 @@ var _ = Describe("SSH Integration", func() {
 				manager, err := dokkuApi.NewSSHConnectionManagerFromServerConfig(serverConfig, logger)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(manager.Config().Host()).To(Equal("dokku.example.com"))
+				Expect(manager.Config().Host()).To(Equal("dokku.dokku.com"))
 				Expect(manager.Config().User()).To(Equal("dokku"))
 				Expect(manager.Config().KeyPath()).To(Equal("/path/to/key"))
 			})
@@ -110,7 +110,7 @@ var _ = Describe("SSH Integration", func() {
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(sshArgs).To(ContainElement("ssh"))
-				Expect(sshArgs).To(ContainElement("testuser@example.com"))
+				Expect(sshArgs).To(ContainElement("testuser@dokku.com"))
 				Expect(sshArgs).To(ContainElement("dokku apps:list"))
 				Expect(env).To(ContainElement("PATH=/usr/bin:/bin"))
 			})
@@ -120,7 +120,7 @@ var _ = Describe("SSH Integration", func() {
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(sshArgs).To(ContainElement("ssh"))
-				Expect(sshArgs).To(ContainElement("testuser@example.com"))
+				Expect(sshArgs).To(ContainElement("testuser@dokku.com"))
 				Expect(sshArgs).NotTo(ContainElement("--"))
 				Expect(env).NotTo(BeEmpty())
 			})
@@ -130,13 +130,11 @@ var _ = Describe("SSH Integration", func() {
 			It("should return connection information", func() {
 				info := manager.GetConnectionInfo()
 
-				Expect(info).To(HaveKey("host"))
-				Expect(info).To(HaveKey("port"))
-				Expect(info).To(HaveKey("user"))
-				Expect(info).To(HaveKey("auth_method"))
-				Expect(info).To(HaveKey("connection_string"))
-				Expect(info["host"]).To(Equal("example.com"))
-				Expect(info["connection_string"]).To(Equal("testuser@example.com"))
+				Expect(info.Host).To(Equal("dokku.com"))
+				Expect(info.Port).To(Equal(22))
+				Expect(info.User).To(Equal("testuser"))
+				Expect(info.AuthMethod).NotTo(BeEmpty())
+				Expect(info.ConnectionString).To(Equal("testuser@dokku.com"))
 			})
 		})
 	})
@@ -151,7 +149,7 @@ var _ = Describe("SSH Integration", func() {
 		Describe("Fluent Interface", func() {
 			It("should allow fluent configuration", func() {
 				config, err := builder.
-					WithHost("fluent.example.com").
+					WithHost("fluent.dokku.com").
 					WithPort(2222).
 					WithUser("fluentuser").
 					WithKeyPath("/fluent/key").
@@ -159,7 +157,7 @@ var _ = Describe("SSH Integration", func() {
 					Build()
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(config.Host()).To(Equal("fluent.example.com"))
+				Expect(config.Host()).To(Equal("fluent.dokku.com"))
 				Expect(config.Port()).To(Equal(2222))
 				Expect(config.User()).To(Equal("fluentuser"))
 				Expect(config.KeyPath()).To(Equal("/fluent/key"))
@@ -171,7 +169,7 @@ var _ = Describe("SSH Integration", func() {
 			It("should build from server configuration", func() {
 				serverConfig := &config.ServerConfig{
 					SSH: config.SSHConfig{
-						Host:    "server.example.com",
+						Host:    "server.dokku.com",
 						Port:    2222,
 						User:    "serveruser",
 						KeyPath: "/server/key",
@@ -182,7 +180,7 @@ var _ = Describe("SSH Integration", func() {
 				config, err := builder.FromServerConfig(serverConfig).Build()
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(config.Host()).To(Equal("server.example.com"))
+				Expect(config.Host()).To(Equal("server.dokku.com"))
 				Expect(config.Port()).To(Equal(2222))
 				Expect(config.User()).To(Equal("serveruser"))
 				Expect(config.KeyPath()).To(Equal("/server/key"))
@@ -193,12 +191,12 @@ var _ = Describe("SSH Integration", func() {
 		Describe("BuildConnectionManager", func() {
 			It("should build a complete connection manager", func() {
 				manager, err := builder.
-					WithHost("manager.example.com").
+					WithHost("manager.dokku.com").
 					WithUser("manageruser").
 					BuildConnectionManager()
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(manager.Config().Host()).To(Equal("manager.example.com"))
+				Expect(manager.Config().Host()).To(Equal("manager.dokku.com"))
 				Expect(manager.Config().User()).To(Equal("manageruser"))
 			})
 		})
@@ -211,7 +209,7 @@ var _ = Describe("SSH Integration", func() {
 			)
 
 			BeforeEach(func() {
-				config := dokkuApi.MustNewSSHConfig("test.example.com", 22, "testuser", "", 30*time.Second)
+				config := dokkuApi.MustNewSSHConfig("test.dokku.com", 22, "testuser", "", 30*time.Second)
 				manager = dokkuApi.NewSSHConnectionManager(config, logger)
 			})
 
@@ -239,7 +237,7 @@ var _ = Describe("SSH Integration", func() {
 				Expect(err).NotTo(HaveOccurred())
 				tempFile.Close()
 
-				config := dokkuApi.MustNewSSHConfig("test.example.com", 22, "testuser", tempKeyPath, 30*time.Second)
+				config := dokkuApi.MustNewSSHConfig("test.dokku.com", 22, "testuser", tempKeyPath, 30*time.Second)
 				manager = dokkuApi.NewSSHConnectionManager(config, logger)
 
 				DeferCleanup(func() {
@@ -280,7 +278,7 @@ func TestSSHConfigValidation(t *testing.T) {
 	}{
 		{
 			name:        "valid configuration",
-			host:        "valid.example.com",
+			host:        "valid.dokku.com",
 			port:        22,
 			user:        "validuser",
 			keyPath:     "/valid/key",
@@ -299,7 +297,7 @@ func TestSSHConfigValidation(t *testing.T) {
 		},
 		{
 			name:        "invalid port - too low",
-			host:        "valid.example.com",
+			host:        "valid.dokku.com",
 			port:        0,
 			user:        "validuser",
 			keyPath:     "",
@@ -309,7 +307,7 @@ func TestSSHConfigValidation(t *testing.T) {
 		},
 		{
 			name:        "invalid port - too high",
-			host:        "valid.example.com",
+			host:        "valid.dokku.com",
 			port:        70000,
 			user:        "validuser",
 			keyPath:     "",
@@ -319,7 +317,7 @@ func TestSSHConfigValidation(t *testing.T) {
 		},
 		{
 			name:        "empty user",
-			host:        "valid.example.com",
+			host:        "valid.dokku.com",
 			port:        22,
 			user:        "",
 			keyPath:     "",
@@ -329,7 +327,7 @@ func TestSSHConfigValidation(t *testing.T) {
 		},
 		{
 			name:        "negative timeout",
-			host:        "valid.example.com",
+			host:        "valid.dokku.com",
 			port:        22,
 			user:        "validuser",
 			keyPath:     "",
@@ -339,7 +337,7 @@ func TestSSHConfigValidation(t *testing.T) {
 		},
 		{
 			name:        "key path with directory traversal",
-			host:        "valid.example.com",
+			host:        "valid.dokku.com",
 			port:        22,
 			user:        "validuser",
 			keyPath:     "/path/../../../etc/passwd",

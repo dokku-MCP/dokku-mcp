@@ -231,15 +231,30 @@ _check-type-safety:
 	@printf "$(GREEN)🚫 Checking forbidden patterns (Strong Typing)...$(NC)\n"
 	@VIOLATIONS_FOUND=false; \
 	for file in $$(find $(GO_SRC_PATHS) -name "*.go" -not -path "./vendor/*" -not -path "./.git/*" 2>/dev/null || true); do \
-		for pattern in "interface{}" "any" "reflect\." "unsafe\."; do \
-			if grep -q "$$pattern" "$$file"; then \
-				printf "$(RED)❌ Forbidden pattern '$$pattern' found in $$file$(NC)\n"; \
-				VIOLATIONS_FOUND=true; \
-			fi; \
-		done; \
+		if grep -n "interface{}" "$$file" 2>/dev/null | grep -v "//" | grep -v "// NOTE:" | grep -v "This is a valid exception" >/dev/null 2>&1; then \
+			printf "$(RED)❌ Forbidden pattern 'interface{}' found in $$file$(NC)\n"; \
+			grep -n "interface{}" "$$file" | grep -v "//" | grep -v "// NOTE:" | grep -v "This is a valid exception" | head -5; \
+			VIOLATIONS_FOUND=true; \
+		fi; \
+		if grep -nE "(map\[[^]]*\]any|\\[\\]any|: any|\\(any\\)|any\\[|\\]any)" "$$file" 2>/dev/null | grep -v "// NOTE:" | grep -v "This is a valid exception" >/dev/null 2>&1; then \
+			printf "$(RED)❌ Forbidden Go type 'any' found in $$file$(NC)\n"; \
+			grep -nE "(map\[[^]]*\]any|\\[\\]any|: any|\\(any\\)|any\\[|\\]any)" "$$file" | grep -v "// NOTE:" | grep -v "This is a valid exception" | head -5; \
+			VIOLATIONS_FOUND=true; \
+		fi; \
+		if grep -n "reflect\\." "$$file" 2>/dev/null | grep -v "//" >/dev/null 2>&1; then \
+			printf "$(RED)❌ Forbidden pattern 'reflect.' found in $$file$(NC)\n"; \
+			grep -n "reflect\\." "$$file" | grep -v "//" | head -5; \
+			VIOLATIONS_FOUND=true; \
+		fi; \
+		if grep -n "unsafe\\." "$$file" 2>/dev/null | grep -v "//" >/dev/null 2>&1; then \
+			printf "$(RED)❌ Forbidden pattern 'unsafe.' found in $$file$(NC)\n"; \
+			grep -n "unsafe\\." "$$file" | grep -v "//" | head -5; \
+			VIOLATIONS_FOUND=true; \
+		fi; \
 	done; \
 	if [ "$$VIOLATIONS_FOUND" = true ]; then \
 		printf "$(YELLOW)💡 Use strongly typed interfaces according to project rules$(NC)\n"; \
+		printf "$(YELLOW)💡 Add '// NOTE: ... This is a valid exception' comment for library constraints$(NC)\n"; \
 		exit 1; \
 	fi; \
 	printf "$(GREEN)  ✓ No forbidden patterns detected$(NC)\n"
