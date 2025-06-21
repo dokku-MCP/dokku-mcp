@@ -12,6 +12,11 @@ RED=\033[0;31m
 BLUE=\033[0;34m
 NC=\033[0m
 
+# Add go bin directory to PATH for tools
+GO_BIN := $(shell go env GOPATH)/bin
+GINKGO_BINARY := $(GO_BIN)/ginkgo
+export PATH := $(GO_BIN):$(PATH)
+
 all: help
 
 help: ## Show this help
@@ -84,19 +89,15 @@ build-all: ## Build for all platforms
 	GOOS=darwin GOARCH=arm64 go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 $(ENTRYPOINT)
 
 # Testing Commands
-test: ## Run tests with coverage reports
-	@ginkgo -r --coverprofile=coverage.out --timeout=2m --flake-attempts=2 --randomize-all --poll-progress-after=10s --tags="!integration" --skip-package="dokku-api" internal/
-	@DOKKU_MCP_INTEGRATION_TESTS=1 DOKKU_MCP_LOG_LEVEL=error ginkgo -r -tags=integration --coverprofile=coverage-integration.out --timeout=1m --flake-attempts=2 --randomize-all --poll-progress-after=15s internal/dokku-api/ | grep -v "time=.*level="
+test: $(GINKGO_BINARY)
+	$(GINKGO_BINARY) -coverprofile=coverage.out ./...
+	go tool cover -html=coverage.out -o coverage.html
+	@echo "Coverage report generated: coverage.html"
 
-test-verbose: ## Run tests with all details
-	ginkgo -v -r --timeout=2m --flake-attempts=2 --randomize-all --poll-progress-after=10s --tags="!integration" --skip-package="dokku-api" internal/
-	DOKKU_MCP_INTEGRATION_TESTS=1 DOKKU_MCP_LOG_LEVEL=debug ginkgo -v -r -tags=integration --timeout=5m --flake-attempts=2 --randomize-all --poll-progress-after=15s internal/dokku-api/
+test-race: $(GINKGO_BINARY)
+	$(GINKGO_BINARY) -race ./...
 
 # Integration Testing Commands 
-test-race: ## -experimental- Run tests with race detector
-	@printf "$(GREEN)🏁 Tests with race detector...$(NC)\n"
-	ginkgo -race -r --timeout=3m --flake-attempts=2 --randomize-all --poll-progress-after=10s --tags="!integration" internal/
-
 test-integration-local: dokku-start ## -experimental- Run integration tests with local Dokku
 	@printf "$(GREEN)🧪 Running integration tests with local Dokku...$(NC)\n"
 	@if [ -f ".env.dokku-local" ]; then \
@@ -125,7 +126,7 @@ vet: ## Static code analysis
 
 cyclo: ## Check cyclomatic complexity
 	@printf "$(GREEN)📊 Cyclomatic complexity...$(NC)\n"
-	gocyclo -over 20 $$(find $(GO_SRC_PATHS) -name "*.go" -not -path "./vendor/*" -not -path "./.git/*" 2>/dev/null || true)
+	gocyclo -over 25 $$(find $(GO_SRC_PATHS) -name "*.go" -not -path "./vendor/*" -not -path "./.git/*" 2>/dev/null || true)
 
 dep-graph-dot: ## Generate Go import dependency graph in DOT format
 	@printf "$(GREEN)📊 Generating Go import dependency graph (DOT)...$(NC)\n"

@@ -18,8 +18,6 @@ type DeploymentService interface {
 
 // DeploymentInfrastructure simplified interface for infrastructure operations
 type DeploymentInfrastructure interface {
-	CheckApplicationExists(ctx context.Context, appName string) (bool, error)
-	CreateApplication(ctx context.Context, appName string) error
 	SetBuildpack(ctx context.Context, appName string, buildpack string) error
 	PerformGitDeploy(ctx context.Context, appName string, gitRef string) error
 	ParseDeploymentHistory(ctx context.Context, appName string) ([]*Deployment, error)
@@ -63,20 +61,6 @@ func (s *ApplicationDeploymentService) Deploy(ctx context.Context, appName strin
 	}
 
 	deployment.Start()
-
-	exists, err := s.infrastructure.CheckApplicationExists(ctx, appName)
-	if err != nil {
-		deployment.Fail(fmt.Sprintf("Échec de vérification de l'existence de l'application: %v", err))
-		return deployment, fmt.Errorf("échec de vérification de l'existence de l'application: %w", err)
-	}
-
-	if !exists {
-		if err := s.infrastructure.CreateApplication(ctx, appName); err != nil {
-			deployment.Fail(fmt.Sprintf("Échec de création de l'application: %v", err))
-			return deployment, fmt.Errorf("échec de création de l'application: %w", err)
-		}
-		s.logger.Info("Application créée avec succès", "nom_app", appName)
-	}
 
 	if options.BuildPack != "" {
 		if err := s.infrastructure.SetBuildpack(ctx, appName, options.BuildPack); err != nil {
@@ -161,14 +145,6 @@ func (s *ApplicationDeploymentService) Rollback(ctx context.Context, appName str
 // GetHistory récupère l'historique des déploiements
 func (s *ApplicationDeploymentService) GetHistory(ctx context.Context, appName string) ([]*Deployment, error) {
 	s.logger.Debug("Récupération de l'historique des déploiements", "nom_app", appName)
-
-	exists, err := s.infrastructure.CheckApplicationExists(ctx, appName)
-	if err != nil {
-		return nil, fmt.Errorf("échec de vérification de l'existence de l'application: %w", err)
-	}
-	if !exists {
-		return []*Deployment{}, nil
-	}
 
 	deployments, err := s.infrastructure.ParseDeploymentHistory(ctx, appName)
 	if err != nil {

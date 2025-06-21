@@ -2,6 +2,7 @@ package infrastructure
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -25,13 +26,22 @@ func NewPluginDiscoveryService(client dokkuApi.DokkuClient, logger *slog.Logger)
 	}
 }
 
+// executeCommand wraps the client's ExecuteCommand with plugin-specific context and validation
+func (s *srvPluginDiscoveryService) executeCommand(ctx context.Context, command domain.PluginCommand, args []string) ([]byte, error) {
+	if !command.IsValid() {
+		return nil, fmt.Errorf("invalid plugin command: %s", command)
+	}
+
+	return s.client.ExecuteCommand(ctx, command.String(), args)
+}
+
 // GetEnabledDokkuPlugins retrieves the list of enabled Dokku plugins.
 func (s *srvPluginDiscoveryService) GetEnabledDokkuPlugins(ctx context.Context) ([]string, error) {
 	pluginCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
 	// Execute 'dokku plugin:list' command - no server-plugin plugin/ is loaded yet at this stage
-	output, err := s.client.ExecuteCommand(pluginCtx, "plugin:list", []string{})
+	output, err := s.executeCommand(pluginCtx, domain.CommandPluginList, []string{})
 	if err != nil {
 		s.logger.Error("Failed to execute plugin:list",
 			"error", err)

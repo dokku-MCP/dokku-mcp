@@ -26,27 +26,18 @@ func NewDeploymentInfrastructure(client dokku_client.DokkuClient, logger *slog.L
 	}
 }
 
-// CheckApplicationExists checks if application exists in Dokku - INFRASTRUCTURE ONLY
-func (s *deploymentInfrastructure) CheckApplicationExists(ctx context.Context, appName string) (bool, error) {
-	_, err := s.client.ExecuteCommand(ctx, "apps:exists", []string{appName})
-	if err != nil {
-		return false, nil
+// executeCommand wraps the client's ExecuteCommand with deployment-specific context and validation
+func (s *deploymentInfrastructure) executeCommand(ctx context.Context, command domain.DeploymentCommand, args []string) ([]byte, error) {
+	if !command.IsValid() {
+		return nil, fmt.Errorf("invalid deployment command: %s", command)
 	}
-	return true, nil
-}
 
-// CreateApplication creates application in Dokku - INFRASTRUCTURE ONLY
-func (s *deploymentInfrastructure) CreateApplication(ctx context.Context, appName string) error {
-	_, err := s.client.ExecuteCommand(ctx, "apps:create", []string{appName})
-	if err != nil {
-		return fmt.Errorf("failed to create application in Dokku: %w", err)
-	}
-	return nil
+	return s.client.ExecuteCommand(ctx, command.String(), args)
 }
 
 // SetBuildpack sets buildpack for application in Dokku - INFRASTRUCTURE ONLY
 func (s *deploymentInfrastructure) SetBuildpack(ctx context.Context, appName string, buildpack string) error {
-	_, err := s.client.ExecuteCommand(ctx, "buildpacks:set", []string{appName, buildpack})
+	_, err := s.executeCommand(ctx, domain.CommandBuildpacksSet, []string{appName, buildpack})
 	if err != nil {
 		return fmt.Errorf("failed to set buildpack in Dokku: %w", err)
 	}
@@ -60,7 +51,7 @@ func (s *deploymentInfrastructure) PerformGitDeploy(ctx context.Context, appName
 		args = append(args, gitRef)
 	}
 
-	_, err := s.client.ExecuteCommand(ctx, "git:sync", args)
+	_, err := s.executeCommand(ctx, domain.CommandGitSync, args)
 	if err != nil {
 		return fmt.Errorf("failed to perform git deploy in Dokku: %w", err)
 	}
@@ -71,7 +62,7 @@ func (s *deploymentInfrastructure) PerformGitDeploy(ctx context.Context, appName
 // ParseDeploymentHistory retrieves deployment history from Dokku - INFRASTRUCTURE ONLY
 func (s *deploymentInfrastructure) ParseDeploymentHistory(ctx context.Context, appName string) ([]*domain.Deployment, error) {
 	// Get events from Dokku
-	eventsOutput, err := s.client.ExecuteCommand(ctx, "events", []string{appName})
+	eventsOutput, err := s.executeCommand(ctx, domain.CommandEvents, []string{appName})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get events from Dokku: %w", err)
 	}

@@ -27,6 +27,7 @@ type SSHManager interface {
 // CommandFilter defines command filtering/security capabilities
 type CommandFilter interface {
 	SetBlacklist(commands []string)
+	ValidateCommand(command string, args []string) error
 }
 
 // DokkuClient combines all Dokku-specific capabilities

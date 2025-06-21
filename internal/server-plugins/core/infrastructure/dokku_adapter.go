@@ -25,6 +25,16 @@ func NewDokkuCoreAdapter(client dokkuApi.DokkuClient, logger *slog.Logger) *Dokk
 	}
 }
 
+// executeCommand wraps the client's ExecuteCommand with core-specific context and validation
+func (a *DokkuCoreAdapter) executeCommand(ctx context.Context, command domain.CoreCommand, args []string) ([]byte, error) {
+	// Validate command is allowed
+	if !command.IsValid() {
+		return nil, fmt.Errorf("invalid core command: %s", command)
+	}
+
+	return a.client.ExecuteCommand(ctx, command.String(), args)
+}
+
 // SystemRepository implementation
 func (a *DokkuCoreAdapter) GetSystemStatus(ctx context.Context) (*domain.SystemStatus, error) {
 	status := &domain.SystemStatus{
@@ -32,7 +42,7 @@ func (a *DokkuCoreAdapter) GetSystemStatus(ctx context.Context) (*domain.SystemS
 	}
 
 	// Get version
-	versionOutput, err := a.client.ExecuteCommand(ctx, "version", []string{})
+	versionOutput, err := a.executeCommand(ctx, domain.CommandVersion, []string{})
 	if err != nil {
 		a.logger.Warn("Failed to get Dokku version", "error", err)
 		status.Version = "unknown"
@@ -41,7 +51,7 @@ func (a *DokkuCoreAdapter) GetSystemStatus(ctx context.Context) (*domain.SystemS
 	}
 
 	// Get global domains
-	domainsOutput, err := a.client.ExecuteCommand(ctx, "domains:report", []string{"--global"})
+	domainsOutput, err := a.executeCommand(ctx, domain.CommandDomainsReport, []string{"--global"})
 	if err != nil {
 		a.logger.Warn("Failed to get global domains", "error", err)
 	} else {
@@ -50,7 +60,7 @@ func (a *DokkuCoreAdapter) GetSystemStatus(ctx context.Context) (*domain.SystemS
 	}
 
 	// Get proxy type
-	proxyOutput, err := a.client.ExecuteCommand(ctx, "proxy:report", []string{"--global", "--proxy-type"})
+	proxyOutput, err := a.executeCommand(ctx, domain.CommandProxyReport, []string{"--global", "--proxy-type"})
 	if err != nil {
 		a.logger.Warn("Failed to get proxy type", "error", err)
 		status.ProxyType = "nginx" // default
@@ -59,7 +69,7 @@ func (a *DokkuCoreAdapter) GetSystemStatus(ctx context.Context) (*domain.SystemS
 	}
 
 	// Get scheduler
-	schedulerOutput, err := a.client.ExecuteCommand(ctx, "scheduler:report", []string{"--global", "--scheduler-selected"})
+	schedulerOutput, err := a.executeCommand(ctx, domain.CommandSchedulerReport, []string{"--global", "--scheduler-selected"})
 	if err != nil {
 		a.logger.Warn("Failed to get scheduler", "error", err)
 		status.Scheduler = "docker-local" // default
@@ -139,7 +149,7 @@ func (a *DokkuCoreAdapter) GetResourceUsage(ctx context.Context) (*domain.Resour
 
 // PluginRepository implementation
 func (a *DokkuCoreAdapter) ListPlugins(ctx context.Context) ([]domain.DokkuPlugin, error) {
-	output, err := a.client.ExecuteCommand(ctx, "plugin:list", []string{})
+	output, err := a.executeCommand(ctx, domain.CommandPluginList, []string{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list plugins: %w", err)
 	}
@@ -179,7 +189,7 @@ func (a *DokkuCoreAdapter) InstallPlugin(ctx context.Context, source string, opt
 		}
 	}
 
-	_, err := a.client.ExecuteCommand(ctx, "plugin:install", args)
+	_, err := a.executeCommand(ctx, domain.CommandPluginInstall, args)
 	if err != nil {
 		return fmt.Errorf("failed to install plugin %s: %w", source, err)
 	}
@@ -188,7 +198,7 @@ func (a *DokkuCoreAdapter) InstallPlugin(ctx context.Context, source string, opt
 }
 
 func (a *DokkuCoreAdapter) UninstallPlugin(ctx context.Context, name string) error {
-	_, err := a.client.ExecuteCommand(ctx, "plugin:uninstall", []string{name})
+	_, err := a.executeCommand(ctx, domain.CommandPluginUninstall, []string{name})
 	if err != nil {
 		return fmt.Errorf("failed to uninstall plugin %s: %w", name, err)
 	}
@@ -196,7 +206,7 @@ func (a *DokkuCoreAdapter) UninstallPlugin(ctx context.Context, name string) err
 }
 
 func (a *DokkuCoreAdapter) EnablePlugin(ctx context.Context, name string) error {
-	_, err := a.client.ExecuteCommand(ctx, "plugin:enable", []string{name})
+	_, err := a.executeCommand(ctx, domain.CommandPluginEnable, []string{name})
 	if err != nil {
 		return fmt.Errorf("failed to enable plugin %s: %w", name, err)
 	}
@@ -204,7 +214,7 @@ func (a *DokkuCoreAdapter) EnablePlugin(ctx context.Context, name string) error 
 }
 
 func (a *DokkuCoreAdapter) DisablePlugin(ctx context.Context, name string) error {
-	_, err := a.client.ExecuteCommand(ctx, "plugin:disable", []string{name})
+	_, err := a.executeCommand(ctx, domain.CommandPluginDisable, []string{name})
 	if err != nil {
 		return fmt.Errorf("failed to disable plugin %s: %w", name, err)
 	}
@@ -217,7 +227,7 @@ func (a *DokkuCoreAdapter) UpdatePlugin(ctx context.Context, name string, versio
 		args = append(args, version)
 	}
 
-	_, err := a.client.ExecuteCommand(ctx, "plugin:update", args)
+	_, err := a.executeCommand(ctx, domain.CommandPluginUpdate, args)
 	if err != nil {
 		return fmt.Errorf("failed to update plugin %s: %w", name, err)
 	}
@@ -226,7 +236,7 @@ func (a *DokkuCoreAdapter) UpdatePlugin(ctx context.Context, name string, versio
 
 // DomainRepository implementation
 func (a *DokkuCoreAdapter) ListGlobalDomains(ctx context.Context) ([]domain.GlobalDomain, error) {
-	output, err := a.client.ExecuteCommand(ctx, "domains:report", []string{"--global"})
+	output, err := a.executeCommand(ctx, domain.CommandDomainsReport, []string{"--global"})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list global domains: %w", err)
 	}
@@ -246,7 +256,7 @@ func (a *DokkuCoreAdapter) ListGlobalDomains(ctx context.Context) ([]domain.Glob
 }
 
 func (a *DokkuCoreAdapter) AddGlobalDomain(ctx context.Context, domainName string) error {
-	_, err := a.client.ExecuteCommand(ctx, "domains:add-global", []string{domainName})
+	_, err := a.executeCommand(ctx, domain.CommandDomainsAddGlobal, []string{domainName})
 	if err != nil {
 		return fmt.Errorf("failed to add global domain %s: %w", domainName, err)
 	}
@@ -254,7 +264,7 @@ func (a *DokkuCoreAdapter) AddGlobalDomain(ctx context.Context, domainName strin
 }
 
 func (a *DokkuCoreAdapter) RemoveGlobalDomain(ctx context.Context, domainName string) error {
-	_, err := a.client.ExecuteCommand(ctx, "domains:remove-global", []string{domainName})
+	_, err := a.executeCommand(ctx, domain.CommandDomainsRemoveGlobal, []string{domainName})
 	if err != nil {
 		return fmt.Errorf("failed to remove global domain %s: %w", domainName, err)
 	}
@@ -263,7 +273,7 @@ func (a *DokkuCoreAdapter) RemoveGlobalDomain(ctx context.Context, domainName st
 
 func (a *DokkuCoreAdapter) SetGlobalDomains(ctx context.Context, domains []string) error {
 	args := domains
-	_, err := a.client.ExecuteCommand(ctx, "domains:set-global", args)
+	_, err := a.executeCommand(ctx, domain.CommandDomainsSetGlobal, args)
 	if err != nil {
 		return fmt.Errorf("failed to set global domains: %w", err)
 	}
@@ -271,7 +281,7 @@ func (a *DokkuCoreAdapter) SetGlobalDomains(ctx context.Context, domains []strin
 }
 
 func (a *DokkuCoreAdapter) ClearGlobalDomains(ctx context.Context) error {
-	_, err := a.client.ExecuteCommand(ctx, "domains:clear-global", []string{})
+	_, err := a.executeCommand(ctx, domain.CommandDomainsClearGlobal, []string{})
 	if err != nil {
 		return fmt.Errorf("failed to clear global domains: %w", err)
 	}
@@ -279,7 +289,7 @@ func (a *DokkuCoreAdapter) ClearGlobalDomains(ctx context.Context) error {
 }
 
 func (a *DokkuCoreAdapter) GetDomainsReport(ctx context.Context) (*domain.DomainsReport, error) {
-	output, err := a.client.ExecuteCommand(ctx, "domains:report", []string{})
+	output, err := a.executeCommand(ctx, domain.CommandDomainsReport, []string{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get domains report: %w", err)
 	}
@@ -325,7 +335,7 @@ func (a *DokkuCoreAdapter) GetDomainsReport(ctx context.Context) (*domain.Domain
 
 // SSHKeyRepository implementation
 func (a *DokkuCoreAdapter) ListSSHKeys(ctx context.Context) ([]domain.SSHKey, error) {
-	output, err := a.client.ExecuteCommand(ctx, "ssh-keys:list", []string{})
+	output, err := a.executeCommand(ctx, domain.CommandSSHKeysList, []string{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list SSH keys: %w", err)
 	}
@@ -341,7 +351,7 @@ func (a *DokkuCoreAdapter) AddSSHKey(ctx context.Context, name string, keyConten
 }
 
 func (a *DokkuCoreAdapter) RemoveSSHKey(ctx context.Context, name string) error {
-	_, err := a.client.ExecuteCommand(ctx, "ssh-keys:remove", []string{name})
+	_, err := a.executeCommand(ctx, domain.CommandSSHKeysRemove, []string{name})
 	if err != nil {
 		return fmt.Errorf("failed to remove SSH key %s: %w", name, err)
 	}
@@ -379,7 +389,7 @@ func (a *DokkuCoreAdapter) LoginRegistry(ctx context.Context, registry, username
 }
 
 func (a *DokkuCoreAdapter) LogoutRegistry(ctx context.Context, registry string) error {
-	_, err := a.client.ExecuteCommand(ctx, "registry:logout", []string{registry})
+	_, err := a.executeCommand(ctx, domain.CommandRegistryLogout, []string{registry})
 	if err != nil {
 		return fmt.Errorf("failed to logout from registry %s: %w", registry, err)
 	}
@@ -402,17 +412,17 @@ func (a *DokkuCoreAdapter) GetGlobalConfiguration(ctx context.Context) (*domain.
 	}
 
 	// Get proxy type
-	if proxyOutput, err := a.client.ExecuteCommand(ctx, "proxy:report", []string{"--global", "--proxy-type"}); err == nil {
+	if proxyOutput, err := a.executeCommand(ctx, domain.CommandProxyReport, []string{"--global", "--proxy-type"}); err == nil {
 		config.ProxyType = strings.TrimSpace(string(proxyOutput))
 	}
 
 	// Get scheduler
-	if schedulerOutput, err := a.client.ExecuteCommand(ctx, "scheduler:report", []string{"--global", "--scheduler-selected"}); err == nil {
+	if schedulerOutput, err := a.executeCommand(ctx, domain.CommandSchedulerReport, []string{"--global", "--scheduler-selected"}); err == nil {
 		config.Scheduler = strings.TrimSpace(string(schedulerOutput))
 	}
 
 	// Get deploy branch
-	if branchOutput, err := a.client.ExecuteCommand(ctx, "git:report", []string{"--global", "--git-deploy-branch"}); err == nil {
+	if branchOutput, err := a.executeCommand(ctx, domain.CommandGitReport, []string{"--global", "--git-deploy-branch"}); err == nil {
 		config.DeployBranch = strings.TrimSpace(string(branchOutput))
 	}
 
@@ -420,7 +430,7 @@ func (a *DokkuCoreAdapter) GetGlobalConfiguration(ctx context.Context) (*domain.
 }
 
 func (a *DokkuCoreAdapter) SetGlobalProxyType(ctx context.Context, proxyType string) error {
-	_, err := a.client.ExecuteCommand(ctx, "proxy:set", []string{"--global", proxyType})
+	_, err := a.executeCommand(ctx, domain.CommandProxySet, []string{"--global", proxyType})
 	if err != nil {
 		return fmt.Errorf("failed to set global proxy type: %w", err)
 	}
@@ -428,7 +438,7 @@ func (a *DokkuCoreAdapter) SetGlobalProxyType(ctx context.Context, proxyType str
 }
 
 func (a *DokkuCoreAdapter) SetGlobalScheduler(ctx context.Context, scheduler string) error {
-	_, err := a.client.ExecuteCommand(ctx, "scheduler:set", []string{"--global", "selected", scheduler})
+	_, err := a.executeCommand(ctx, domain.CommandSchedulerSet, []string{"--global", "selected", scheduler})
 	if err != nil {
 		return fmt.Errorf("failed to set global scheduler: %w", err)
 	}
@@ -436,7 +446,7 @@ func (a *DokkuCoreAdapter) SetGlobalScheduler(ctx context.Context, scheduler str
 }
 
 func (a *DokkuCoreAdapter) SetGlobalDeployBranch(ctx context.Context, branch string) error {
-	_, err := a.client.ExecuteCommand(ctx, "git:set", []string{"--global", "deploy-branch", branch})
+	_, err := a.executeCommand(ctx, domain.CommandGitSet, []string{"--global", "deploy-branch", branch})
 	if err != nil {
 		return fmt.Errorf("failed to set global deploy branch: %w", err)
 	}
@@ -444,7 +454,7 @@ func (a *DokkuCoreAdapter) SetGlobalDeployBranch(ctx context.Context, branch str
 }
 
 func (a *DokkuCoreAdapter) SetLetsEncryptEmail(ctx context.Context, email string) error {
-	_, err := a.client.ExecuteCommand(ctx, "letsencrypt:set", []string{"--global", "email", email})
+	_, err := a.executeCommand(ctx, domain.CommandLetsEncryptSet, []string{"--global", "email", email})
 	if err != nil {
 		return fmt.Errorf("failed to set letsencrypt email: %w", err)
 	}
@@ -452,7 +462,7 @@ func (a *DokkuCoreAdapter) SetLetsEncryptEmail(ctx context.Context, email string
 }
 
 func (a *DokkuCoreAdapter) SetVectorSink(ctx context.Context, sink string) error {
-	_, err := a.client.ExecuteCommand(ctx, "logs:set", []string{"--global", "vector-sink", sink})
+	_, err := a.executeCommand(ctx, domain.CommandLogsSet, []string{"--global", "vector-sink", sink})
 	if err != nil {
 		return fmt.Errorf("failed to set vector sink: %w", err)
 	}

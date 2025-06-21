@@ -136,7 +136,7 @@ func (r *DokkuApplicationRepository) Save(ctx context.Context, application *app.
 	}
 
 	if !exists {
-		_, err := r.dokku.ExecuteCommand(ctx, "apps:create", []string{application.Name().Value()})
+		_, err := r.dokku.ExecuteCommand(ctx, app.CommandAppsCreate, []string{application.Name().Value()})
 		if err != nil {
 			return fmt.Errorf("failed to create application: %w", err)
 		}
@@ -162,7 +162,7 @@ func (r *DokkuApplicationRepository) Delete(ctx context.Context, name *app.Appli
 	r.logger.Debug("Deleting application",
 		"app_name", name.Value())
 
-	_, err := r.dokku.ExecuteCommand(ctx, "apps:destroy", []string{name.Value(), "--force"})
+	_, err := r.dokku.ExecuteCommand(ctx, app.CommandAppsDestroy, []string{name.Value(), "--force"})
 	if err != nil {
 		return fmt.Errorf("failed to delete application: %w", err)
 	}
@@ -177,7 +177,7 @@ func (r *DokkuApplicationRepository) Exists(ctx context.Context, name *app.Appli
 	r.logger.Debug("Checking application existence",
 		"app_name", name.Value())
 
-	_, err := r.dokku.ExecuteCommand(ctx, "apps:exists", []string{name.Value()})
+	_, err := r.dokku.ExecuteCommand(ctx, app.CommandAppsExists, []string{name.Value()})
 	if err != nil {
 		return false, nil
 	}
@@ -434,7 +434,7 @@ func (r *DokkuApplicationRepository) parseProcesses(application *app.Application
 
 // tryGetBasicApplicationInfo tries to retrieve basic information
 func (r *DokkuApplicationRepository) tryGetBasicApplicationInfo(ctx context.Context, appName string) (map[string]string, error) {
-	output, err := r.dokku.ExecuteCommand(ctx, "apps:report", []string{appName})
+	output, err := r.dokku.ExecuteCommand(ctx, app.CommandAppsReport, []string{appName})
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute apps:report: %w", err)
 	}

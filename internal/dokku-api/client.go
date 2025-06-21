@@ -10,13 +10,13 @@ import (
 	"time"
 )
 
-// validateCommand performs basic validation on Dokku commands and checks blacklist
-func (c *client) validateCommand(commandName string, args []string) error {
+// ValidateCommand performs validation on Dokku commands to ensure security
+func (c *client) ValidateCommand(commandName string, args []string) error {
 	if commandName == "" {
 		return fmt.Errorf("command name cannot be empty")
 	}
 
-	// Substring matching for blacklist
+	// Blacklist first (runtime configuration)
 	for _, blacklistedPattern := range c.blacklistedCommands {
 		if strings.Contains(commandName, blacklistedPattern) {
 			return fmt.Errorf("command is blacklisted (matches pattern '%s'): %s", blacklistedPattern, commandName)
@@ -24,16 +24,34 @@ func (c *client) validateCommand(commandName string, args []string) error {
 	}
 
 	// Basic security validation - ensure no dangerous characters in command name
-	if strings.Contains(commandName, ";") || strings.Contains(commandName, "&") || strings.Contains(commandName, "|") || strings.Contains(commandName, "`") {
-		return fmt.Errorf("command name contains dangerous characters: %s", commandName)
-	}
-
-	// Basic argument validation - ensure no dangerous characters
-	for i, arg := range args {
-		if strings.Contains(arg, ";") || strings.Contains(arg, "&") || strings.Contains(arg, "|") {
-			return fmt.Errorf("argument %d contains dangerous characters: %s", i, arg)
+	// These characters could be used for command injection
+	dangerousChars := []string{";", "&", "|", "`", "$", "(", ")", "{", "}", "<", ">", "\n", "\r"}
+	for _, char := range dangerousChars {
+		if strings.Contains(commandName, char) {
+			return fmt.Errorf("command name contains dangerous character '%s': %s", char, commandName)
 		}
 	}
+
+	// Validate arguments - ensure no dangerous characters
+	for i, arg := range args {
+		for _, char := range dangerousChars {
+			if strings.Contains(arg, char) {
+				return fmt.Errorf("argument %d contains dangerous character '%s': %s", i, char, arg)
+			}
+		}
+	}
+
+	// Additional validation: command should only contain alphanumeric, dash, colon
+	for _, r := range commandName {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == ':') {
+			return fmt.Errorf("command name contains invalid character: %c", r)
+		}
+	}
+
+	// Log the command for audit purposes
+	c.logger.Debug("Command validated",
+		"command", commandName,
+		"args_count", len(args))
 
 	return nil
 }
@@ -77,7 +95,7 @@ func (c *client) GetSSHConnectionManager() *SSHConnectionManager {
 }
 
 func (c *client) ExecuteCommand(ctx context.Context, commandName string, args []string) ([]byte, error) {
-	if err := c.validateCommand(commandName, args); err != nil {
+	if err := c.ValidateCommand(commandName, args); err != nil {
 		return nil, fmt.Errorf("invalid command: %w", err)
 	}
 
@@ -114,6 +132,12 @@ func (c *client) executeCommandDirect(ctx context.Context, commandName string, a
 		return nil, fmt.Errorf("failed to prepare SSH command: %w", err)
 	}
 
+	// #nosec G204 -- Commands are validated through multiple layers:
+	// 1. Plugin domain layer enforces whitelist of allowed commands via enums
+	// 2. Infrastructure adapters validate commands before execution
+	// 3. validateCommand() checks for dangerous characters and patterns
+	// 4. There is a global blacklist of commands that are not allowed to be executed
+	// 5. SSH command construction is internal, not from direct user input
 	cmd := exec.CommandContext(cmdCtx, sshArgs[0], sshArgs[1:]...)
 	cmd.Env = env
 	// Set stdin to avoid potential SSH interaction issues
@@ -171,8 +195,10 @@ func (c *client) InvalidateCache() {
 	c.cacheManager.Invalidate()
 }
 
+// SetBlacklist sets the blacklisted commands for runtime security configuration
 func (c *client) SetBlacklist(commands []string) {
 	c.blacklistedCommands = commands
+	c.logger.Debug("Command blacklist updated", "patterns", commands) // Audit trail
 }
 
 // Enhanced parsing methods
