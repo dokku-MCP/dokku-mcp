@@ -15,12 +15,12 @@ env:
   GO_VERSION: '1.24'
 
 jobs:
-  create-release:
-    name: Create Release
+  prepare-release:
+    name: Prepare Release
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.get_version.outputs.version }}
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      changelog: ${{ steps.changelog.outputs.changelog }}
     
     steps:
       - name: Checkout code
@@ -51,41 +51,10 @@ jobs:
           echo "$CHANGELOG" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ steps.get_version.outputs.version }}
-          release_name: Release ${{ steps.get_version.outputs.version }}
-          body: |
-            ## Changes
-            ${{ steps.changelog.outputs.changelog }}
-            
-            ## Installation
-            
-            Download the appropriate binary for your platform from the assets below.
-            
-            ### Linux/macOS
-            ```bash
-            # Download and install (replace with actual URL for your architecture)
-            curl -L -o dokku-mcp https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.version }}/dokku-mcp-linux-amd64
-            chmod +x dokku-mcp
-            sudo mv dokku-mcp /usr/local/bin/
-            ```
-            
-            ### Verify installation
-            ```bash
-            dokku-mcp --version
-            ```
-          draft: false
-          prerelease: false
-
-  build-and-upload:
-    name: Build and Upload
+  build-and-release:
+    name: Build and Release
     runs-on: ubuntu-latest
-    needs: create-release
+    needs: prepare-release
     strategy:
       matrix:
         os: [linux, darwin]
@@ -124,8 +93,9 @@ jobs:
             BINARY_NAME="${BINARY_NAME}.exe"
           fi
           
+          mkdir -p build
           go build \
-            -ldflags "-X main.Version=${{ needs.create-release.outputs.version }} -X main.BuildTime=$(date -u '+%Y-%m-%d_%H:%M:%S') -s -w" \
+            -ldflags "-X main.Version=${{ needs.prepare-release.outputs.version }} -X main.BuildTime=$(date -u '+%Y-%m-%d_%H:%M:%S') -s -w" \
             -o "build/${BINARY_NAME}" \
             cmd/server/main.go
 
@@ -150,25 +120,37 @@ jobs:
           echo "archive=$ARCHIVE" >> $GITHUB_OUTPUT
           echo "binary_name=$BINARY_NAME" >> $GITHUB_OUTPUT
 
-      - name: Upload binary
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create Release
+        uses: ncipollo/release-action@v1
         with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: build/${{ steps.create_archive.outputs.binary_name }}
-          asset_name: ${{ steps.create_archive.outputs.binary_name }}
-          asset_content_type: application/octet-stream
-
-      - name: Upload archive
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: build/${{ steps.create_archive.outputs.archive }}
-          asset_name: ${{ steps.create_archive.outputs.archive }}
-          asset_content_type: application/octet-stream
+          tag: ${{ needs.prepare-release.outputs.version }}
+          name: Release ${{ needs.prepare-release.outputs.version }}
+          body: |
+            ## Changes
+            ${{ needs.prepare-release.outputs.changelog }}
+            
+            ## Installation
+            
+            Download the appropriate binary for your platform from the assets below.
+            
+            ### Linux/macOS
+            ```bash
+            # Download and install (replace with actual URL for your architecture)
+            curl -L -o dokku-mcp https://github.com/${{ github.repository }}/releases/download/${{ needs.prepare-release.outputs.version }}/dokku-mcp-linux-amd64
+            chmod +x dokku-mcp
+            sudo mv dokku-mcp /usr/local/bin/
+            ```
+            
+            ### Verify installation
+            ```bash
+            dokku-mcp --version
+            ```
+          artifacts: "build/${{ steps.create_archive.outputs.binary_name }},build/${{ steps.create_archive.outputs.archive }}"
+          draft: false
+          prerelease: false
+          allowUpdates: true
+          removeArtifacts: false
+          token: ${{ secrets.GITHUB_TOKEN }}
 
   # docker-build:
   #   name: Build and Push Docker Image
@@ -216,7 +198,7 @@ jobs:
   update-docs:
     name: Update Documentation
     runs-on: ubuntu-latest
-    needs: [create-release, build-and-upload]
+    needs: [prepare-release, build-and-release]
     
     steps:
       - name: Checkout code
@@ -226,7 +208,7 @@ jobs:
 
       - name: Update version in docs
         run: |
-          VERSION="${{ needs.create-release.outputs.version }}"
+          VERSION="${{ needs.prepare-release.outputs.version }}"
           # Update README.md with new version
           sed -i "s/Version: v[0-9]\+\.[0-9]\+\.[0-9]\+/Version: $VERSION/g" README.md || true
           
@@ -238,19 +220,19 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add README.md
-          git diff --staged --quiet || git commit -m "docs: update version to ${{ needs.create-release.outputs.version }}"
+          git diff --staged --quiet || git commit -m "docs: update version to ${{ needs.prepare-release.outputs.version }}"
           git push
 
   notify-success:
     name: Notify Success
     runs-on: ubuntu-latest
-    needs: [create-release, build-and-upload, update-docs]
+    needs: [prepare-release, build-and-release, update-docs]
     if: success()
     
     steps:
       - name: Success notification
         run: |
-          echo "🎉 Release ${{ needs.create-release.outputs.version }} completed successfully!"
+          echo "🎉 Release ${{ needs.prepare-release.outputs.version }} completed successfully!"
           echo "📦 Binaries built for all platforms"
           # echo "🐳 Docker image pushed"
           echo "📚 Documentation updated" 
