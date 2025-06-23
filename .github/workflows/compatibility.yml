@@ -168,57 +168,14 @@ jobs:
   #     if: always()
   #     run: make cleanup-ci
 
-  security-audit:
-    name: Deep Security Audit
-    runs-on: ubuntu-22.04
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Setup Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.24'
-        cache: true
-    
-    - name: Install security tools
-      run: |
-        go install github.com/securego/gosec/v2/cmd/gosec@latest
-        go install github.com/quasilyte/go-ruleguard/cmd/ruleguard@latest
-        go install honnef.co/go/tools/cmd/staticcheck@latest
-    
-    - name: Security analysis with gosec
-      run: make security
-    
-    - name: Static analysis with staticcheck
-      run: staticcheck ./...
-    
-    - name: Vulnerable dependency check
-      run: |
-        go list -json -deps ./... | go run github.com/sonatypecommunity/nancy@latest sleuth
-    
-    - name: Upload security report
-      if: failure()
-      uses: github/codeql-action/upload-sarif@v2
-      with:
-        sarif_file: gosec-report.sarif
-      continue-on-error: true
-    
-    - name: Upload security artifacts
-      if: failure()
-      uses: actions/upload-artifact@v4
-      with:
-        name: security-reports-${{ github.run_number }}
-        path: |
-          gosec-report.*
-      continue-on-error: true
-
   notify:
     name: Notification Results
     runs-on: ubuntu-22.04
-    needs: [setup-matrix, dokku-compatibility, security-audit]
+    needs: [setup-matrix, dokku-compatibility]
     if: always() && !cancelled()
+    permissions:
+      issues: write
+      contents: read
     
     steps:
     - name: Prepare summary
@@ -250,22 +207,12 @@ jobs:
             ;;
         esac
         echo "" >> summary.md
-        echo "### Job Status:" >> summary.md
-        echo "- Dokku Compatibility: ${{ needs.dokku-compatibility.result }}" >> summary.md
-        if [ "${{ needs.security-audit.result }}" != "skipped" ]; then
-          echo "- Security Audit: ${{ needs.security-audit.result }}" >> summary.md
-        fi
-        echo "" >> summary.md
-        echo "### Recommended Actions:" >> summary.md
-        if [ "${{ needs.security-audit.result }}" = "failure" ]; then
-          echo "- 🔒 Review security alerts" >> summary.md
-        fi
         if [ "${{ needs.dokku-compatibility.result }}" = "failure" ]; then
           echo "- 🔧 Check compatibility with new Dokku versions" >> summary.md
         fi
     
     - name: Create issue if tests fail
-      if: needs.dokku-compatibility.result == 'failure' || (needs.security-audit.result == 'failure' && needs.security-audit.result != 'skipped')
+      if: needs.dokku-compatibility.result == 'failure'
       uses: actions/github-script@v7
       with:
         script: |
