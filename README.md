@@ -63,37 +63,45 @@ If you prefer to build from source:
 
 ## Configuration
 
-The server is configured via a `config.yaml` file or environment variables.
+The server can be configured in two ways: using a `config.yaml` file or via environment variables.
 
-1. **Create a configuration file:**
+### Configuration File
 
-   Copy the example configuration file:
-   ```bash
-   cp config.yaml.example config.yaml
-   ```
+Create a configuration file at one of the following locations:
 
-2. **Edit `config.yaml`:**
+- **System-wide**: `/etc/dokku-mcp/config.yaml`
+- **User-specific**: `~/.dokku-mcp/config.yaml`
+- **Local**: `config.yaml` in the same directory as the binary.
 
-   Adjust the settings in `config.yaml` to match your environment. At a minimum, you'll need to configure the SSH settings to connect to your Dokku host.
+Here is a minimal `config.yaml` example:
+```yaml
+ssh:
+  host: "your-dokku-host.com"
+  user: "dokku"
+  # key_path: "/path/to/your/ssh/private/key" # Optional, uses ssh-agent if empty
 
-   | Setting | Description |
-   |---|---|
-   | `host` | Server host to bind to. |
-   | `port` | Server port to listen on. |
-   | `log_level` | Logging level (`debug`, `info`, `warn`, `error`). |
-   | `ssh.host` | Dokku host server. |
-   | `ssh.user` | Dokku SSH user (usually `dokku`). |
-   | `ssh.key_path`| Path to the SSH private key for Dokku access (optional, uses ssh-agent if empty). |
+log_level: "info"
+```
 
-Alternatively, all settings can be controlled via environment variables with the `DOKKU_MCP_` prefix (e.g., `DOKKU_MCP_SSH_HOST`).
+For a full list of available options, please refer to the [config.yaml.example](./config.yaml.example) file.
 
-3. **Run the server:**
+### Environment Variables
 
-   ```bash
-   dokku-mcp
-   ```
+All configuration settings can be overridden with environment variables prefixed with `DOKKU_MCP_`. For example:
 
-   The server will start and be ready to accept connections from an MCP client.
+```bash
+export DOKKU_MCP_SSH_HOST="your-dokku-host.com"
+export DOKKU_MCP_SSH_USER="dokku"
+export DOKKU_MCP_LOG_LEVEL="debug"
+```
+
+### Running the Server
+
+Once configured, you can run the server:
+```bash
+dokku-mcp
+```
+The server will start and be ready to accept connections from an MCP client.
 
 ## Local Dokku Development
 
