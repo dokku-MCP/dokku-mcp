@@ -17,9 +17,12 @@ type DeploymentService interface {
 
 // DeployOptions contains deployment configuration
 type DeployOptions struct {
-	GitRef    string
-	BuildPack string
-	Force     bool
+	RepoURL    string
+	GitRef     *GitRef
+	Buildpack  *BuildpackName
+	BuildImage *DockerImage
+	RunImage   *DockerImage
+	Force      bool
 }
 
 // DeploymentResult represents the outcome of a deployment

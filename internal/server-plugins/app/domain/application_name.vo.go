@@ -6,18 +6,18 @@ import (
 	"strings"
 )
 
-// ApplicationName représente un nom d'application Dokku valide
+// ApplicationName represents a valid Dokku application name
 type ApplicationName struct {
 	value string
 }
 
 var (
-	// Pattern pour valider un nom d'application Dokku
-	// Doit respecter les conventions DNS et Dokku
+	// Pattern to validate a Dokku application name
+	// Must respect DNS and Dokku conventions
 	applicationNamePattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 )
 
-// NewApplicationName crée un nouveau nom d'application avec validation
+// NewApplicationName creates a new application name with validation
 func NewApplicationName(name string) (*ApplicationName, error) {
 	name = strings.TrimSpace(strings.ToLower(name))
 
@@ -28,26 +28,26 @@ func NewApplicationName(name string) (*ApplicationName, error) {
 	return &ApplicationName{value: name}, nil
 }
 
-// MustNewApplicationName crée un nom d'application en paniquant en cas d'erreur
+// MustNewApplicationName creates an application name, panicking on error
 func MustNewApplicationName(name string) *ApplicationName {
 	appName, err := NewApplicationName(name)
 	if err != nil {
-		panic(fmt.Sprintf("impossible de créer le nom d'application %s: %v", name, err))
+		panic(fmt.Sprintf("cannot create application name %s: %v", name, err))
 	}
 	return appName
 }
 
-// Value retourne la valeur du nom d'application
+// Value returns the value of the application name
 func (an *ApplicationName) Value() string {
 	return an.value
 }
 
-// String implémente fmt.Stringer
+// String implements fmt.Stringer
 func (an *ApplicationName) String() string {
 	return an.value
 }
 
-// Equal compare deux noms d'application
+// Equal compares two application names
 func (an *ApplicationName) Equal(other *ApplicationName) bool {
 	if other == nil {
 		return false
@@ -55,7 +55,7 @@ func (an *ApplicationName) Equal(other *ApplicationName) bool {
 	return an.value == other.value
 }
 
-// IsReserved vérifie si le nom est un nom réservé par Dokku
+// IsReserved checks if the name is a reserved name by Dokku
 func (an *ApplicationName) IsReserved() bool {
 	reservedNames := []string{
 		"dokku", "tls", "app", "plugin", "plugins", "config", "logs",
@@ -72,31 +72,31 @@ func (an *ApplicationName) IsReserved() bool {
 	return false
 }
 
-// validateApplicationName valide un nom d'application selon les règles Dokku
+// validateApplicationName validates an application name according to Dokku rules
 func validateApplicationName(name string) error {
 	if name == "" {
-		return fmt.Errorf("le nom d'application ne peut pas être vide")
+		return fmt.Errorf("application name cannot be empty")
 	}
 
 	if len(name) > 63 {
-		return fmt.Errorf("le nom d'application ne peut pas dépasser 63 caractères")
+		return fmt.Errorf("application name cannot exceed 63 characters")
 	}
 
 	if len(name) < 1 {
-		return fmt.Errorf("le nom d'application doit contenir au moins 1 caractère")
+		return fmt.Errorf("application name must contain at least 1 character")
 	}
 
-	// Vérifier le pattern DNS
+	// Check DNS pattern
 	if !applicationNamePattern.MatchString(name) {
-		return fmt.Errorf("le nom d'application doit respecter le format DNS (lettres minuscules, chiffres, tirets)")
+		return fmt.Errorf("application name must respect DNS format (lowercase letters, numbers, hyphens)")
 	}
 
-	// Ne peut pas commencer ou finir par un tiret
+	// Cannot start or end with a hyphen
 	if strings.HasPrefix(name, "-") || strings.HasSuffix(name, "-") {
-		return fmt.Errorf("le nom d'application ne peut pas commencer ou finir par un tiret")
+		return fmt.Errorf("application name cannot start or end with a hyphen")
 	}
 
-	// Vérifier les noms réservés
+	// Check reserved names
 	reservedNames := []string{
 		"dokku", "tls", "app", "plugin", "plugins", "config", "logs",
 		"ps", "run", "shell", "enter", "backup", "restore", "certs",
@@ -106,7 +106,7 @@ func validateApplicationName(name string) error {
 
 	for _, reserved := range reservedNames {
 		if name == reserved {
-			return fmt.Errorf("le nom '%s' est réservé par Dokku", name)
+			return fmt.Errorf("name '%s' is reserved by Dokku", name)
 		}
 	}
 

@@ -5,15 +5,7 @@ import (
 	"time"
 
 	"github.com/alex-galey/dokku-mcp/internal/shared"
-)
-
-// ProcessType représente un type de processus Dokku
-type ProcessType string
-
-const (
-	ProcessTypeWeb    ProcessType = "web"
-	ProcessTypeWorker ProcessType = "worker"
-	ProcessTypeCron   ProcessType = "cron"
+	"github.com/alex-galey/dokku-mcp/internal/shared/process"
 )
 
 type Application struct {
@@ -33,22 +25,16 @@ type Application struct {
 type ApplicationConfiguration struct {
 	buildpack       *shared.BuildpackName
 	domains         []*shared.DomainName
-	environmentVars map[string]string
-	processes       map[ProcessType]*Process
+	environmentVars map[shared.EnvVarKey]*shared.EnvVarValue
+	processes       map[process.ProcessType]*process.Process
 }
 
 type DeploymentInfo struct {
 	currentGitRef   *shared.GitRef
 	lastDeployedAt  *time.Time
-	buildImage      string
-	runImage        string
+	buildImage      *shared.DockerImage
+	runImage        *shared.DockerImage
 	deploymentCount int
-}
-
-type Process struct {
-	processType ProcessType
-	command     string
-	scale       int
 }
 
 type DomainEvent interface {
@@ -82,8 +68,8 @@ func NewApplicationWithState(name string, state StateValue) (*Application, error
 		updatedAt: time.Now(),
 		configuration: &ApplicationConfiguration{
 			domains:         make([]*shared.DomainName, 0),
-			environmentVars: make(map[string]string),
-			processes:       make(map[ProcessType]*Process),
+			environmentVars: make(map[shared.EnvVarKey]*shared.EnvVarValue),
+			processes:       make(map[process.ProcessType]*process.Process),
 		},
 		deploymentInfo: &DeploymentInfo{
 			deploymentCount: 0,
@@ -141,18 +127,25 @@ func (a *Application) FailDeployment(reason string) error {
 	return a.setState(StateError)
 }
 
-func (a *Application) Scale(processType ProcessType, instances int) error {
-	if instances < 0 {
-		return fmt.Errorf("the number of instances can't be negative")
-	}
-
-	process, exists := a.configuration.processes[processType]
+func (a *Application) Scale(processType process.ProcessType, instances int) error {
+	proc, exists := a.configuration.processes[processType]
 	if !exists {
-		return fmt.Errorf("the process %s doesn't exist", processType)
+		// Create a process for scaling (command will be determined from Procfile later)
+		proc, err := process.NewProcessForScaling(processType, instances)
+		if err != nil {
+			return fmt.Errorf("unable to create process: %w", err)
+		}
+		a.configuration.processes[processType] = proc
+		a.updatedAt = time.Now()
+		a.addEvent(NewApplicationScaledEvent(a.name.Value(), string(processType), 0, instances, time.Now()))
+		return nil
 	}
 
-	oldScale := process.scale
-	process.scale = instances
+	oldScale := proc.Scale()
+	err := proc.SetScale(instances)
+	if err != nil {
+		return err
+	}
 	a.updatedAt = time.Now()
 	a.addEvent(NewApplicationScaledEvent(a.name.Value(), string(processType), oldScale, instances, time.Now()))
 
@@ -211,32 +204,39 @@ func (a *Application) SetBuildpack(buildpackName string) error {
 }
 
 func (a *Application) SetEnvironmentVariable(key, value string) error {
-	if key == "" {
-		return fmt.Errorf("the environment variable key can't be empty")
+	envKey, err := shared.NewEnvVarKey(key)
+	if err != nil {
+		return err
 	}
+	envValue := shared.NewEnvVarValue(value)
 
-	a.configuration.environmentVars[key] = value
+	a.configuration.environmentVars[*envKey] = envValue
 	a.updatedAt = time.Now()
 
 	return nil
 }
 
-func (a *Application) AddProcess(processType ProcessType, command string, scale int) error {
-	if command == "" {
-		return fmt.Errorf("the process command can't be empty")
+func (a *Application) AddProcess(processType process.ProcessType, command string, scale int) error {
+	proc, err := process.NewProcess(processType, command, scale)
+	if err != nil {
+		return fmt.Errorf("unable to add process: %w", err)
 	}
 
-	if scale < 0 {
-		return fmt.Errorf("the number of instances can't be negative")
+	a.configuration.processes[processType] = proc
+	a.updatedAt = time.Now()
+
+	return nil
+}
+
+// AddProcessForScaling adds a process for scaling without requiring a command.
+// This is used when the command will be determined from the Procfile later.
+func (a *Application) AddProcessForScaling(processType process.ProcessType, scale int) error {
+	proc, err := process.NewProcessForScaling(processType, scale)
+	if err != nil {
+		return fmt.Errorf("unable to add process for scaling: %w", err)
 	}
 
-	process := &Process{
-		processType: processType,
-		command:     command,
-		scale:       scale,
-	}
-
-	a.configuration.processes[processType] = process
+	a.configuration.processes[processType] = proc
 	a.updatedAt = time.Now()
 
 	return nil
@@ -264,9 +264,9 @@ func (a *Application) HasDomain(domainName string) bool {
 	return false
 }
 
-func (a *Application) GetProcessScale(processType ProcessType) int {
-	if process, exists := a.configuration.processes[processType]; exists {
-		return process.scale
+func (a *Application) GetProcessScale(processType process.ProcessType) int {
+	if proc, exists := a.configuration.processes[processType]; exists {
+		return proc.Scale()
 	}
 	return 0
 }
@@ -309,18 +309,14 @@ func (a *Application) copyConfiguration() *ApplicationConfiguration {
 	domains := make([]*shared.DomainName, len(a.configuration.domains))
 	copy(domains, a.configuration.domains)
 
-	envVars := make(map[string]string)
+	envVars := make(map[shared.EnvVarKey]*shared.EnvVarValue)
 	for k, v := range a.configuration.environmentVars {
 		envVars[k] = v
 	}
 
-	processes := make(map[ProcessType]*Process)
+	processes := make(map[process.ProcessType]*process.Process)
 	for k, v := range a.configuration.processes {
-		processes[k] = &Process{
-			processType: v.processType,
-			command:     v.command,
-			scale:       v.scale,
-		}
+		processes[k] = v // This is a shallow copy, but Process is now an entity-like object
 	}
 
 	return &ApplicationConfiguration{
@@ -332,8 +328,8 @@ func (a *Application) copyConfiguration() *ApplicationConfiguration {
 }
 
 type DeploymentOptions struct {
-	BuildImage string
-	RunImage   string
+	BuildImage *shared.DockerImage
+	RunImage   *shared.DockerImage
 	ForceClean bool
 	NoCache    bool
 }

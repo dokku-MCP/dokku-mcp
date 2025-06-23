@@ -10,6 +10,9 @@ const (
 	// Git commands
 	CommandGitSync DeploymentCommand = "git:sync"
 
+	// Process commands
+	CommandPsRebuild DeploymentCommand = "ps:rebuild"
+
 	// Event commands
 	CommandEvents DeploymentCommand = "events"
 )
@@ -18,7 +21,7 @@ const (
 func (c DeploymentCommand) IsValid() bool {
 	switch c {
 	case CommandBuildpacksSet,
-		CommandGitSync, CommandEvents:
+		CommandGitSync, CommandPsRebuild, CommandEvents:
 		return true
 	default:
 		return false
@@ -35,6 +38,7 @@ func GetAllowedDeploymentCommands() []DeploymentCommand {
 	return []DeploymentCommand{
 		CommandBuildpacksSet,
 		CommandGitSync,
+		CommandPsRebuild,
 		CommandEvents,
 	}
 }

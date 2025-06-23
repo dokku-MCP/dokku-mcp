@@ -2,7 +2,7 @@ package app
 
 import "errors"
 
-// Erreurs spécifiques au domaine Application
+// Application domain specific errors
 var (
 	ErrApplicationNotFound      = errors.New("application not found")
 	ErrRepositoryUnavailable    = errors.New("repository unavailable")

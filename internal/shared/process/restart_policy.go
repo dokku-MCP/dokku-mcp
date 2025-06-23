@@ -2,6 +2,8 @@ package process
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -22,6 +24,44 @@ const (
 	RestartPolicyUnlessStopped RestartPolicyType = "unless-stopped"
 )
 
+// NewRestartPolicyFromString creates a RestartPolicy from a Dokku-compatible string.
+func NewRestartPolicyFromString(policyStr string) (*RestartPolicy, error) {
+	if policyStr == "" {
+		return nil, fmt.Errorf("restart policy string cannot be empty")
+	}
+
+	if policyStr == "no" {
+		policyStr = string(RestartPolicyNever)
+	}
+
+	parts := strings.SplitN(policyStr, ":", 2)
+	policyType := RestartPolicyType(parts[0])
+
+	if !isValidRestartPolicyType(policyType) {
+		return nil, fmt.Errorf("invalid restart policy type: %s", policyType)
+	}
+
+	rp, err := NewRestartPolicy(policyType)
+	if err != nil {
+		return nil, err // Should not happen given the check above
+	}
+
+	if policyType == RestartPolicyOnFailure {
+		// Default is set in NewRestartPolicy. Override if specified.
+		if len(parts) == 2 {
+			max, err := strconv.Atoi(parts[1])
+			if err != nil {
+				return nil, fmt.Errorf("invalid max restarts count in policy: %s", policyStr)
+			}
+			rp.WithMaxRestarts(max)
+		}
+	} else if len(parts) > 1 {
+		return nil, fmt.Errorf("max restarts count is only applicable for 'on-failure' policy: %s", policyStr)
+	}
+
+	return rp, nil
+}
+
 func NewRestartPolicy(policyType RestartPolicyType) (*RestartPolicy, error) {
 	if !isValidRestartPolicyType(policyType) {
 		return nil, fmt.Errorf("invalid restart policy type: %s", policyType)
@@ -29,7 +69,7 @@ func NewRestartPolicy(policyType RestartPolicyType) (*RestartPolicy, error) {
 
 	return &RestartPolicy{
 		policy:         policyType,
-		maxRestarts:    5,
+		maxRestarts:    10,
 		restartDelay:   10 * time.Second,
 		backoffFactor:  2.0,
 		maxRestartTime: 5 * time.Minute,

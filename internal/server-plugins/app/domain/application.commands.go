@@ -17,7 +17,8 @@ const (
 	CommandConfigSet  ApplicationCommand = "config:set"
 
 	// Process management commands
-	CommandPsScale ApplicationCommand = "ps:scale"
+	CommandPsScale  ApplicationCommand = "ps:scale"
+	CommandPsReport ApplicationCommand = "ps:report"
 
 	// Logging commands
 	CommandLogs ApplicationCommand = "logs"
@@ -28,7 +29,7 @@ func (c ApplicationCommand) IsValid() bool {
 	switch c {
 	case CommandAppsList, CommandAppsInfo, CommandAppsCreate, CommandAppsDestroy,
 		CommandAppsExists, CommandAppsReport, CommandConfigShow, CommandConfigSet,
-		CommandPsScale, CommandLogs:
+		CommandPsScale, CommandPsReport, CommandLogs:
 		return true
 	default:
 		return false
@@ -52,6 +53,7 @@ func GetAllowedCommands() []ApplicationCommand {
 		CommandConfigShow,
 		CommandConfigSet,
 		CommandPsScale,
+		CommandPsReport,
 		CommandLogs,
 	}
 }

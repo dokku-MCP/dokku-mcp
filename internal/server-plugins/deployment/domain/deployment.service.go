@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+
+	"github.com/alex-galey/dokku-mcp/internal/shared"
 )
 
 // DeploymentService interface pour les opérations de déploiement
@@ -19,14 +21,15 @@ type DeploymentService interface {
 // DeploymentInfrastructure simplified interface for infrastructure operations
 type DeploymentInfrastructure interface {
 	SetBuildpack(ctx context.Context, appName string, buildpack string) error
-	PerformGitDeploy(ctx context.Context, appName string, gitRef string) error
+	PerformGitDeploy(ctx context.Context, appName, repoURL, gitRef string) error
 	ParseDeploymentHistory(ctx context.Context, appName string) ([]*Deployment, error)
 }
 
 // DeployOptions simplified options for deployment
 type DeployOptions struct {
-	GitRef    string
-	BuildPack string
+	RepoURL   string
+	GitRef    *shared.GitRef
+	BuildPack *shared.BuildpackName
 }
 
 // ApplicationDeploymentService implémentation du service de déploiement
@@ -53,29 +56,30 @@ func NewApplicationDeploymentService(
 func (s *ApplicationDeploymentService) Deploy(ctx context.Context, appName string, options DeployOptions) (*Deployment, error) {
 	s.logger.Info("Démarrage du déploiement d'application",
 		"nom_app", appName,
-		"git_ref", options.GitRef)
+		"git_ref", options.GitRef.Value())
 
-	deployment, err := NewDeployment(appName, options.GitRef)
+	deployment, err := NewDeployment(appName, options.GitRef.Value())
 	if err != nil {
 		return nil, fmt.Errorf("échec de création du déploiement: %w", err)
 	}
 
 	deployment.Start()
 
-	if options.BuildPack != "" {
-		if err := s.infrastructure.SetBuildpack(ctx, appName, options.BuildPack); err != nil {
+	if options.BuildPack != nil {
+		if err := s.infrastructure.SetBuildpack(ctx, appName, options.BuildPack.Value()); err != nil {
 			s.logger.Warn("Échec de définition du buildpack", "erreur", err)
 		}
 	}
 
-	if err := s.infrastructure.PerformGitDeploy(ctx, appName, options.GitRef); err != nil {
+	if err := s.infrastructure.PerformGitDeploy(ctx, appName, options.RepoURL, options.GitRef.Value()); err != nil {
 		deployment.Fail(fmt.Sprintf("Échec du déploiement depuis git: %v", err))
+		s.logger.Error("Git deployment failed", "app_name", appName, "error", err)
 		return deployment, fmt.Errorf("échec du déploiement depuis git: %w", err)
 	}
 
 	s.logger.Info("Déploiement Git terminé avec succès",
 		"nom_app", appName,
-		"git_ref", options.GitRef,
+		"git_ref", options.GitRef.Value(),
 		"deployment_id", deployment.ID())
 
 	deployment.Complete()
@@ -127,7 +131,7 @@ func (s *ApplicationDeploymentService) Rollback(ctx context.Context, appName str
 	rollbackDeploy.Rollback()
 
 	// Perform the actual rollback
-	if err := s.infrastructure.PerformGitDeploy(ctx, appName, targetDeployment.GitRef()); err != nil {
+	if err := s.infrastructure.PerformGitDeploy(ctx, appName, "", targetDeployment.GitRef()); err != nil {
 		rollbackDeploy.Fail(fmt.Sprintf("Échec du rollback: %v", err))
 		_ = s.deploymentRepo.Save(ctx, rollbackDeploy)
 		return fmt.Errorf("échec du rollback: %w", err)

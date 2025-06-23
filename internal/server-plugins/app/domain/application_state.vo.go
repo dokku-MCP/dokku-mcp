@@ -61,10 +61,9 @@ func (as *ApplicationState) IsRunning() bool {
 	return as.value == StateRunning
 }
 
-// IsDeployed checks if the application is deployed (exists, running, or stopped)
+// IsDeployed checks if the application is deployed (running or stopped, but not just exists)
 func (as *ApplicationState) IsDeployed() bool {
-	return as.value == StateExists ||
-		as.value == StateRunning ||
+	return as.value == StateRunning ||
 		as.value == StateStopped
 }
 

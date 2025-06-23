@@ -221,6 +221,10 @@ func (p *AppsServerPlugin) buildDeployAppTool() mcp.Tool {
 			mcp.Required(),
 			mcp.Description("Name of the application to deploy"),
 		),
+		mcp.WithString("repo_url",
+			mcp.Required(),
+			mcp.Description("URL of the Git repository to deploy from"),
+		),
 		mcp.WithString("git_ref",
 			mcp.Description("Git reference to deploy (branch, tag, or commit)"),
 		),
@@ -297,13 +301,18 @@ func (p *AppsServerPlugin) handleCreateApp(ctx context.Context, req mcp.CallTool
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to create application: %v", err)), nil
 	}
 
-	return mcp.NewToolResultText(fmt.Sprintf("✅ Application '%s' created successfully", name)), nil
+	return mcp.NewToolResultText(fmt.Sprintf("Application '%s' created successfully", name)), nil
 }
 
 func (p *AppsServerPlugin) handleDeployApp(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	appName, err := req.RequireString("app_name")
 	if err != nil {
 		return mcp.NewToolResultError("Application name is required"), nil
+	}
+
+	repoURL, err := req.RequireString("repo_url")
+	if err != nil {
+		return mcp.NewToolResultError("Repository URL is required"), nil
 	}
 
 	gitRef := "main"
@@ -314,8 +323,9 @@ func (p *AppsServerPlugin) handleDeployApp(ctx context.Context, req mcp.CallTool
 	}
 
 	cmd := appusecases.DeployApplicationCommand{
-		Name:   appName,
-		GitRef: gitRef,
+		Name:    appName,
+		RepoURL: repoURL,
+		GitRef:  gitRef,
 	}
 
 	if err := p.applicationUseCase.DeployApplication(ctx, cmd); err != nil {
@@ -328,7 +338,7 @@ func (p *AppsServerPlugin) handleDeployApp(ctx context.Context, req mcp.CallTool
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to deploy application: %v", err)), nil
 	}
 
-	return mcp.NewToolResultText(fmt.Sprintf("✅ Application '%s' deployed successfully from '%s'", appName, gitRef)), nil
+	return mcp.NewToolResultText(fmt.Sprintf("Application '%s' deployed successfully from '%s'", appName, gitRef)), nil
 }
 
 func (p *AppsServerPlugin) handleScaleApp(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -375,7 +385,7 @@ func (p *AppsServerPlugin) handleScaleApp(ctx context.Context, req mcp.CallToolR
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to scale application: %v", err)), nil
 	}
 
-	return mcp.NewToolResultText(fmt.Sprintf("✅ Application '%s' scaled to %d instances for process type '%s'", appName, instances, processType)), nil
+	return mcp.NewToolResultText(fmt.Sprintf("Application '%s' scaled to %d instances for process type '%s'", appName, instances, processType)), nil
 }
 
 func (p *AppsServerPlugin) handleConfigureApp(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -411,7 +421,7 @@ func (p *AppsServerPlugin) handleConfigureApp(ctx context.Context, req mcp.CallT
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to configure application: %v", err)), nil
 	}
 
-	return mcp.NewToolResultText(fmt.Sprintf("✅ Application '%s' configured successfully with %d variables", appName, len(configVars))), nil
+	return mcp.NewToolResultText(fmt.Sprintf("Application '%s' configured successfully with %d variables", appName, len(configVars))), nil
 }
 
 func (p *AppsServerPlugin) handleGetAppStatus(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -443,7 +453,7 @@ func (p *AppsServerPlugin) handleGetAppStatus(ctx context.Context, req mcp.CallT
 		return mcp.NewToolResultError("Failed to serialize status"), nil
 	}
 
-	return mcp.NewToolResultText(fmt.Sprintf("📊 Application Status for '%s':\n%s", appName, string(statusJSON))), nil
+	return mcp.NewToolResultText(fmt.Sprintf("Application Status for '%s':\n%s", appName, string(statusJSON))), nil
 }
 
 // Prompt implementations

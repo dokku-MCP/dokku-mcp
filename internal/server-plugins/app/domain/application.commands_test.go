@@ -21,6 +21,7 @@ var _ = Describe("ApplicationCommand", func() {
 					app.CommandConfigShow,
 					app.CommandConfigSet,
 					app.CommandPsScale,
+					app.CommandPsReport,
 					app.CommandLogs,
 				}
 
@@ -57,7 +58,7 @@ var _ = Describe("ApplicationCommand", func() {
 	Describe("GetAllowedCommands", func() {
 		It("should return all allowed commands", func() {
 			commands := app.GetAllowedCommands()
-			Expect(commands).To(HaveLen(10))
+			Expect(commands).To(HaveLen(11))
 			Expect(commands).To(ContainElements(
 				app.CommandAppsList,
 				app.CommandAppsInfo,
@@ -68,6 +69,7 @@ var _ = Describe("ApplicationCommand", func() {
 				app.CommandConfigShow,
 				app.CommandConfigSet,
 				app.CommandPsScale,
+				app.CommandPsReport,
 				app.CommandLogs,
 			))
 		})

@@ -9,6 +9,8 @@ services:
       - "8443:443"  # HTTPS
     volumes:
       - "docker-data:/mnt/dokku"
+      - "/var/run/docker.sock:/var/run/docker.sock"  # Mount host Docker socket
+      - "/usr/bin/docker:/usr/bin/docker:ro"          # Mount Docker binary (read-only)
     environment:
       DOKKU_HOSTNAME: dokku.local
       DOKKU_HOST_ROOT: /var/lib/dokku/home/dokku

@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	dokku_client "github.com/alex-galey/dokku-mcp/internal/dokku-api"
 	"github.com/alex-galey/dokku-mcp/internal/server-plugins/deployment/domain"
@@ -16,13 +18,18 @@ import (
 type deploymentInfrastructure struct {
 	client dokku_client.DokkuClient
 	logger *slog.Logger
+
+	// Deployment locking to prevent concurrent deployments of the same app
+	deploymentMutex   sync.Mutex
+	activeDeployments map[string]bool
 }
 
 // NewDeploymentInfrastructure creates a new deployment infrastructure implementation
 func NewDeploymentInfrastructure(client dokku_client.DokkuClient, logger *slog.Logger) domain.DeploymentInfrastructure {
 	return &deploymentInfrastructure{
-		client: client,
-		logger: logger,
+		client:            client,
+		logger:            logger,
+		activeDeployments: make(map[string]bool),
 	}
 }
 
@@ -45,18 +52,75 @@ func (s *deploymentInfrastructure) SetBuildpack(ctx context.Context, appName str
 }
 
 // PerformGitDeploy executes git deployment in Dokku - INFRASTRUCTURE ONLY
-func (s *deploymentInfrastructure) PerformGitDeploy(ctx context.Context, appName string, gitRef string) error {
-	args := []string{appName}
-	if gitRef != "" {
-		args = append(args, gitRef)
+func (s *deploymentInfrastructure) PerformGitDeploy(ctx context.Context, appName, repoURL, gitRef string) error {
+	s.logger.Debug("Performing git deployment", "app_name", appName, "repo_url", repoURL, "git_ref", gitRef)
+
+	// Check for concurrent deployment
+	s.deploymentMutex.Lock()
+	if s.activeDeployments[appName] {
+		s.deploymentMutex.Unlock()
+		return fmt.Errorf("deployment already in progress for application %s", appName)
+	}
+	s.activeDeployments[appName] = true
+	s.deploymentMutex.Unlock()
+
+	// Ensure cleanup on exit
+	defer func() {
+		s.deploymentMutex.Lock()
+		delete(s.activeDeployments, appName)
+		s.deploymentMutex.Unlock()
+		s.logger.Debug("Deployment lock released", "app_name", appName)
+	}()
+
+	// Perform git sync (fast operation)
+	_, err := s.executeCommand(ctx, domain.CommandGitSync, []string{appName, repoURL, gitRef})
+	if err != nil {
+		return fmt.Errorf("git sync failed: %w", err)
 	}
 
-	_, err := s.executeCommand(ctx, domain.CommandGitSync, args)
-	if err != nil {
-		return fmt.Errorf("failed to perform git deploy in Dokku: %w", err)
-	}
+	s.logger.Debug("Git sync completed, triggering async rebuild", "app_name", appName)
+
+	// Trigger async rebuild (this will happen in background)
+	s.performAsyncRebuild(appName, gitRef)
 
 	return nil
+}
+
+// performAsyncRebuild performs the rebuild operation in the background
+func (s *deploymentInfrastructure) performAsyncRebuild(appName, gitRef string) {
+	s.logger.Info("Starting async rebuild", "app_name", appName, "git_ref", gitRef)
+
+	// Use a truly fire-and-forget approach that doesn't wait for the command to complete
+	go func() {
+		// Create a background context with extended timeout for the build process
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+
+		s.logger.Debug("Executing async ps:rebuild command", "app_name", appName)
+
+		// Execute the rebuild command - this may timeout but the Dokku process will continue
+		_, err := s.executeCommand(ctx, domain.CommandPsRebuild, []string{appName})
+
+		if err != nil {
+			// SSH timeouts are expected for long builds - log but don't treat as error
+			if strings.Contains(err.Error(), "signal: killed") ||
+				strings.Contains(err.Error(), "context deadline exceeded") ||
+				strings.Contains(err.Error(), "connection closed") ||
+				strings.Contains(err.Error(), "timeout") {
+				s.logger.Info("Async rebuild command sent successfully - build continuing in background",
+					"app_name", appName, "git_ref", gitRef,
+					"note", "SSH connection closed as expected for long builds")
+			} else {
+				s.logger.Error("Async rebuild failed with unexpected error",
+					"app_name", appName, "error", err)
+			}
+		} else {
+			s.logger.Info("Async rebuild completed successfully",
+				"app_name", appName, "git_ref", gitRef)
+		}
+	}()
+
+	s.logger.Info("Async rebuild command dispatched", "app_name", appName, "git_ref", gitRef)
 }
 
 // ParseDeploymentHistory retrieves deployment history from Dokku - INFRASTRUCTURE ONLY

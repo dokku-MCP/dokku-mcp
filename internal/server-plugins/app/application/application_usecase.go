@@ -7,6 +7,7 @@ import (
 
 	domain "github.com/alex-galey/dokku-mcp/internal/server-plugins/app/domain"
 	"github.com/alex-galey/dokku-mcp/internal/shared"
+	"github.com/alex-galey/dokku-mcp/internal/shared/process"
 )
 
 // ApplicationUseCase orchestrates application operations
@@ -86,14 +87,18 @@ func (uc *ApplicationUseCase) CreateApplication(ctx context.Context, cmd CreateA
 
 // DeployApplicationCommand represents the data for deploying an application
 type DeployApplicationCommand struct {
-	Name   string
-	GitRef string
+	Name       string
+	RepoURL    string
+	GitRef     string
+	BuildImage string
+	RunImage   string
 }
 
 // DeployApplication orchestrates application deployment
 func (uc *ApplicationUseCase) DeployApplication(ctx context.Context, cmd DeployApplicationCommand) error {
 	uc.logger.Info("Deploying application",
 		"app_name", cmd.Name,
+		"repo_url", cmd.RepoURL,
 		"git_ref", cmd.GitRef)
 
 	// Get application
@@ -110,6 +115,7 @@ func (uc *ApplicationUseCase) DeployApplication(ctx context.Context, cmd DeployA
 	// Create Git reference for validation
 	var gitRef *shared.GitRef
 	if cmd.GitRef != "" {
+		var err error
 		gitRef, err = shared.NewGitRef(cmd.GitRef)
 		if err != nil {
 			return fmt.Errorf("invalid Git reference: %w", err)
@@ -136,15 +142,48 @@ func (uc *ApplicationUseCase) DeployApplication(ctx context.Context, cmd DeployA
 		}
 	}
 
+	var buildImage, runImage *shared.DockerImage
+	if cmd.BuildImage != "" {
+		buildImage, err = shared.NewDockerImage(cmd.BuildImage)
+		if err != nil {
+			return fmt.Errorf("invalid build image: %w", err)
+		}
+	}
+	if cmd.RunImage != "" {
+		runImage, err = shared.NewDockerImage(cmd.RunImage)
+		if err != nil {
+			return fmt.Errorf("invalid run image: %w", err)
+		}
+	}
+
 	// Create deployment options using shared interface
 	deployOptions := shared.DeployOptions{
-		GitRef: cmd.GitRef,
+		RepoURL:    cmd.RepoURL,
+		GitRef:     gitRef,
+		BuildImage: buildImage,
+		RunImage:   runImage,
 	}
 
 	// Perform deployment via shared service interface
 	deploymentResult, err := uc.deploymentSvc.Deploy(ctx, cmd.Name, deployOptions)
 	if err != nil {
+		uc.logger.Error("Deployment service failed", "app_name", cmd.Name, "error", err)
+		// Rollback app state
+		if failErr := app.FailDeployment(err.Error()); failErr != nil {
+			uc.logger.Error("failed to mark deployment as failed", "error", failErr)
+		}
+		if saveErr := uc.applicationRepo.Save(ctx, app); saveErr != nil {
+			uc.logger.Error("failed to save app state after deployment failure", "error", saveErr)
+		}
 		return fmt.Errorf("deployment failed: %w", err)
+	}
+
+	// Update domain entity
+	if err := app.Deploy(gitRef, &domain.DeploymentOptions{
+		BuildImage: buildImage,
+		RunImage:   runImage,
+	}); err != nil {
+		return fmt.Errorf("failed to update application state: %w", err)
 	}
 
 	// Save changes
@@ -185,7 +224,10 @@ func (uc *ApplicationUseCase) ScaleApplication(ctx context.Context, cmd ScaleApp
 	}
 
 	// Create process type
-	processType := domain.ProcessType(cmd.ProcessType)
+	processType, err := process.NewProcessType(cmd.ProcessType)
+	if err != nil {
+		return fmt.Errorf("invalid process type: %w", err)
+	}
 
 	// Use domain validation service for scaling
 	validationResult := uc.validationService.ValidateScale(ctx, app, processType, cmd.Scale)

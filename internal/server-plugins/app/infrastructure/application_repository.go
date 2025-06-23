@@ -9,6 +9,7 @@ import (
 
 	dokkuApi "github.com/alex-galey/dokku-mcp/internal/dokku-api"
 	app "github.com/alex-galey/dokku-mcp/internal/server-plugins/app/domain"
+	"github.com/alex-galey/dokku-mcp/internal/shared/process"
 )
 
 // DokkuApplicationRepository implements the repository for applications via Dokku
@@ -79,14 +80,14 @@ func (r *DokkuApplicationRepository) GetByName(ctx context.Context, name *app.Ap
 		return nil, app.ErrApplicationNotFound
 	}
 
-	// Try to get detailed information
-	info, err := r.dokku.GetApplicationInfo(ctx, name.Value())
+	// Get ps:report information for proper state detection
+	info, err := r.tryGetPsReportInfo(ctx, name.Value())
 	if err != nil {
-		r.logger.Warn("Failed to retrieve detailed information - using basic info",
+		r.logger.Warn("Failed to retrieve ps:report - using basic info",
 			"error", err,
 			"app_name", name.Value())
 
-		// Try to get basic information via apps:report if available
+		// Try to get basic information via apps:report as fallback
 		if reportInfo, reportErr := r.tryGetBasicApplicationInfo(ctx, name.Value()); reportErr == nil {
 			info = reportInfo
 		} else {
@@ -141,6 +142,18 @@ func (r *DokkuApplicationRepository) Save(ctx context.Context, application *app.
 			return fmt.Errorf("failed to create application: %w", err)
 		}
 	}
+
+	for _, event := range application.GetEvents() {
+		switch e := event.(type) {
+		case *app.ApplicationScaledEvent:
+			if err := r.dokku.ScaleApplication(ctx, e.AggregateID(), e.ProcessType(), e.NewScale()); err != nil {
+				r.logger.Error("Failed to apply scaling event", "error", err)
+				return fmt.Errorf("failed to scale application during save: %w", err)
+			}
+			r.logger.Debug("Applied scaling event", "app", e.AggregateID(), "process", e.ProcessType(), "scale", e.NewScale())
+		}
+	}
+	application.ClearEvents()
 
 	// Update configuration if it exists
 	if config := application.Configuration(); config != nil {
@@ -407,8 +420,8 @@ func (r *DokkuApplicationRepository) updateApplicationFromInfo(app *app.Applicat
 // parseProcesses parses and adds processes from a string
 func (r *DokkuApplicationRepository) parseProcesses(application *app.Application, processesStr string) {
 	processes := strings.Fields(processesStr)
-	for _, process := range processes {
-		parts := strings.Split(process, ":")
+	for _, proc := range processes {
+		parts := strings.Split(proc, ":")
 		if len(parts) == 2 {
 			processType := parts[0]
 			scaleStr := parts[1]
@@ -416,20 +429,51 @@ func (r *DokkuApplicationRepository) parseProcesses(application *app.Application
 			scale, err := strconv.Atoi(scaleStr)
 			if err != nil {
 				r.logger.Warn("Failed to parse process scale",
-					"process", process,
+					"process", proc,
 					"error", err)
 				continue
 			}
 
-			processTypeVO := app.ProcessType(processType)
+			processTypeVO, err := process.NewProcessType(processType)
+			if err != nil {
+				r.logger.Warn("Invalid process type",
+					"type", processType,
+					"error", err)
+				continue
+			}
 
-			if err := application.AddProcess(processTypeVO, "", scale); err != nil {
-				r.logger.Warn("Failed to add process",
+			// Use AddProcessForScaling since we don't have command information from parsing
+			if err := application.AddProcessForScaling(processTypeVO, scale); err != nil {
+				r.logger.Warn("Failed to add process for scaling",
 					"type", processType,
 					"error", err)
 			}
 		}
 	}
+}
+
+// tryGetPsReportInfo tries to retrieve ps:report information for proper state detection
+func (r *DokkuApplicationRepository) tryGetPsReportInfo(ctx context.Context, appName string) (map[string]string, error) {
+	output, err := r.dokku.ExecuteCommand(ctx, app.CommandPsReport, []string{appName})
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute ps:report: %w", err)
+	}
+
+	// Parse ps:report output to extract deployment and running state
+	info := make(map[string]string)
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		if strings.Contains(line, ":") {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				key := strings.TrimSpace(parts[0])
+				value := strings.TrimSpace(parts[1])
+				info[key] = value
+			}
+		}
+	}
+
+	return info, nil
 }
 
 // tryGetBasicApplicationInfo tries to retrieve basic information
@@ -464,7 +508,23 @@ func (r *DokkuApplicationRepository) extractEnvironmentVars(config *app.Applicat
 
 // determineStateFromInfo determines the application state from Dokku output
 func (r *DokkuApplicationRepository) determineStateFromInfo(info map[string]string) app.StateValue {
-	// Check for process scale information to determine if app is running
+	// Check for deployment status first (from ps:report output)
+	if deployed, ok := info["Deployed"]; ok {
+		if deployed == "false" {
+			return app.StateExists // App exists but is not deployed
+		}
+	}
+
+	// Check for running status (from ps:report output)
+	if running, ok := info["Running"]; ok {
+		if running == "true" {
+			return app.StateRunning
+		} else if running == "false" {
+			return app.StateStopped
+		}
+	}
+
+	// Check for process scale information to determine if app is running (fallback)
 	if processesStr, ok := info["ps.scale"]; ok && processesStr != "" {
 		// If there are processes with scale > 0, app is likely running
 		if r.hasRunningProcesses(processesStr) {
@@ -474,7 +534,7 @@ func (r *DokkuApplicationRepository) determineStateFromInfo(info map[string]stri
 		return app.StateStopped
 	}
 
-	// Check app status if available
+	// Check app status if available (fallback)
 	if status, ok := info["status"]; ok {
 		switch status {
 		case "running":
@@ -493,8 +553,8 @@ func (r *DokkuApplicationRepository) determineStateFromInfo(info map[string]stri
 // hasRunningProcesses checks if any processes have scale > 0
 func (r *DokkuApplicationRepository) hasRunningProcesses(processesStr string) bool {
 	processes := strings.Fields(processesStr)
-	for _, process := range processes {
-		parts := strings.Split(process, ":")
+	for _, proc := range processes {
+		parts := strings.Split(proc, ":")
 		if len(parts) == 2 {
 			if scale, err := strconv.Atoi(parts[1]); err == nil && scale > 0 {
 				return true

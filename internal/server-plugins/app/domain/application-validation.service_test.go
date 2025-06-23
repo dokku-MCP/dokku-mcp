@@ -6,6 +6,7 @@ import (
 	"context"
 
 	"github.com/alex-galey/dokku-mcp/internal/shared"
+	"github.com/alex-galey/dokku-mcp/internal/shared/process"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -163,14 +164,14 @@ var _ = Describe("ValidationService", func() {
 	Describe("ValidateScale", func() {
 		var (
 			app         *Application
-			processType ProcessType
+			processType process.ProcessType
 		)
 
 		BeforeEach(func() {
 			var err error
 			app, err = NewApplication("test-app")
 			Expect(err).ToNot(HaveOccurred())
-			processType = ProcessType("web")
+			processType = process.ProcessTypeWeb
 		})
 
 		DescribeTable("scale validation scenarios",

@@ -22,10 +22,10 @@ func NewDeploymentServiceAdapter(deploymentService deployment_domain.DeploymentS
 
 // Deploy implements the shared DeploymentService interface
 func (a *DeploymentServiceAdapter) Deploy(ctx context.Context, appName string, options shared.DeployOptions) (*shared.DeploymentResult, error) {
-	// Convert shared options to plugin-specific options
 	pluginOptions := deployment_domain.DeployOptions{
+		RepoURL:   options.RepoURL,
 		GitRef:    options.GitRef,
-		BuildPack: options.BuildPack,
+		BuildPack: options.Buildpack,
 	}
 
 	// Call the plugin's deployment service
