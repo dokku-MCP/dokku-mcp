@@ -102,6 +102,61 @@ func (a *BaseAdapter) ExecuteAndParseList(ctx context.Context, command string, a
 	return result, nil
 }
 
+// ExecuteAndParseLines is a convenience method for parsing output into lines
+func (a *BaseAdapter) ExecuteAndParseLines(ctx context.Context, command string, args []string, skipHeaders bool) ([]string, error) {
+	a.logger.Debug("Executing command with line parsing",
+		"command", command,
+		"args", args,
+		"skip_headers", skipHeaders)
+
+	output, err := a.client.ExecuteCommand(ctx, command, args)
+	if err != nil {
+		a.logger.Error("Failed to execute command",
+			"command", command,
+			"args", args,
+			"error", err)
+		return nil, err
+	}
+
+	var result []string
+	if skipHeaders {
+		result = ParseLinesSkipHeaders(string(output))
+	} else {
+		result = ParseTrimmedLines(string(output), true)
+	}
+
+	a.logger.Debug("Command executed successfully",
+		"command", command,
+		"result_count", len(result))
+
+	return result, nil
+}
+
+// ExecuteAndParseFields is a convenience method for parsing field-based output
+func (a *BaseAdapter) ExecuteAndParseFields(ctx context.Context, command string, args []string, skipHeaders bool) ([][]string, error) {
+	a.logger.Debug("Executing command with fields parsing",
+		"command", command,
+		"args", args,
+		"skip_headers", skipHeaders)
+
+	output, err := a.client.ExecuteCommand(ctx, command, args)
+	if err != nil {
+		a.logger.Error("Failed to execute command",
+			"command", command,
+			"args", args,
+			"error", err)
+		return nil, err
+	}
+
+	result := ParseFieldsOutput(string(output), skipHeaders)
+
+	a.logger.Debug("Command executed successfully",
+		"command", command,
+		"result_count", len(result))
+
+	return result, nil
+}
+
 // ValidateAndExecute provides validation and execution in one step
 func (a *BaseAdapter) ValidateAndExecute(ctx context.Context, command string, args []string, allowedCommands []string) ([]byte, error) {
 	// Validate command is allowed

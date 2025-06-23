@@ -50,15 +50,6 @@ func (a *DokkuCoreAdapter) GetSystemStatus(ctx context.Context) (*domain.SystemS
 		status.Version = strings.TrimSpace(string(versionOutput))
 	}
 
-	// Get global domains
-	domainsOutput, err := a.executeCommand(ctx, domain.CommandDomainsReport, []string{"--global"})
-	if err != nil {
-		a.logger.Warn("Failed to get global domains", "error", err)
-	} else {
-		domains := a.parseGlobalDomains(string(domainsOutput))
-		status.GlobalDomains = domains
-	}
-
 	// Get proxy type
 	proxyOutput, err := a.executeCommand(ctx, domain.CommandProxyReport, []string{"--global", "--proxy-type"})
 	if err != nil {
@@ -93,12 +84,6 @@ func (a *DokkuCoreAdapter) GetServerInfo(ctx context.Context) (*domain.ServerInf
 		plugins = []domain.DokkuPlugin{}
 	}
 
-	globalDomains, err := a.ListGlobalDomains(ctx)
-	if err != nil {
-		a.logger.Warn("Failed to get global domains", "error", err)
-		globalDomains = []domain.GlobalDomain{}
-	}
-
 	sshKeys, err := a.ListSSHKeys(ctx)
 	if err != nil {
 		a.logger.Warn("Failed to get SSH keys", "error", err)
@@ -126,7 +111,6 @@ func (a *DokkuCoreAdapter) GetServerInfo(ctx context.Context) (*domain.ServerInf
 	return &domain.ServerInfo{
 		SystemStatus:  *systemStatus,
 		Plugins:       plugins,
-		GlobalDomains: globalDomains,
 		SSHKeys:       sshKeys,
 		Registries:    registries,
 		Configuration: *config,
@@ -232,105 +216,6 @@ func (a *DokkuCoreAdapter) UpdatePlugin(ctx context.Context, name string, versio
 		return fmt.Errorf("failed to update plugin %s: %w", name, err)
 	}
 	return nil
-}
-
-// DomainRepository implementation
-func (a *DokkuCoreAdapter) ListGlobalDomains(ctx context.Context) ([]domain.GlobalDomain, error) {
-	output, err := a.executeCommand(ctx, domain.CommandDomainsReport, []string{"--global"})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list global domains: %w", err)
-	}
-
-	domainStrings := a.parseGlobalDomains(string(output))
-	var domains []domain.GlobalDomain
-
-	for _, domainStr := range domainStrings {
-		domains = append(domains, domain.GlobalDomain{
-			Domain:     domainStr,
-			IsWildcard: strings.HasPrefix(domainStr, "*."),
-			AddedAt:    time.Now(), // We can't get the actual added time from Dokku
-		})
-	}
-
-	return domains, nil
-}
-
-func (a *DokkuCoreAdapter) AddGlobalDomain(ctx context.Context, domainName string) error {
-	_, err := a.executeCommand(ctx, domain.CommandDomainsAddGlobal, []string{domainName})
-	if err != nil {
-		return fmt.Errorf("failed to add global domain %s: %w", domainName, err)
-	}
-	return nil
-}
-
-func (a *DokkuCoreAdapter) RemoveGlobalDomain(ctx context.Context, domainName string) error {
-	_, err := a.executeCommand(ctx, domain.CommandDomainsRemoveGlobal, []string{domainName})
-	if err != nil {
-		return fmt.Errorf("failed to remove global domain %s: %w", domainName, err)
-	}
-	return nil
-}
-
-func (a *DokkuCoreAdapter) SetGlobalDomains(ctx context.Context, domains []string) error {
-	args := domains
-	_, err := a.executeCommand(ctx, domain.CommandDomainsSetGlobal, args)
-	if err != nil {
-		return fmt.Errorf("failed to set global domains: %w", err)
-	}
-	return nil
-}
-
-func (a *DokkuCoreAdapter) ClearGlobalDomains(ctx context.Context) error {
-	_, err := a.executeCommand(ctx, domain.CommandDomainsClearGlobal, []string{})
-	if err != nil {
-		return fmt.Errorf("failed to clear global domains: %w", err)
-	}
-	return nil
-}
-
-func (a *DokkuCoreAdapter) GetDomainsReport(ctx context.Context) (*domain.DomainsReport, error) {
-	output, err := a.executeCommand(ctx, domain.CommandDomainsReport, []string{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get domains report: %w", err)
-	}
-
-	// Parse the domains report output and convert to a structured format
-	report := &domain.DomainsReport{
-		RawOutput:   string(output),
-		GeneratedAt: time.Now(),
-		PerApp:      make(map[string]domain.DomainsReportSection),
-	}
-
-	// Parse the output to populate Global and PerApp sections
-	// This is a basic implementation - can be enhanced with proper parsing
-	lines := strings.Split(string(output), "\n")
-	currentApp := ""
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-
-		// Detect app sections
-		if strings.HasPrefix(line, "=====> ") && strings.HasSuffix(line, " domains information") {
-			appName := strings.TrimPrefix(line, "=====> ")
-			appName = strings.TrimSuffix(appName, " domains information")
-			currentApp = appName
-			report.PerApp[currentApp] = domain.DomainsReportSection{
-				AppName: currentApp,
-			}
-		}
-
-		// Parse global domains
-		if currentApp == "" && strings.Contains(line, "Global vhosts:") {
-			if idx := strings.Index(line, ":"); idx != -1 {
-				domainsStr := strings.TrimSpace(line[idx+1:])
-				if domainsStr != "" && domainsStr != "none" {
-					report.Global.Vhosts = strings.Fields(domainsStr)
-				}
-			}
-		}
-	}
-
-	return report, nil
 }
 
 // SSHKeyRepository implementation
@@ -475,53 +360,24 @@ func (a *DokkuCoreAdapter) GetConfigurationKeys(ctx context.Context, scope strin
 }
 
 // Helper parsing methods
-func (a *DokkuCoreAdapter) parseGlobalDomains(output string) []string {
-	var domains []string
-	lines := strings.Split(output, "\n")
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if strings.Contains(line, "Global vhosts:") {
-			// Parse domain list from the line
-			if idx := strings.Index(line, ":"); idx != -1 {
-				domainsStr := strings.TrimSpace(line[idx+1:])
-				if domainsStr != "" && domainsStr != "none" {
-					domains = strings.Fields(domainsStr)
-				}
-			}
-			break
-		}
-	}
-
-	return domains
-}
 
 func (a *DokkuCoreAdapter) parsePluginList(output string) []domain.DokkuPlugin {
 	var plugins []domain.DokkuPlugin
-	lines := strings.Split(output, "\n")
+	fieldsOutput := dokkuApi.ParseFieldsOutput(output, true)
 
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "====") || strings.HasPrefix(line, "Plugin name") {
-			continue
-		}
-
-		// Plugin list format: "plugin-name    version    enabled/disabled    description..."
-		parts := strings.Fields(line)
-		if len(parts) >= 3 {
+	for _, fields := range fieldsOutput {
+		if len(fields) >= 3 {
 			plugin := domain.DokkuPlugin{
-				Name:    parts[0],
-				Version: parts[1],
-				Status:  parts[2],
+				Name:    fields[0],
+				Version: fields[1],
+				Status:  fields[2],
 			}
 
-			if len(parts) > 3 {
-				plugin.Description = strings.Join(parts[3:], " ")
+			if len(fields) > 3 {
+				plugin.Description = strings.Join(fields[3:], " ")
 			}
 
 			// Determine if this is a core plugin
-			// Core plugins typically have descriptions containing "dokku core"
-			// and have empty source fields (bundled with Dokku)
 			plugin.CorePlugin = strings.Contains(strings.ToLower(plugin.Description), "dokku core") ||
 				strings.Contains(strings.ToLower(plugin.Description), "core plugin")
 
@@ -534,28 +390,21 @@ func (a *DokkuCoreAdapter) parsePluginList(output string) []domain.DokkuPlugin {
 
 func (a *DokkuCoreAdapter) parseSSHKeys(output string) []domain.SSHKey {
 	var keys []domain.SSHKey
-	lines := strings.Split(output, "\n")
+	lines := dokkuApi.ParseTrimmedLines(output, true)
 
 	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-
-		// Parse SSH key information
-		// This is a simplified parser - real implementation would be more robust
-		parts := strings.Fields(line)
-		if len(parts) >= 2 {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 {
 			key := domain.SSHKey{
-				Name:        parts[0],
+				Name:        fields[0],
 				Fingerprint: "",
 				KeyType:     "",
 				Comment:     "",
 				AddedAt:     time.Now(),
 			}
 
-			if len(parts) > 1 {
-				key.Fingerprint = parts[1]
+			if len(fields) > 1 {
+				key.Fingerprint = fields[1]
 			}
 
 			keys = append(keys, key)

@@ -28,7 +28,6 @@ func NewCoreServerPlugin(client dokkuApi.DokkuClient, logger *slog.Logger) serve
 	coreService := application.NewCoreService(
 		adapter, // SystemRepository
 		adapter, // PluginRepository
-		adapter, // DomainRepository
 		adapter, // SSHKeyRepository
 		adapter, // RegistryRepository
 		adapter, // ConfigurationRepository
@@ -51,7 +50,7 @@ func (p *CoreServerPlugin) Name() string {
 }
 
 func (p *CoreServerPlugin) Description() string {
-	return "Core Dokku functionality including system status, global configuration, plugin management, domain management, SSH keys, and Docker registry management"
+	return "Core Dokku functionality including system status, global configuration, plugin management, SSH keys, and Docker registry management"
 }
 
 func (p *CoreServerPlugin) Version() string {

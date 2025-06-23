@@ -42,29 +42,11 @@ func (a *DokkuApplicationAdapter) GetApplications(ctx context.Context) ([]string
 		return nil, fmt.Errorf("failed to get applications: %w", err)
 	}
 
-	// Log de debug pour voir la sortie brute
-	a.logger.Debug("Sortie brute de dokku apps:list",
+	a.logger.Debug("Raw output from dokku apps:list",
 		"output", string(output),
 		"output_len", len(output))
 
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	var apps []string
-
-	// Log de debug pour voir chaque ligne
-	for i, line := range lines {
-		trimmedLine := strings.TrimSpace(line)
-		a.logger.Debug("Traitement ligne",
-			"index", i,
-			"line_raw", line,
-			"line_trimmed", trimmedLine,
-			"starts_with_equals", strings.HasPrefix(trimmedLine, "===="),
-			"is_empty", trimmedLine == "")
-
-		if trimmedLine != "" && !strings.HasPrefix(trimmedLine, "====") {
-			apps = append(apps, trimmedLine)
-			a.logger.Debug("Application trouvée", "app_name", trimmedLine)
-		}
-	}
+	apps := dokkuApi.ParseLinesSkipHeaders(string(output))
 
 	a.logger.Debug("Applications retrieved",
 		"count", len(apps),
@@ -85,8 +67,7 @@ func (a *DokkuApplicationAdapter) GetApplicationInfo(ctx context.Context, appNam
 		return nil, fmt.Errorf("failed to get application info %s: %w", appName, err)
 	}
 
-	// Use the common function to parse key:value pairs
-	info := a.parseOutputLines(output, ":")
+	info := dokkuApi.ParseKeyValueOutput(string(output), ":")
 	return info, nil
 }
 
@@ -97,7 +78,7 @@ func (a *DokkuApplicationAdapter) GetApplicationConfig(ctx context.Context, appN
 		return nil, fmt.Errorf("failed to get application config %s: %w", appName, err)
 	}
 
-	config := a.parseOutputLines(output, "=")
+	config := dokkuApi.ParseKeyValueOutput(string(output), "=")
 	return config, nil
 }
 
@@ -142,23 +123,4 @@ func (a *DokkuApplicationAdapter) GetApplicationLogs(ctx context.Context, appNam
 	}
 
 	return string(output), nil
-}
-
-// parseOutputLines parses command output into key-value pairs
-func (a *DokkuApplicationAdapter) parseOutputLines(output []byte, separator string) map[string]string {
-	result := make(map[string]string)
-	lines := strings.Split(string(output), "\n")
-
-	for _, line := range lines {
-		if strings.Contains(line, separator) {
-			parts := strings.SplitN(line, separator, 2)
-			if len(parts) == 2 {
-				key := strings.TrimSpace(parts[0])
-				value := strings.TrimSpace(parts[1])
-				result[key] = value
-			}
-		}
-	}
-
-	return result
 }

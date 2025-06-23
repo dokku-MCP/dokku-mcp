@@ -217,11 +217,11 @@ func (c *client) ExecuteStructured(ctx context.Context, spec CommandSpec) (*Comm
 
 	switch spec.OutputFormat {
 	case OutputFormatKeyValue:
-		result.KeyValueData = c.parseKeyValueOutput(output, spec.Separator)
+		result.KeyValueData = ParseKeyValueOutput(string(output), spec.Separator)
 	case OutputFormatList:
-		result.ListData = c.parseListOutput(output, spec.FilterEmpty)
+		result.ListData = ParseListOutput(string(output), spec.FilterEmpty)
 	case OutputFormatTable:
-		result.TableData = c.parseTableOutput(output, spec.SkipHeaders)
+		result.TableData = ParseTableOutput(string(output), spec.SkipHeaders)
 	case OutputFormatRaw:
 		// Raw output is already stored in RawOutput
 	default:
@@ -280,116 +280,4 @@ func (c *client) GetTableOutput(ctx context.Context, command string, args []stri
 	}
 
 	return result.TableData, nil
-}
-
-// Internal parsing methods (consolidated from adapters)
-func (c *client) parseKeyValueOutput(output []byte, separator string) map[string]string {
-	result := make(map[string]string)
-	lines := strings.Split(string(output), "\n")
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-
-		if strings.Contains(line, separator) {
-			parts := strings.SplitN(line, separator, 2)
-			if len(parts) == 2 {
-				key := strings.TrimSpace(parts[0])
-				value := strings.TrimSpace(parts[1])
-				if key != "" {
-					result[key] = value
-				}
-			}
-		}
-	}
-
-	return result
-}
-
-func (c *client) parseListOutput(output []byte, filterEmpty bool) []string {
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	var result []string
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-
-		// Skip headers and empty lines if requested
-		if filterEmpty && (line == "" || strings.HasPrefix(line, "====") || strings.Contains(line, "NAME")) {
-			continue
-		}
-
-		// For service lists, take the first column (service name)
-		if strings.Contains(line, " ") {
-			parts := strings.Fields(line)
-			if len(parts) > 0 {
-				result = append(result, parts[0])
-			}
-		} else if line != "" {
-			result = append(result, line)
-		}
-	}
-
-	return result
-}
-
-func (c *client) parseTableOutput(output []byte, skipHeaders bool) []map[string]string {
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	if len(lines) == 0 {
-		return nil
-	}
-
-	var headerLine string
-	var dataLines []string
-
-	if skipHeaders {
-		// Find the header line (usually contains column names)
-		for i, line := range lines {
-			if strings.Contains(line, "NAME") || strings.Contains(line, "STATUS") {
-				headerLine = line
-				dataLines = lines[i+1:]
-				break
-			}
-		}
-		if headerLine == "" && len(lines) > 1 {
-			headerLine = lines[0]
-			dataLines = lines[1:]
-		}
-	} else {
-		headerLine = lines[0]
-		dataLines = lines[1:]
-	}
-
-	if headerLine == "" {
-		return nil
-	}
-
-	// Parse headers
-	headers := strings.Fields(headerLine)
-	var result []map[string]string
-
-	for _, line := range dataLines {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "====") {
-			continue
-		}
-
-		fields := strings.Fields(line)
-		if len(fields) == 0 {
-			continue
-		}
-
-		row := make(map[string]string)
-		for i, header := range headers {
-			if i < len(fields) {
-				row[header] = fields[i]
-			} else {
-				row[header] = ""
-			}
-		}
-		result = append(result, row)
-	}
-
-	return result
 }

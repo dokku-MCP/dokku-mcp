@@ -27,13 +27,6 @@ type DokkuPlugin struct {
 	CorePlugin  bool   `json:"core_plugin"`
 }
 
-// GlobalDomain represents global domain configuration
-type GlobalDomain struct {
-	Domain     string    `json:"domain"`
-	IsWildcard bool      `json:"is_wildcard"`
-	AddedAt    time.Time `json:"added_at"`
-}
-
 // SSHKey represents an SSH key in Dokku
 type SSHKey struct {
 	Name        string    `json:"name"`
@@ -66,7 +59,6 @@ type GlobalConfiguration struct {
 type ServerInfo struct {
 	SystemStatus  SystemStatus         `json:"system_status"`
 	Plugins       []DokkuPlugin        `json:"plugins"`
-	GlobalDomains []GlobalDomain       `json:"global_domains"`
 	SSHKeys       []SSHKey             `json:"ssh_keys"`
 	Registries    []RegistryCredential `json:"registries"`
 	Configuration GlobalConfiguration  `json:"configuration"`
@@ -90,28 +82,6 @@ type ConfigurationKey struct {
 	Description string    `json:"description"`
 	Scope       string    `json:"scope"` // global, app-specific
 	SetAt       time.Time `json:"set_at"`
-}
-
-// DomainsReport represents the structured output of a domains report
-type DomainsReport struct {
-	Global      DomainsReportSection            `json:"global"`
-	PerApp      map[string]DomainsReportSection `json:"per_app"`
-	RawOutput   string                          `json:"raw_output"`
-	GeneratedAt time.Time                       `json:"generated_at"`
-}
-
-// DomainsReportSection represents a section of the domains report
-type DomainsReportSection struct {
-	Domains      []string `json:"domains"`
-	Vhosts       []string `json:"vhosts"`
-	ProxyEnabled bool     `json:"proxy_enabled"`
-	ProxyType    string   `json:"proxy_type,omitempty"`
-	AppName      string   `json:"app_name,omitempty"`
-	SSLEnabled   bool     `json:"ssl_enabled"`
-	SSLCertPath  string   `json:"ssl_cert_path,omitempty"`
-	SSLKeyPath   string   `json:"ssl_key_path,omitempty"`
-	SSLHostname  string   `json:"ssl_hostname,omitempty"`
-	LetsEncrypt  bool     `json:"letsencrypt"`
 }
 
 // LetsEncryptConfig represents Let's Encrypt configuration

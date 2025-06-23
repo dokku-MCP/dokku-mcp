@@ -12,7 +12,6 @@ import (
 type CoreService struct {
 	systemRepo   domain.SystemRepository
 	pluginRepo   domain.PluginRepository
-	domainRepo   domain.DomainRepository
 	sshKeyRepo   domain.SSHKeyRepository
 	registryRepo domain.RegistryRepository
 	configRepo   domain.ConfigurationRepository
@@ -23,7 +22,6 @@ type CoreService struct {
 func NewCoreService(
 	systemRepo domain.SystemRepository,
 	pluginRepo domain.PluginRepository,
-	domainRepo domain.DomainRepository,
 	sshKeyRepo domain.SSHKeyRepository,
 	registryRepo domain.RegistryRepository,
 	configRepo domain.ConfigurationRepository,
@@ -32,7 +30,6 @@ func NewCoreService(
 	return &CoreService{
 		systemRepo:   systemRepo,
 		pluginRepo:   pluginRepo,
-		domainRepo:   domainRepo,
 		sshKeyRepo:   sshKeyRepo,
 		registryRepo: registryRepo,
 		configRepo:   configRepo,
@@ -129,55 +126,6 @@ func (s *CoreService) UpdatePlugin(ctx context.Context, name string, version str
 	}
 
 	return s.pluginRepo.UpdatePlugin(ctx, name, version)
-}
-
-// Domain Management Operations
-func (s *CoreService) ListGlobalDomains(ctx context.Context) ([]domain.GlobalDomain, error) {
-	s.logger.Debug("Listing global domains")
-	return s.domainRepo.ListGlobalDomains(ctx)
-}
-
-func (s *CoreService) AddGlobalDomain(ctx context.Context, domainName string) error {
-	s.logger.Info("Adding global domain", "domain", domainName)
-
-	if err := s.validateDomainName(domainName); err != nil {
-		return fmt.Errorf("invalid domain name: %w", err)
-	}
-
-	return s.domainRepo.AddGlobalDomain(ctx, domainName)
-}
-
-func (s *CoreService) RemoveGlobalDomain(ctx context.Context, domainName string) error {
-	s.logger.Info("Removing global domain", "domain", domainName)
-
-	if domainName == "" {
-		return fmt.Errorf("domain name cannot be empty")
-	}
-
-	return s.domainRepo.RemoveGlobalDomain(ctx, domainName)
-}
-
-func (s *CoreService) SetGlobalDomains(ctx context.Context, domains []string) error {
-	s.logger.Info("Setting global domains", "domains", domains)
-
-	// Validate all domain names
-	for _, domainName := range domains {
-		if err := s.validateDomainName(domainName); err != nil {
-			return fmt.Errorf("invalid domain name '%s': %w", domainName, err)
-		}
-	}
-
-	return s.domainRepo.SetGlobalDomains(ctx, domains)
-}
-
-func (s *CoreService) ClearGlobalDomains(ctx context.Context) error {
-	s.logger.Info("Clearing all global domains")
-	return s.domainRepo.ClearGlobalDomains(ctx)
-}
-
-func (s *CoreService) GetDomainsReport(ctx context.Context) (*domain.DomainsReport, error) {
-	s.logger.Debug("Getting domains report")
-	return s.domainRepo.GetDomainsReport(ctx)
 }
 
 // SSH Key Management Operations
@@ -292,23 +240,6 @@ func (s *CoreService) validatePluginSource(source string) error {
 	return nil
 }
 
-func (s *CoreService) validateDomainName(domain string) error {
-	if domain == "" {
-		return fmt.Errorf("domain name cannot be empty")
-	}
-
-	if len(domain) > 253 {
-		return fmt.Errorf("domain name too long (max 253 characters)")
-	}
-
-	// Basic domain validation - could be enhanced with regex
-	if !containsAny(domain, []string{".", "-"}) && !isIPAddress(domain) {
-		return fmt.Errorf("invalid domain format")
-	}
-
-	return nil
-}
-
 func (s *CoreService) validateSSHKeyContent(keyContent string) error {
 	// Basic SSH key validation
 	if !containsAny(keyContent, []string{"ssh-rsa", "ssh-ed25519", "ssh-dss", "ecdsa-sha2"}) {
@@ -353,17 +284,4 @@ func findSubstring(s, substr string) bool {
 		}
 	}
 	return false
-}
-
-func isIPAddress(s string) bool {
-	// Simple IP address check
-	parts := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == '.' {
-			parts++
-		} else if s[i] < '0' || s[i] > '9' {
-			return false
-		}
-	}
-	return parts == 3
 }
