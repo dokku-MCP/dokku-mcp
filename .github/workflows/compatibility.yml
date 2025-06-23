@@ -23,7 +23,7 @@ on:
 jobs:
   setup-matrix:
     name: Setup Test Matrix
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
@@ -63,7 +63,7 @@ jobs:
 
   dokku-compatibility:
     name: Dokku Compatibility Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs: setup-matrix
     strategy:
       matrix:
@@ -128,7 +128,7 @@ jobs:
 
   # load-tests:
   #   name: Load Tests
-  #   runs-on: ubuntu-latest
+  #   runs-on: ubuntu-22.04
     
   #   steps:
   #   - name: Checkout code
@@ -170,7 +170,7 @@ jobs:
 
   security-audit:
     name: Deep Security Audit
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     
     steps:
     - name: Checkout code
@@ -216,7 +216,7 @@ jobs:
 
   notify:
     name: Notification Results
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs: [setup-matrix, dokku-compatibility, security-audit]
     if: always() && !cancelled()
     
