@@ -1,67 +1,34 @@
-# Development Playbook - Dokku MCP Server
+# Advanced Development Playbook
 
-## Development Workflow
-
-### 1. Environment Setup
-```bash
-git clone <repo-url>
-cd dokku-mcp
-go mod download
-make install-tools
-make setup-hooks
-```
-
-### 2. Development Cycle
-
-#### Create a New Feature
-```bash
-git checkout -b feature/feature-name
-```
-
-#### Testing and Validation
-```bash
-make lint
-make fmt
-
-# Run all tests
-make test
-
-make test-coverage
-make test-integration
-```
-
-#### Documentation
-```bash
-# Generate documentation
-make docs
-make test-examples
-```
+This playbook provides concrete patterns for extending the Dokku MCP server with new capabilities. For general contribution guidelines, please see [CONTRIBUTING.md](../../CONTRIBUTING.md).
 
 ## Development Patterns
 
 ### 1. Adding a New MCP Resource
 
+This pattern shows how to expose a new type of Dokku resource to the MCP server.
+
 #### Step 1: Define Domain Entity
+Start by defining the core entity in the appropriate domain.
+
 ```go
-// internal/domain/application/entity.go
+// internal/server-plugins/app/domain/application.entity.go
 type Application struct {
     name     string
     state    ApplicationState
-    config   *ApplicationConfig
-    services []*Service
+    // ... other fields
 }
 
 func NewApplication(name string) *Application {
-    return &Application{
-        name:  name,
-        state: StateCreated,
-    }
+    // ... constructor logic
 }
 ```
 
-#### Step 2: Create Repository
+#### Step 2: Create Repository Interface
+Define the contract for data access in the domain layer.
+
 ```go
-// internal/domain/application/repository.go
+// internal/server-plugins/app/domain/application.repository.go
 type Repository interface {
     GetAll(ctx context.Context) ([]*Application, error)
     GetByName(ctx context.Context, name string) (*Application, error)
@@ -70,10 +37,12 @@ type Repository interface {
 ```
 
 #### Step 3: Implement Infrastructure
+Implement the repository interface in the infrastructure layer, interacting with the Dokku API.
+
 ```go
-// internal/infrastructure/dokku/application_repository.go
+// internal/server-plugins/app/infrastructure/application_repository.go
 type applicationRepository struct {
-    client DokkuClient
+    client dokkuApi.DokkuClient
 }
 
 func (r *applicationRepository) GetAll(ctx context.Context) ([]*Application, error) {
@@ -81,11 +50,13 @@ func (r *applicationRepository) GetAll(ctx context.Context) ([]*Application, err
 }
 ```
 
-#### Step 4: Create MCP Handler
+#### Step 4: Create MCP Handler in Plugin
+In the application layer of your plugin, create the handler that fetches domain entities and transforms them into MCP resources.
+
 ```go
-// internal/application/handlers/resource_handler.go
-func (h *ResourceHandler) HandleApplications(ctx context.Context) ([]*mcp.Resource, error) {
-    apps, err := h.appRepo.GetAll(ctx)
+// internal/server-plugins/app/application/application_usecase.go
+func (uc *ApplicationUsecase) GetAllResources(ctx context.Context) ([]*mcp.Resource, error) {
+    apps, err := uc.appRepo.GetAll(ctx)
     if err != nil {
         return nil, fmt.Errorf("failed to retrieve applications: %w", err)
     }
@@ -106,164 +77,120 @@ func (h *ResourceHandler) HandleApplications(ctx context.Context) ([]*mcp.Resour
 
 ### 2. Adding a New MCP Tool
 
-#### Step 1: Define the Tool
-```go
-// internal/application/tools/deploy_tool.go
-type DeployTool struct {
-    deployService domain.DeploymentService
-}
+This pattern shows how to add a new tool that can be executed by an LLM.
 
-func (t *DeployTool) Definition() *mcp.ToolDefinition {
-    return &mcp.ToolDefinition{
-        Name:        "deploy_application",
-        Description: "Deploy a Dokku application",
-        InputSchema: map[string]interface{}{
-            "type": "object",
-            "properties": map[string]interface{}{
-                "app_name": map[string]interface{}{
-                    "type":        "string",
-                    "description": "Name of the application to deploy",
-                },
-                "git_ref": map[string]interface{}{
-                    "type":        "string",
-                    "description": "Git reference to deploy (optional)",
-                },
-            },
-            "required": []string{"app_name"},
-        },
-    }
+#### Step 1: Define the Tool Definition
+In your plugin's application layer, define the tool's name, description, and input schema.
+
+```go
+// From your plugin's tool provider implementation
+func (p *AppPlugin) GetTools(uc *ApplicationUsecase) []*mcp.Tool {
+	return []*mcp.Tool{
+		mcp.NewTool(
+			"deploy_application",
+			mcp.WithDescription("Deploy a Dokku application from a Git repository"),
+			mcp.WithInputSchema(map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"app_name": map[string]interface{}{
+						"type":        "string",
+						"description": "Name of the application to deploy",
+					},
+					"git_ref": map[string]interface{}{
+						"type":        "string",
+						"description": "Git reference to deploy (e.g., 'main' or a commit SHA)",
+						"default":     "main",
+					},
+				},
+				"required": []string{"app_name"},
+			}),
+			mcp.WithExecute(uc.DeployApplication),
+		),
+	}
 }
 ```
 
-#### Step 2: Implement Execution
+#### Step 2: Implement Tool Execution Logic
+Implement the function that contains the business logic for the tool. This function will be wired to the tool definition.
+
 ```go
-func (t *DeployTool) Execute(ctx context.Context, params map[string]interface{}) (*mcp.ToolResult, error) {
-    // Parameter validation
+// internal/server-plugins/app/application/application_usecase.go
+func (uc *ApplicationUsecase) DeployApplication(ctx context.Context, params map[string]interface{}) (*mcp.ToolResult, error) {
+    // 1. Validate and extract parameters
     appName, ok := params["app_name"].(string)
     if !ok || appName == "" {
-        return nil, errors.New("app_name parameter required")
+        return nil, errors.New("app_name parameter is required and must be a string")
     }
-    
-    // Execute deployment
-    deployment, err := t.deployService.Deploy(ctx, appName, domain.DeployOptions{
-        GitRef: getStringParam(params, "git_ref"),
+    gitRef := "main"
+    if ref, ok := params["git_ref"].(string); ok {
+		gitRef = ref
+	}
+
+    // 2. Execute business logic through domain services
+    deployment, err := uc.deploymentService.Deploy(ctx, appName, domain.DeployOptions{
+        GitRef: gitRef,
     })
     if err != nil {
         return &mcp.ToolResult{
-            Content: []map[string]interface{}{
-                {
-                    "type": "text",
-                    "text": fmt.Sprintf("Deployment error: %v", err),
-                },
-            },
+            Content: fmt.Sprintf("Deployment failed: %v", err),
             IsError: true,
         }, nil
     }
     
+    // 3. Return a structured, user-friendly result
     return &mcp.ToolResult{
-        Content: []map[string]interface{}{
-            {
-                "type": "text",
-                "text": fmt.Sprintf("Deployment successful: %s", deployment.ID),
-            },
-        },
+        Content: fmt.Sprintf("✅ Deployment successful for app '%s'. Deployment ID: %s", appName, deployment.ID),
     }, nil
 }
 ```
 
-### 3. Adding a Plugin
+### 3. Adding a New Plugin
 
-#### Plugin Structure
-```go
-// internal/plugins/database/plugin.go
-type DatabasePlugin struct {
-    config PluginConfig
-    client DokkuClient
-}
-
-func (p *DatabasePlugin) Name() string {
-    return "database"
-}
-
-func (p *DatabasePlugin) GetResources() []ResourceDefinition {
-    return []ResourceDefinition{
-        {
-            Pattern:     "dokku://database/*",
-            Handler:     p.handleDatabaseResource,
-            Description: "Dokku database resources",
-        },
-    }
-}
-
-func (p *DatabasePlugin) GetTools() []ToolDefinition {
-    return []ToolDefinition{
-        {
-            Name:    "create_database",
-            Handler: p.createDatabase,
-        },
-        {
-            Name:    "backup_database", 
-            Handler: p.backupDatabase,
-        },
-    }
-}
-```
+Refer to the `plugin-development-guide.md` for a comprehensive guide on creating new plugins from scratch.
 
 ## Debugging and Troubleshooting
 
-### Debug Logs
+### Enable Debug Logs
+
+You can increase log verbosity for debugging by setting environment variables:
+
 ```bash
-# Enable detailed logs
+# Enable detailed logs and JSON format for structured logging
 export DOKKU_MCP_LOG_LEVEL=debug
 export DOKKU_MCP_LOG_FORMAT=json
 
-# Run server in debug mode
-./dokku-mcp --debug
-```
-
-### Diagnostic Tools
-```bash
-make test-mcp-resources
-make profile
+# Run the server
+make start
 ```
 
 ### Debugging with Delve
+
+You can use [Delve](httpss://github.com/go-delve/delve), the Go debugger, for step-by-step debugging.
+
 ```bash
 # Install Delve
-go install github.com/go-delve/delve/cmd/dlv@latest
+make install-tools
 
-# Debug server
-dlv debug cmd/server/main.go
+# Debug the main server application
+dlv debug ./cmd/server/main.go
 
-# Debug tests
-dlv test ./internal/application/handlers
+# Debug a specific test package
+dlv test ./internal/server-plugins/app/application
 ```
-
-## Code Review and Quality
-
-### Review Checklist
-- [ ] Unit tests added/modified
-- [ ] Documentation updated
-- [ ] Proper error handling
-- [ ] Input validation
-- [ ] Logs added for important operations
-- [ ] Performance verified (no N+1, timeouts)
-- [ ] Security verified (validation, sanitization)
-
 
 ## Deployment and Release
 
 ### Release Preparation
+
+The `Makefile` contains helpers for the release process.
+
 ```bash
-# Update version
+# Update version in the source code
 make bump-version VERSION=v1.2.0
 
-# Generate changelog
+# Generate a changelog from git history
 make changelog
 
 # Create multi-platform builds
 make build-all
-
-# Complete regression tests
-make test-regression
 ```
