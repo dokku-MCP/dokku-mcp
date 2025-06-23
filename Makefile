@@ -45,6 +45,7 @@ install-tools: ## Install development tools
 	go install github.com/fzipp/gocyclo/cmd/gocyclo@latest
 	go install github.com/mibk/dupl@latest
 	go install github.com/securego/gosec/v2/cmd/gosec@latest
+	go install honnef.co/go/tools/cmd/staticcheck@latest
 	go install github.com/golang/mock/mockgen@latest
 	go install github.com/onsi/ginkgo/v2/ginkgo@latest
 	go install github.com/go-delve/delve/cmd/dlv@latest
@@ -59,6 +60,7 @@ check: ## Run all quality checks
 	-@$(MAKE) --no-print-directory fmt
 	-@$(MAKE) --no-print-directory vet
 	-@$(MAKE) --no-print-directory lint
+	-@$(MAKE) --no-print-directory staticcheck
 	-@$(MAKE) --no-print-directory cyclo
 	-@$(MAKE) --no-print-directory dupl
 	-@$(MAKE) --no-print-directory _check-security
@@ -119,6 +121,10 @@ test-integration-ci: $(GINKGO_BINARY) ## Run integration tests for CI environmen
 lint: ## Check code style
 	@printf "$(GREEN)🔍 Linting code...$(NC)\n"
 	golangci-lint run $(GO_SRC_DIRS)
+
+staticcheck: ## Run staticcheck analysis
+	@printf "$(GREEN)🔎 Running staticcheck analysis...$(NC)\n"
+	staticcheck $(GO_SRC_DIRS)
 
 type: ## Check type safety
 	@$(MAKE) --no-print-directory _check-type-safety
@@ -231,7 +237,7 @@ dokku-clean: ## Clean local Dokku data and containers
 
 .DEFAULT_GOAL := help
 
-.PHONY: all build test clean install-tools lint fmt vet dev debug
+.PHONY: all build test clean install-tools lint staticcheck fmt vet dev debug
 .PHONY: test test-verbose test-integration-local test-integration-ci test-all test-race
 .PHONY: setup-dokku dokku-start dokku-stop dokku-status dokku-logs dokku-shell dokku-clean
 .PHONY: security _check-security _check-type-safety _check-security-detailed docs

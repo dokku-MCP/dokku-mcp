@@ -111,7 +111,7 @@ func (a *Application) Configuration() *ApplicationConfiguration {
 
 func (a *Application) Deploy(gitRef *shared.GitRef, buildOpts *DeploymentOptions) error {
 	if gitRef == nil {
-		return fmt.Errorf("Git reference cannot be null")
+		return fmt.Errorf("git reference cannot be null")
 	}
 
 	a.deploymentInfo.currentGitRef = gitRef

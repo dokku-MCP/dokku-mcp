@@ -54,7 +54,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        check: [format, vet, lint, type, complexity, duplicates, security]
+        check: [format, vet, lint, staticcheck, type, complexity, duplicates, security]
     
     steps:
       - name: Checkout code
@@ -94,6 +94,10 @@ jobs:
       - name: Run lint
         if: matrix.check == 'lint'
         run: make lint
+
+      - name: Run staticcheck
+        if: matrix.check == 'staticcheck'
+        run: make staticcheck
 
       - name: Run type
         if: matrix.check == 'type'
