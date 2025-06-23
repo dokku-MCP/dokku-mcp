@@ -115,16 +115,16 @@ jobs:
         sudo dokku events:on || true
         sudo usermod -aG dokku $USER
     
-    - name: Install Ginkgo
-      run: make install-ginkgo
+    - name: Install development tools
+      run: make install-tools
     
     - name: Integration tests
-      run: make -f Makefile.ci test-ci-integration-real
+      run: make test-integration-ci
       continue-on-error: ${{ matrix.dokku-version == 'master' }}
     
     - name: Cleanup
       if: always()
-      run: make -f Makefile.ci cleanup-ci
+      run: make dokku-clean
 
   # load-tests:
   #   name: Load Tests
@@ -151,7 +151,7 @@ jobs:
   #     run: |
   #       export MAX_TEST_APPS=20
   #       export CONCURRENT_TESTS=5
-  #       make -f Makefile.ci test-ci-performance
+  #       make test-ci-performance
     
   #   - name: Performance profiling
   #     run: make profile
@@ -166,7 +166,7 @@ jobs:
     
   #   - name: Cleanup
   #     if: always()
-  #     run: make -f Makefile.ci cleanup-ci
+  #     run: make cleanup-ci
 
   security-audit:
     name: Deep Security Audit
@@ -189,7 +189,7 @@ jobs:
         go install honnef.co/go/tools/cmd/staticcheck@latest
     
     - name: Security analysis with gosec
-      run: make -f Makefile.ci test-ci-security
+      run: make security
     
     - name: Static analysis with staticcheck
       run: staticcheck ./...
@@ -199,16 +199,20 @@ jobs:
         go list -json -deps ./... | go run github.com/sonatypecommunity/nancy@latest sleuth
     
     - name: Upload security report
+      if: failure()
       uses: github/codeql-action/upload-sarif@v2
       with:
         sarif_file: gosec-report.sarif
+      continue-on-error: true
     
     - name: Upload security artifacts
+      if: failure()
       uses: actions/upload-artifact@v4
       with:
         name: security-reports-${{ github.run_number }}
         path: |
           gosec-report.*
+      continue-on-error: true
 
   notify:
     name: Notification Results

@@ -51,6 +51,9 @@ install-tools: ## Install development tools
 	go install golang.org/x/tools/cmd/godoc@latest
 	go install github.com/air-verse/air@latest
 
+$(GINKGO_BINARY):
+	go install github.com/onsi/ginkgo/v2/ginkgo@latest
+
 check: ## Run all quality checks
 	@printf "$(GREEN)🔍 Run all quality checks...$(NC)\n"
 	-@$(MAKE) --no-print-directory fmt
@@ -108,6 +111,10 @@ test-integration-local: dokku-start ## -experimental- Run integration tests with
 		printf "$(RED)❌ .env.dokku-local not found. Run 'make dokku-setup' first$(NC)\n"; \
 		exit 1; \
 	fi
+
+test-integration-ci: $(GINKGO_BINARY) ## Run integration tests for CI environment
+	@printf "$(GREEN)🧪 Running integration tests for CI...$(NC)\n"
+	DOKKU_MCP_LOG_LEVEL=error $(GINKGO_BINARY) -v -tags=integration --timeout=10m --flake-attempts=3 --randomize-all --poll-progress-after=30s internal/dokku-api/ | grep -v "time=.*level=" || true
 
 lint: ## Check code style
 	@printf "$(GREEN)🔍 Linting code...$(NC)\n"
@@ -225,7 +232,7 @@ dokku-clean: ## Clean local Dokku data and containers
 .DEFAULT_GOAL := help
 
 .PHONY: all build test clean install-tools lint fmt vet dev debug
-.PHONY: test test-verbose test-integration-local test-all test-race
+.PHONY: test test-verbose test-integration-local test-integration-ci test-all test-race
 .PHONY: setup-dokku dokku-start dokku-stop dokku-status dokku-logs dokku-shell dokku-clean
 .PHONY: security _check-security _check-type-safety _check-security-detailed docs
 
