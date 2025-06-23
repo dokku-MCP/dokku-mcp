@@ -29,7 +29,6 @@ func registerServerHooks(lc fx.Lifecycle, cfg *config.ServerConfig, mcpServer *s
 			if err := adapter.RegisterAllServerPlugins(ctx); err != nil {
 				return fmt.Errorf("failed to register server plugins: %w", err)
 			}
-			logger.Info("All plugins registered.")
 
 			switch cfg.Transport.Type {
 			case "sse":
