@@ -33,6 +33,14 @@ func (a *DokkuDomainAdapter) executeCommand(ctx context.Context, command domain.
 	return a.client.ExecuteCommand(ctx, command.String(), args)
 }
 
+func (a *DokkuDomainAdapter) SetLetsEncryptEmail(ctx context.Context, email string) error {
+	_, err := a.executeCommand(ctx, domain.CommandLetsEncryptSet, []string{"--global", "email", email})
+	if err != nil {
+		return fmt.Errorf("failed to set letsencrypt email: %w", err)
+	}
+	return nil
+}
+
 // ListGlobalDomains retrieves global domains
 func (a *DokkuDomainAdapter) ListGlobalDomains(ctx context.Context) ([]domain.GlobalDomain, error) {
 	output, err := a.executeCommand(ctx, domain.CommandDomainsReport, []string{"--global"})

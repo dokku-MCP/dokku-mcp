@@ -8,13 +8,6 @@ const (
 	CommandVersion CoreCommand = "version"
 	CommandEvents  CoreCommand = "events"
 
-	// Domain commands
-	CommandDomainsReport       CoreCommand = "domains:report"
-	CommandDomainsAddGlobal    CoreCommand = "domains:add-global"
-	CommandDomainsRemoveGlobal CoreCommand = "domains:remove-global"
-	CommandDomainsSetGlobal    CoreCommand = "domains:set-global"
-	CommandDomainsClearGlobal  CoreCommand = "domains:clear-global"
-
 	// Proxy commands
 	CommandProxyReport CoreCommand = "proxy:report"
 	CommandProxySet    CoreCommand = "proxy:set"
@@ -42,9 +35,6 @@ const (
 	// Registry commands
 	CommandRegistryLogout CoreCommand = "registry:logout"
 
-	// Let's Encrypt commands
-	CommandLetsEncryptSet CoreCommand = "letsencrypt:set"
-
 	// Logs commands
 	CommandLogsSet CoreCommand = "logs:set"
 )
@@ -53,8 +43,6 @@ const (
 func (c CoreCommand) IsValid() bool {
 	switch c {
 	case CommandVersion, CommandEvents,
-		CommandDomainsReport, CommandDomainsAddGlobal, CommandDomainsRemoveGlobal,
-		CommandDomainsSetGlobal, CommandDomainsClearGlobal,
 		CommandProxyReport, CommandProxySet,
 		CommandSchedulerReport, CommandSchedulerSet,
 		CommandGitReport, CommandGitSet,
@@ -62,7 +50,6 @@ func (c CoreCommand) IsValid() bool {
 		CommandPluginEnable, CommandPluginDisable, CommandPluginUpdate,
 		CommandSSHKeysList, CommandSSHKeysRemove,
 		CommandRegistryLogout,
-		CommandLetsEncryptSet,
 		CommandLogsSet:
 		return true
 	default:
@@ -80,11 +67,6 @@ func GetAllowedCoreCommands() []CoreCommand {
 	return []CoreCommand{
 		CommandVersion,
 		CommandEvents,
-		CommandDomainsReport,
-		CommandDomainsAddGlobal,
-		CommandDomainsRemoveGlobal,
-		CommandDomainsSetGlobal,
-		CommandDomainsClearGlobal,
 		CommandProxyReport,
 		CommandProxySet,
 		CommandSchedulerReport,
@@ -100,7 +82,6 @@ func GetAllowedCoreCommands() []CoreCommand {
 		CommandSSHKeysList,
 		CommandSSHKeysRemove,
 		CommandRegistryLogout,
-		CommandLetsEncryptSet,
 		CommandLogsSet,
 	}
 }

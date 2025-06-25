@@ -338,14 +338,6 @@ func (a *DokkuCoreAdapter) SetGlobalDeployBranch(ctx context.Context, branch str
 	return nil
 }
 
-func (a *DokkuCoreAdapter) SetLetsEncryptEmail(ctx context.Context, email string) error {
-	_, err := a.executeCommand(ctx, domain.CommandLetsEncryptSet, []string{"--global", "email", email})
-	if err != nil {
-		return fmt.Errorf("failed to set letsencrypt email: %w", err)
-	}
-	return nil
-}
-
 func (a *DokkuCoreAdapter) SetVectorSink(ctx context.Context, sink string) error {
 	_, err := a.executeCommand(ctx, domain.CommandLogsSet, []string{"--global", "vector-sink", sink})
 	if err != nil {

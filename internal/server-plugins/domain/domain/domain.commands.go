@@ -9,13 +9,14 @@ const (
 	CommandDomainsRemoveGlobal DomainCommand = "domains:remove-global"
 	CommandDomainsSetGlobal    DomainCommand = "domains:set-global"
 	CommandDomainsClearGlobal  DomainCommand = "domains:clear-global"
+	CommandLetsEncryptSet      DomainCommand = "letsencrypt:set"
 )
 
 // IsValid checks if the command is a valid domain command
 func (c DomainCommand) IsValid() bool {
 	switch c {
 	case CommandDomainsReport, CommandDomainsAddGlobal, CommandDomainsRemoveGlobal,
-		CommandDomainsSetGlobal, CommandDomainsClearGlobal:
+		CommandDomainsSetGlobal, CommandDomainsClearGlobal, CommandLetsEncryptSet:
 		return true
 	default:
 		return false
@@ -35,5 +36,6 @@ func GetAllowedCommands() []DomainCommand {
 		CommandDomainsRemoveGlobal,
 		CommandDomainsSetGlobal,
 		CommandDomainsClearGlobal,
+		CommandLetsEncryptSet,
 	}
 }

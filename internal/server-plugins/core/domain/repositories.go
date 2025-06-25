@@ -44,7 +44,6 @@ type ConfigurationRepository interface {
 	SetGlobalProxyType(ctx context.Context, proxyType string) error
 	SetGlobalScheduler(ctx context.Context, scheduler string) error
 	SetGlobalDeployBranch(ctx context.Context, branch string) error
-	SetLetsEncryptEmail(ctx context.Context, email string) error
 	SetVectorSink(ctx context.Context, sink string) error
 	GetConfigurationKeys(ctx context.Context, scope string) ([]ConfigurationKey, error)
 }
