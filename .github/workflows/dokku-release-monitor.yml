@@ -9,6 +9,10 @@ jobs:
   check-dokku-releases:
     name: Check for New Dokku Releases
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Required to push changes to .tested-dokku-versions
+      issues: write    # Required to create issues for new releases
+      actions: write   # Required to trigger other workflows
     
     steps:
     - name: Checkout code
