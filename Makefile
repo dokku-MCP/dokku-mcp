@@ -1,5 +1,5 @@
 BINARY_NAME=dokku-mcp
-VERSION?=v0.1.0
+VERSION?=dev-$(shell git rev-parse --short HEAD)
 ENTRYPOINT=cmd/server/main.go
 BUILD_DIR=build
 GO_SRC_DIRS=./cmd/... ./internal/... ./pkg/...
