@@ -67,4 +67,7 @@ type client struct {
 
 	// Optional caching - managed by cache manager
 	cacheManager *CommandCacheManager
+
+	// Capabilities tracking
+	capabilities *DokkuCapabilities
 }

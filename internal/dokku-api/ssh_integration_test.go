@@ -63,11 +63,19 @@ var _ = Describe("SSH Integration", func() {
 				config := dokkuApi.MustNewSSHConfig("dokku.com", 2222, "testuser", "", 30*time.Second)
 				args := config.BaseSSHArgs()
 
+				Expect(args).To(ContainElement("-t"))
 				Expect(args).To(ContainElement("-o"))
 				Expect(args).To(ContainElement("LogLevel=QUIET"))
 				Expect(args).To(ContainElement("StrictHostKeyChecking=no"))
 				Expect(args).To(ContainElement("-p"))
 				Expect(args).To(ContainElement("2222"))
+			})
+
+			It("should have -t flag as first argument for PTY", func() {
+				config := dokkuApi.MustNewSSHConfig("dokku.com", 22, "dokku", "", 30*time.Second)
+				args := config.BaseSSHArgs()
+
+				Expect(args[0]).To(Equal("-t"), "First argument should be -t for PTY allocation as required by Dokku")
 			})
 		})
 	})

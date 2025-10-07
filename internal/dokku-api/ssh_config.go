@@ -109,6 +109,7 @@ func (s *SSHConfig) ConnectionString() string {
 // BaseSSHArgs returns the base SSH command arguments
 func (s *SSHConfig) BaseSSHArgs() []string {
 	return []string{
+		"-t", // Request pseudo-terminal - REQUIRED by Dokku docs
 		"-o", "LogLevel=QUIET",
 		"-o", "StrictHostKeyChecking=no",
 		"-o", fmt.Sprintf("ConnectTimeout=%d", int(s.timeout.Seconds())),

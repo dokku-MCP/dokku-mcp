@@ -17,6 +17,13 @@ type CommandParser interface {
 // StructuredExecutor combines execution with structured parsing
 type StructuredExecutor interface {
 	ExecuteStructured(ctx context.Context, spec CommandSpec) (*CommandResult, error)
+	ExecuteWithAutoFormat(ctx context.Context, commandName string, args []string) (*CommandResult, error)
+}
+
+// CapabilityManager defines capability discovery and management
+type CapabilityManager interface {
+	DiscoverCapabilities(ctx context.Context) error
+	GetCapabilities() *DokkuCapabilities
 }
 
 // SSHManager defines SSH connection management
@@ -36,6 +43,7 @@ type DokkuClient interface {
 	CommandExecutor
 	CommandParser
 	StructuredExecutor
+	CapabilityManager
 	SSHManager
 	CommandFilter
 }

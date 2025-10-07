@@ -2,6 +2,7 @@ package dokkuApi
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os/exec"
@@ -82,10 +83,21 @@ func NewDokkuClient(config *ClientConfig, logger *slog.Logger) DokkuClient {
 		config:         config,
 		logger:         logger,
 		sshConnManager: sshConnManager,
+		capabilities:   NewDokkuCapabilities(),
 	}
 
 	// Initialize cache manager if caching is enabled
 	client.cacheManager = NewCommandCacheManager(config.Cache, logger)
+
+	// Discover Dokku capabilities in the background
+	// This is non-blocking and will update capabilities asynchronously
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := client.DiscoverCapabilities(ctx); err != nil {
+			logger.Warn("Failed to discover Dokku capabilities", "error", err)
+		}
+	}()
 
 	return client
 }
@@ -216,6 +228,8 @@ func (c *client) ExecuteStructured(ctx context.Context, spec CommandSpec) (*Comm
 	}
 
 	switch spec.OutputFormat {
+	case OutputFormatJSON:
+		result.JSONData = output
 	case OutputFormatKeyValue:
 		result.KeyValueData = ParseKeyValueOutput(string(output), spec.Separator)
 	case OutputFormatList:
@@ -226,6 +240,72 @@ func (c *client) ExecuteStructured(ctx context.Context, spec CommandSpec) (*Comm
 		// Raw output is already stored in RawOutput
 	default:
 		return nil, fmt.Errorf("unsupported output format: %s", spec.OutputFormat)
+	}
+
+	return result, nil
+}
+
+// ExecuteWithAutoFormat executes a command with automatic format detection and optimal parsing
+// This is the new JSON-first approach that prefers JSON when available
+func (c *client) ExecuteWithAutoFormat(ctx context.Context, commandName string, args []string) (*CommandResult, error) {
+	cap := c.capabilities.CommandRegistry.Get(commandName)
+
+	// Check if command supports JSON
+	supportsJSON := c.capabilities.SupportsJSON(commandName, c.capabilities.Version)
+
+	if supportsJSON {
+		// Try JSON first
+		c.logger.Debug("Executing command with JSON format",
+			"command", commandName,
+			"supports_json", true)
+
+		jsonArgs := append(args, "--format", "json")
+		output, err := c.ExecuteCommand(ctx, commandName, jsonArgs)
+		if err != nil {
+			c.logger.Warn("Failed to execute with JSON format, falling back to text",
+				"command", commandName,
+				"error", err)
+			// Fall through to text parsing
+		} else {
+			// Validate it's actually JSON
+			var jsonTest interface{}
+			if json.Unmarshal(output, &jsonTest) == nil {
+				return &CommandResult{
+					RawOutput: output,
+					JSONData:  output,
+					ParsedAt:  time.Now(),
+				}, nil
+			}
+			c.logger.Warn("Command returned non-JSON output despite --format json flag",
+				"command", commandName)
+		}
+	}
+
+	// Fall back to text parsing based on command characteristics
+	output, err := c.ExecuteCommand(ctx, commandName, args)
+	if err != nil {
+		return nil, fmt.Errorf("command execution failed: %w", err)
+	}
+
+	result := &CommandResult{
+		RawOutput: output,
+		ParsedAt:  time.Now(),
+	}
+
+	// Infer parsing strategy from command name
+	if cap != nil {
+		c.logger.Debug("Using inferred parsing for command",
+			"command", commandName,
+			"supports_json", false)
+	}
+
+	// Default intelligent parsing based on command patterns
+	if strings.Contains(commandName, ":list") {
+		result.ListData = ParseListOutput(string(output), true)
+	} else if strings.Contains(commandName, ":report") || strings.Contains(commandName, ":info") {
+		result.KeyValueData = ParseKeyValueOutput(string(output), ":")
+	} else if strings.Contains(commandName, "config:show") {
+		result.KeyValueData = ParseKeyValueOutput(string(output), "=")
 	}
 
 	return result, nil
