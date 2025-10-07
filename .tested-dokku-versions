@@ -1,12 +1,9 @@
-v0.31.5
-v0.32.4
+# Dokku versions tested for compatibility
+# This file is automatically maintained by .github/workflows/dokku-release-monitor.yml
+# Current strategy: Keep only the LATEST PATCH of the LAST 4 MINOR releases
+# Example: v0.33.9, v0.34.9, v0.35.20, v0.36.7
+# Note: 'master' is automatically added to the test matrix by compatibility.yml
 v0.33.9
 v0.34.9
 v0.35.20
-v0.36.0
-v0.36.2
-v0.36.3
-v0.36.4
-v0.36.5
-v0.36.6
 v0.36.7

@@ -55,7 +55,48 @@ jobs:
         
         # Clean up file: remove duplicates, sort versions, remove empty lines
         sort -V .tested-dokku-versions | uniq | grep -v '^$' > .tested-dokku-versions.tmp
-        mv .tested-dokku-versions.tmp .tested-dokku-versions
+        
+        # Keep only the last patch version of the last 4 minor releases
+        python3 - << 'PYTHON_EOF'
+        import re
+        from collections import defaultdict
+        
+        # Read all versions (filter out comments and empty lines)
+        with open('.tested-dokku-versions.tmp', 'r') as f:
+            versions = [line.strip() for line in f if line.strip() and not line.strip().startswith('#')]
+        
+        # Parse versions into (major, minor, patch) tuples
+        version_map = defaultdict(list)
+        for v in versions:
+            match = re.match(r'v?(\d+)\.(\d+)\.(\d+)', v)
+            if match:
+                major, minor, patch = map(int, match.groups())
+                version_map[(major, minor)].append((major, minor, patch, v))
+        
+        # Sort each minor version group by patch and keep only the latest
+        latest_by_minor = {}
+        for key, version_list in version_map.items():
+            version_list.sort(key=lambda x: x[2], reverse=True)
+            latest_by_minor[key] = version_list[0][3]
+        
+        # Sort minor versions and keep only the last 4
+        sorted_minors = sorted(latest_by_minor.keys(), reverse=True)[:4]
+        latest_versions = [latest_by_minor[minor] for minor in sorted(sorted_minors)]
+        
+        # Write back the pruned list with header
+        with open('.tested-dokku-versions', 'w') as f:
+            f.write('# Dokku versions tested for compatibility\n')
+            f.write('# This file is automatically maintained by .github/workflows/dokku-release-monitor.yml\n')
+            f.write('# Strategy: Keep only the LATEST PATCH of the LAST 4 MINOR releases\n')
+            f.write('# Example: v0.33.9, v0.34.9, v0.35.20, v0.36.7\n')
+            f.write("# Note: 'master' is automatically added to the test matrix by compatibility.yml\n")
+            for v in latest_versions:
+                f.write(v + '\n')
+        
+        print("Kept versions (last 4 minors, latest patch each):")
+        for v in latest_versions:
+            print(f"  - {v}")
+        PYTHON_EOF
         
         # Show what we have now
         echo "Current tested versions:"

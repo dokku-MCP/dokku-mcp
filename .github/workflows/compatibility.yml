@@ -47,8 +47,8 @@ jobs:
           cat .tested-dokku-versions
           echo "---"
           
-          # Read versions from file, clean and sort
-          VERSIONS=$(cat .tested-dokku-versions | grep -v '^$' | sort -V | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          # Read versions from file, clean and sort (filter out empty lines and comments)
+          VERSIONS=$(cat .tested-dokku-versions | grep -v '^$' | grep -v '^#' | sort -V | jq -R -s -c 'split("\n") | map(select(length > 0))')
           
           # Always ensure master is included (for bleeding edge testing)
           VERSIONS_WITH_MASTER=$(echo "$VERSIONS" | jq -c '. + ["master"] | unique')
