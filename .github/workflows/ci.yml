@@ -182,8 +182,22 @@ jobs:
           govulncheck ./...
 
       - name: Run Nancy (dependency vulnerability scanner)
+        env:
+          OSS_INDEX_USER: ${{ secrets.OSS_INDEX_USER }}
+          OSS_INDEX_TOKEN: ${{ secrets.OSS_INDEX_TOKEN }}
         run: |
-          go list -json -deps ./... | docker run --rm -i sonatypecommunity/nancy:latest sleuth
+          if [ -z "$OSS_INDEX_USER" ] || [ -z "$OSS_INDEX_TOKEN" ]; then
+            echo "⚠️ OSS Index credentials not configured, skipping Nancy scan"
+            echo "💡 Add OSS_INDEX_USER and OSS_INDEX_TOKEN secrets to enable"
+            exit 0
+          fi
+          
+          go list -json -deps ./... | docker run --rm -i \
+            -e OSS_INDEX_USER \
+            -e OSS_INDEX_TOKEN \
+            sonatypecommunity/nancy:latest sleuth \
+            --username "${OSS_INDEX_USER}" \
+            --token "${OSS_INDEX_TOKEN}"
 
   ci-success:
     name: CI Success
