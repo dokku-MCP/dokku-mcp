@@ -270,8 +270,7 @@ func (c *client) discoverCommandCapabilities(ctx context.Context) error {
 		}
 
 		// Try to parse as JSON
-		var jsonTest interface{}
-		if json.Unmarshal(output, &jsonTest) == nil {
+		if json.Valid(output) {
 			c.capabilities.AddJSONSupport(cmd, true)
 			c.logger.Debug("Command supports JSON", "command", cmd)
 		} else {

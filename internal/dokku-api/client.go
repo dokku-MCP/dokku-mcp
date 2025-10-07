@@ -268,8 +268,7 @@ func (c *client) ExecuteWithAutoFormat(ctx context.Context, commandName string, 
 			// Fall through to text parsing
 		} else {
 			// Validate it's actually JSON
-			var jsonTest interface{}
-			if json.Unmarshal(output, &jsonTest) == nil {
+			if json.Valid(output) {
 				return &CommandResult{
 					RawOutput: output,
 					JSONData:  output,
