@@ -185,3 +185,24 @@ func generateDeploymentID() string {
 	// Utilise un timestamp pour simplifier
 	return fmt.Sprintf("deploy_%d", time.Now().UnixNano())
 }
+
+// NewDeploymentWithID creates a deployment with a specific ID (for testing)
+func NewDeploymentWithID(id, appName, gitRef string) (*Deployment, error) {
+	if appName == "" {
+		return nil, fmt.Errorf("le nom de l'application ne peut pas être vide")
+	}
+	if gitRef == "" {
+		gitRef = "main"
+	}
+	if id == "" {
+		return nil, fmt.Errorf("deployment ID cannot be empty")
+	}
+
+	return &Deployment{
+		id:        id,
+		appName:   appName,
+		gitRef:    gitRef,
+		status:    DeploymentStatusPending,
+		createdAt: time.Now(),
+	}, nil
+}

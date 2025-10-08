@@ -21,7 +21,7 @@ type DeploymentService interface {
 // DeploymentInfrastructure simplified interface for infrastructure operations
 type DeploymentInfrastructure interface {
 	SetBuildpack(ctx context.Context, appName string, buildpack string) error
-	PerformGitDeploy(ctx context.Context, appName, repoURL, gitRef string) error
+	PerformGitDeploy(ctx context.Context, deploymentID, appName, repoURL, gitRef string) error
 	ParseDeploymentHistory(ctx context.Context, appName string) ([]*Deployment, error)
 }
 
@@ -36,6 +36,7 @@ type DeployOptions struct {
 type ApplicationDeploymentService struct {
 	deploymentRepo DeploymentRepository
 	infrastructure DeploymentInfrastructure
+	tracker        *DeploymentTracker
 	logger         *slog.Logger
 }
 
@@ -43,11 +44,13 @@ type ApplicationDeploymentService struct {
 func NewApplicationDeploymentService(
 	deploymentRepo DeploymentRepository,
 	infrastructure DeploymentInfrastructure,
+	tracker *DeploymentTracker,
 	logger *slog.Logger,
 ) *ApplicationDeploymentService {
 	return &ApplicationDeploymentService{
 		deploymentRepo: deploymentRepo,
 		infrastructure: infrastructure,
+		tracker:        tracker,
 		logger:         logger,
 	}
 }
@@ -65,34 +68,38 @@ func (s *ApplicationDeploymentService) Deploy(ctx context.Context, appName strin
 
 	deployment.Start()
 
+	// Track the deployment
+	if s.tracker != nil {
+		if err := s.tracker.Track(deployment); err != nil {
+			s.logger.Warn("Failed to track deployment", "error", err)
+		}
+	}
+
 	if options.BuildPack != nil {
 		if err := s.infrastructure.SetBuildpack(ctx, appName, options.BuildPack.Value()); err != nil {
 			s.logger.Warn("Échec de définition du buildpack", "erreur", err)
 		}
 	}
 
-	if err := s.infrastructure.PerformGitDeploy(ctx, appName, options.RepoURL, options.GitRef.Value()); err != nil {
+	// Start async deployment - infrastructure will handle tracking via poller
+	if err := s.infrastructure.PerformGitDeploy(ctx, deployment.ID(), appName, options.RepoURL, options.GitRef.Value()); err != nil {
 		deployment.Fail(fmt.Sprintf("Échec du déploiement depuis git: %v", err))
 		s.logger.Error("Git deployment failed", "app_name", appName, "error", err)
+
+		if s.tracker != nil {
+			_ = s.tracker.UpdateStatus(deployment.ID(), DeploymentStatusFailed, err.Error())
+		}
+
 		return deployment, fmt.Errorf("échec du déploiement depuis git: %w", err)
 	}
 
-	s.logger.Info("Déploiement Git terminé avec succès",
+	s.logger.Info("Déploiement initié avec succès (async)",
 		"nom_app", appName,
 		"git_ref", options.GitRef.Value(),
 		"deployment_id", deployment.ID())
 
-	deployment.Complete()
-
-	if err := s.deploymentRepo.Save(ctx, deployment); err != nil {
-		s.logger.Warn("Échec de sauvegarde du déploiement", "erreur", err)
-	}
-
-	s.logger.Info("Déploiement terminé avec succès",
-		"nom_app", appName,
-		"deployment_id", deployment.ID(),
-		"durée", deployment.Duration())
-
+	// Return immediately - deployment is tracked async
+	// Caller can use GetByID to check status
 	return deployment, nil
 }
 
@@ -131,7 +138,7 @@ func (s *ApplicationDeploymentService) Rollback(ctx context.Context, appName str
 	rollbackDeploy.Rollback()
 
 	// Perform the actual rollback
-	if err := s.infrastructure.PerformGitDeploy(ctx, appName, "", targetDeployment.GitRef()); err != nil {
+	if err := s.infrastructure.PerformGitDeploy(ctx, rollbackDeploy.ID(), appName, "", targetDeployment.GitRef()); err != nil {
 		rollbackDeploy.Fail(fmt.Sprintf("Échec du rollback: %v", err))
 		_ = s.deploymentRepo.Save(ctx, rollbackDeploy)
 		return fmt.Errorf("échec du rollback: %w", err)
@@ -176,6 +183,15 @@ func (s *ApplicationDeploymentService) GetHistory(ctx context.Context, appName s
 func (s *ApplicationDeploymentService) GetByID(ctx context.Context, deploymentID string) (*Deployment, error) {
 	s.logger.Debug("Récupération du déploiement par ID", "deployment_id", deploymentID)
 
+	// First check tracker for active deployments
+	if s.tracker != nil {
+		deploy, err := s.tracker.GetByID(deploymentID)
+		if err == nil {
+			return deploy, nil
+		}
+	}
+
+	// Fall back to repository for historical deployments
 	deploy, err := s.deploymentRepo.FindByID(ctx, deploymentID)
 	if err == nil {
 		return deploy, nil
