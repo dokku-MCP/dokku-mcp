@@ -33,7 +33,7 @@ jobs:
             const { data } = await github.rest.actions.listWorkflowRuns({
               owner,
               repo,
-              workflow_id: 'CI',
+              workflow_id: 'ci.yml',
               head_sha: sha,
               per_page: 5,
             });
