@@ -49,7 +49,7 @@ func (a *DokkuDomainAdapter) ListGlobalDomains(ctx context.Context) ([]domain.Gl
 	}
 
 	domainStrings := a.parseGlobalDomains(string(output))
-	var domains []domain.GlobalDomain
+	domains := make([]domain.GlobalDomain, 0, len(domainStrings))
 
 	for _, domainStr := range domainStrings {
 		domains = append(domains, domain.GlobalDomain{
@@ -155,7 +155,7 @@ func (a *DokkuDomainAdapter) parseGlobalDomains(output string) []string {
 			break
 		}
 	}
-	return nil
+	return []string{}
 }
 
 func (a *DokkuDomainAdapter) parseReportLine(line string, section *domain.DomainsReportSection) {

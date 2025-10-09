@@ -86,21 +86,8 @@ func (dc *DokkuCapabilities) SupportsJSON(commandName string, version string) bo
 		return supported
 	}
 
-	// Fall back to version-based heuristics
-	return dc.supportsJSONByVersion(version)
-}
-
-// supportsJSONByVersion determines JSON support based on Dokku version
-func (dc *DokkuCapabilities) supportsJSONByVersion(version string) bool {
-	// Basic version parsing - this is a simplified approach
-	// In practice, you might want more sophisticated version comparison
-	if version == "unknown" {
-		return false
-	}
-
-	// Assume JSON support is available in modern Dokku versions
-	// This is a heuristic and should be refined based on actual testing
-	return true
+	// Be conservative by default: do not assume JSON support unless discovered
+	return false
 }
 
 // UpdateVersion updates the Dokku version
@@ -266,6 +253,10 @@ func (c *client) discoverCommandCapabilities(ctx context.Context) error {
 		if err != nil {
 			// Command doesn't support JSON or failed
 			c.capabilities.AddJSONSupport(cmd, false)
+			c.capabilities.CommandRegistry.Set(cmd, &CommandInfo{
+				Name:         cmd,
+				SupportsJSON: false,
+			})
 			continue
 		}
 
@@ -273,8 +264,16 @@ func (c *client) discoverCommandCapabilities(ctx context.Context) error {
 		if json.Valid(output) {
 			c.capabilities.AddJSONSupport(cmd, true)
 			c.logger.Debug("Command supports JSON", "command", cmd)
+			c.capabilities.CommandRegistry.Set(cmd, &CommandInfo{
+				Name:         cmd,
+				SupportsJSON: true,
+			})
 		} else {
 			c.capabilities.AddJSONSupport(cmd, false)
+			c.capabilities.CommandRegistry.Set(cmd, &CommandInfo{
+				Name:         cmd,
+				SupportsJSON: false,
+			})
 		}
 	}
 

@@ -28,7 +28,7 @@ help: ## Show this help
 
 dev: ## Run in development mode with live reload
 	@mkdir -p tmp
-	DOKKU_MCP_LOG_LEVEL=debug air
+	DOKKU_MCP_LOG_LEVEL=debug DOKKU_MCP_EXPOSE_SERVER_LOGS=true air
 
 setup-dev: ## Setup development environment
 	@printf "$(GREEN)🚀 Setting up development environment...$(NC)\n"
@@ -108,7 +108,7 @@ test-integration-local: dokku-start ## -experimental- Run integration tests with
 	@printf "$(GREEN)🧪 Running integration tests with local Dokku...$(NC)\n"
 	@if [ -f ".env.dokku-local" ]; then \
 		set -a && source .env.dokku-local && set +a && \
-		DOKKU_MCP_LOG_LEVEL=error ginkgo -v -tags=integration --timeout=5m --flake-attempts=2 --randomize-all --poll-progress-after=15s internal/dokku-api/ | grep -v "time=.*level="; \
+		DOKKU_MCP_LOG_LEVEL=error DOKKU_MCP_EXPOSE_SERVER_LOGS=true ginkgo -v -tags=integration --timeout=5m --flake-attempts=2 --randomize-all --poll-progress-after=15s internal/dokku-api/ | grep -v "time=.*level="; \
 	else \
 		printf "$(RED)❌ .env.dokku-local not found. Run 'make dokku-setup' first$(NC)\n"; \
 		exit 1; \
@@ -116,7 +116,7 @@ test-integration-local: dokku-start ## -experimental- Run integration tests with
 
 test-integration-ci: $(GINKGO_BINARY) ## Run integration tests for CI environment
 	@printf "$(GREEN)🧪 Running integration tests for CI...$(NC)\n"
-	DOKKU_MCP_LOG_LEVEL=error $(GINKGO_BINARY) -v -tags=integration --timeout=10m --flake-attempts=3 --randomize-all --poll-progress-after=30s internal/dokku-api/ | grep -v "time=.*level=" || true
+	DOKKU_MCP_LOG_LEVEL=error DOKKU_MCP_EXPOSE_SERVER_LOGS=true $(GINKGO_BINARY) -v -tags=integration --timeout=10m --flake-attempts=3 --randomize-all --poll-progress-after=30s internal/dokku-api/ | grep -v "time=.*level=" || true
 
 lint: ## Check code style
 	@printf "$(GREEN)🔍 Linting code...$(NC)\n"

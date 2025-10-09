@@ -11,6 +11,11 @@ import (
 	"time"
 )
 
+// isAppScopedCommand returns true for commands that target a specific app
+func isAppScopedCommand(commandName string) bool {
+	return strings.HasPrefix(commandName, "apps:") || strings.HasPrefix(commandName, "ps:") || commandName == "logs"
+}
+
 // ValidateCommand performs validation on Dokku commands to ensure security
 func (c *client) ValidateCommand(commandName string, args []string) error {
 	if commandName == "" {
@@ -127,39 +132,66 @@ func (c *client) ExecuteCommand(ctx context.Context, commandName string, args []
 
 // executeCommandDirect performs the actual command execution without caching
 func (c *client) executeCommandDirect(ctx context.Context, commandName string, args []string) ([]byte, error) {
-	cmdCtx, cancel := context.WithTimeout(ctx, c.config.CommandTimeout)
+	cmdCtx, cancel := c.commandContext(ctx)
 	defer cancel()
 
-	// For SSH connections to Dokku, commands are passed directly without the dokku path prefix
-	// since Dokku SSH automatically routes commands to the Dokku CLI
-	var dokkuCommand string
-	if len(args) > 0 {
-		dokkuCommand = commandName + " " + strings.Join(args, " ")
-	} else {
-		dokkuCommand = commandName
-	}
+	dokkuCommand := buildDokkuCommand(commandName, args)
 
 	sshArgs, env, err := c.sshConnManager.PrepareSSHCommand(dokkuCommand)
 	if err != nil {
 		return nil, fmt.Errorf("failed to prepare SSH command: %w", err)
 	}
 
-	// #nosec G204 -- Commands are validated through multiple layers:
-	// 1. Plugin domain layer enforces whitelist of allowed commands via enums
-	// 2. Infrastructure adapters validate commands before execution
-	// 3. validateCommand() checks for dangerous characters and patterns
-	// 4. There is a global blacklist of commands that are not allowed to be executed
-	// 5. SSH command construction is internal, not from direct user input
-	cmd := exec.CommandContext(cmdCtx, sshArgs[0], sshArgs[1:]...)
-	cmd.Env = env
-	// Set stdin to avoid potential SSH interaction issues
-	cmd.Stdin = nil
-	// Set process group to avoid signal propagation issues
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
-		Pgid:    0,
+	cmd, err := prepareSSHExecCommand(cmdCtx, sshArgs, env)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare SSH command: %w", err)
 	}
 
+	c.logCommandExecutionStart(cmdCtx, commandName, args, dokkuCommand, sshArgs, env)
+
+	output, execErr := cmd.CombinedOutput()
+	if execErr != nil {
+		return c.handleCommandError(cmdCtx, commandName, args, dokkuCommand, sshArgs, env, output, execErr)
+	}
+
+	c.logger.Debug("Dokku command executed successfully",
+		"command", commandName,
+		"output_length", len(output))
+
+	return output, nil
+}
+
+func (c *client) commandContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if _, hasDeadline := ctx.Deadline(); hasDeadline {
+		return ctx, func() {}
+	}
+	if c.config.CommandTimeout > 0 {
+		return context.WithTimeout(ctx, c.config.CommandTimeout)
+	}
+	return ctx, func() {}
+}
+
+func buildDokkuCommand(commandName string, args []string) string {
+	if len(args) == 0 {
+		return commandName
+	}
+	return commandName + " " + strings.Join(args, " ")
+}
+
+func prepareSSHExecCommand(ctx context.Context, sshArgs []string, env []string) (*exec.Cmd, error) {
+	if len(sshArgs) == 0 {
+		return nil, fmt.Errorf("no SSH arguments provided")
+	}
+
+	// #nosec G204 -- Commands are validated through multiple layers prior to execution.
+	cmd := exec.CommandContext(ctx, sshArgs[0], sshArgs[1:]...)
+	cmd.Env = env
+	cmd.Stdin = nil
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pgid: 0}
+	return cmd, nil
+}
+
+func (c *client) logCommandExecutionStart(ctx context.Context, commandName string, args []string, dokkuCommand string, sshArgs []string, env []string) {
 	c.logger.Debug("Executing Dokku command via SSH",
 		"command", commandName,
 		"args", args,
@@ -168,38 +200,104 @@ func (c *client) executeCommandDirect(ctx context.Context, commandName string, a
 		"ssh_args", sshArgs,
 		"env", env,
 		"timeout", c.config.CommandTimeout,
-		"context_deadline_ok", cmdCtx.Err() == nil,
+		"context_deadline_ok", ctx.Err() == nil,
 		"connection_info", c.sshConnManager.GetConnectionInfo())
+}
 
-	// Use CombinedOutput to capture both stdout and stderr
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		c.logger.Error("Failed to execute Dokku command",
-			"error", err,
+func (c *client) handleCommandError(ctx context.Context, commandName string, args []string, dokkuCommand string, sshArgs []string, env []string, output []byte, execErr error) ([]byte, error) {
+	if isUnsupportedJSONProbe(args, output, commandName) {
+		c.logger.Debug("JSON format not supported for command (probe)",
 			"command", commandName,
 			"args", args,
 			"dokku_command", dokkuCommand,
-			"ssh_args", sshArgs,
-			"env", env,
-			"context_error", cmdCtx.Err(),
-			"combined_output", string(output),
-			"connection_info", c.sshConnManager.GetConnectionInfo())
-
-		// Try to get stderr if available
-		if exitError, ok := err.(*exec.ExitError); ok {
-			c.logger.Error("Command exit details",
-				"stderr", string(exitError.Stderr),
-				"exit_code", exitError.ExitCode())
-		}
-
-		return nil, fmt.Errorf("failed to execute Dokku command %s: %w", commandName, err)
+			"combined_output", string(output))
+		return nil, fmt.Errorf("failed to execute Dokku command %s: %w", commandName, execErr)
 	}
 
-	c.logger.Debug("Dokku command executed successfully",
-		"command", commandName,
-		"output_length", len(output))
+	if shouldReturnEmptyLogs(commandName, output) {
+		c.logger.Debug("Logs requested for app with no deployment yet; returning empty logs")
+		return []byte(""), nil
+	}
 
-	return output, nil
+	c.logCommandFailure(ctx, commandName, args, dokkuCommand, sshArgs, env, output, execErr)
+	c.logExitDetails(execErr)
+
+	if shouldWrapNotFound(commandName, output) {
+		return nil, fmt.Errorf("failed to execute Dokku command %s: %w", commandName, &NotFoundError{Command: commandName, Err: ErrAppNotFound})
+	}
+
+	return nil, fmt.Errorf("failed to execute Dokku command %s: %w", commandName, execErr)
+}
+
+func isUnsupportedJSONProbe(args []string, output []byte, commandName string) bool {
+	if !isJSONProbe(args) {
+		return false
+	}
+
+	lowerOut := strings.ToLower(string(output))
+	if strings.Contains(lowerOut, "unknown flag: --format") || strings.Contains(lowerOut, "is not a dokku command") {
+		return true
+	}
+
+	usageProbe := "usage of " + strings.ToLower(commandName)
+	return strings.Contains(lowerOut, usageProbe)
+}
+
+func isJSONProbe(args []string) bool {
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == "--format" && args[i+1] == "json" {
+			return true
+		}
+	}
+	return false
+}
+
+func shouldReturnEmptyLogs(commandName string, output []byte) bool {
+	if commandName != "logs" {
+		return false
+	}
+	lower := strings.ToLower(string(output))
+	return strings.Contains(lower, "has not been deployed")
+}
+
+func (c *client) logCommandFailure(ctx context.Context, commandName string, args []string, dokkuCommand string, sshArgs []string, env []string, output []byte, execErr error) {
+	logFn := c.logger.Error
+	lower := strings.ToLower(string(output))
+	if isAppScopedCommand(commandName) && isNotFoundOutput(lower) {
+		logFn = c.logger.Warn
+	}
+
+	logFn("Failed to execute Dokku command",
+		"error", execErr,
+		"command", commandName,
+		"args", args,
+		"dokku_command", dokkuCommand,
+		"ssh_args", sshArgs,
+		"env", env,
+		"context_error", ctx.Err(),
+		"combined_output", string(output),
+		"connection_info", c.sshConnManager.GetConnectionInfo())
+}
+
+func (c *client) logExitDetails(execErr error) {
+	if exitError, ok := execErr.(*exec.ExitError); ok {
+		c.logger.Error("Command exit details", "stderr", string(exitError.Stderr), "exit_code", exitError.ExitCode())
+	}
+}
+
+func shouldWrapNotFound(commandName string, output []byte) bool {
+	if !isAppScopedCommand(commandName) {
+		return false
+	}
+	lower := strings.ToLower(string(output))
+	return isNotFoundOutput(lower)
+}
+
+func isNotFoundOutput(lowerOutput string) bool {
+	if strings.Contains(lowerOutput, "does not exist") || strings.Contains(lowerOutput, "has not been deployed") {
+		return true
+	}
+	return strings.Contains(lowerOutput, "docker options phase file") && strings.Contains(lowerOutput, "no such file or directory")
 }
 
 // InvalidateCache clears all cached entries (delegates to cache manager)
@@ -265,10 +363,16 @@ func (c *client) ExecuteWithAutoFormat(ctx context.Context, commandName string, 
 			c.logger.Warn("Failed to execute with JSON format, falling back to text",
 				"command", commandName,
 				"error", err)
+			// Persist downgrade to avoid repeated failures
+			c.capabilities.AddJSONSupport(commandName, false)
+			c.capabilities.CommandRegistry.Set(commandName, &CommandInfo{Name: commandName, SupportsJSON: false})
 			// Fall through to text parsing
 		} else {
 			// Validate it's actually JSON
 			if json.Valid(output) {
+				// Persist confirmed JSON capability
+				c.capabilities.AddJSONSupport(commandName, true)
+				c.capabilities.CommandRegistry.Set(commandName, &CommandInfo{Name: commandName, SupportsJSON: true})
 				return &CommandResult{
 					RawOutput: output,
 					JSONData:  output,
@@ -277,7 +381,31 @@ func (c *client) ExecuteWithAutoFormat(ctx context.Context, commandName string, 
 			}
 			c.logger.Warn("Command returned non-JSON output despite --format json flag",
 				"command", commandName)
+			// Persist downgrade if misleading response
+			c.capabilities.AddJSONSupport(commandName, false)
+			c.capabilities.CommandRegistry.Set(commandName, &CommandInfo{Name: commandName, SupportsJSON: false})
 		}
+	}
+
+	// Opportunistic probe: for report/info commands with unknown capability, try JSON once
+	if !supportsJSON && (strings.Contains(commandName, ":report") || strings.Contains(commandName, ":info")) {
+		c.logger.Debug("Opportunistic JSON probe for report/info command",
+			"command", commandName)
+		jsonArgs := append(args, "--format", "json")
+		output, err := c.ExecuteCommand(ctx, commandName, jsonArgs)
+		if err == nil && json.Valid(output) {
+			// Persist confirmed support and return
+			c.capabilities.AddJSONSupport(commandName, true)
+			c.capabilities.CommandRegistry.Set(commandName, &CommandInfo{Name: commandName, SupportsJSON: true})
+			return &CommandResult{
+				RawOutput: output,
+				JSONData:  output,
+				ParsedAt:  time.Now(),
+			}, nil
+		}
+		// On failure, persist negative to avoid repeated probes
+		c.capabilities.AddJSONSupport(commandName, false)
+		c.capabilities.CommandRegistry.Set(commandName, &CommandInfo{Name: commandName, SupportsJSON: false})
 	}
 
 	// Fall back to text parsing based on command characteristics

@@ -113,6 +113,10 @@ terraform.tfvars
 *.zip
 *.rar
 
+.bmad-core/
+.claude/
+.cursor/
+
 # Dokku local development
 docker-data/
 .env.dokku-local

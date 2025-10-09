@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	dokkuApi "github.com/alex-galey/dokku-mcp/internal/dokku-api"
 	serverDomain "github.com/alex-galey/dokku-mcp/internal/server-plugin/domain"
 	"github.com/alex-galey/dokku-mcp/internal/server-plugins/core/application"
 	"github.com/alex-galey/dokku-mcp/internal/server-plugins/core/infrastructure"
+	"github.com/alex-galey/dokku-mcp/pkg/config"
+	"github.com/alex-galey/dokku-mcp/pkg/logger"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -17,10 +20,11 @@ import (
 type CoreServerPlugin struct {
 	coreService *application.CoreService
 	logger      *slog.Logger
+	cfg         *config.ServerConfig
 }
 
 // NewCoreServerPlugin creates a new core functionality server plugin
-func NewCoreServerPlugin(client dokkuApi.DokkuClient, logger *slog.Logger) serverDomain.ServerPlugin {
+func NewCoreServerPlugin(client dokkuApi.DokkuClient, logger *slog.Logger, cfg *config.ServerConfig) serverDomain.ServerPlugin {
 	// Create infrastructure adapter
 	adapter := infrastructure.NewDokkuCoreAdapter(client, logger)
 
@@ -37,6 +41,7 @@ func NewCoreServerPlugin(client dokkuApi.DokkuClient, logger *slog.Logger) serve
 	return &CoreServerPlugin{
 		coreService: coreService,
 		logger:      logger,
+		cfg:         cfg,
 	}
 }
 
@@ -66,15 +71,6 @@ func (p *CoreServerPlugin) GetResources(ctx context.Context) ([]serverDomain.Res
 	p.logger.Debug("Core plugin: Getting MCP resources")
 
 	resources := []serverDomain.Resource{
-		// System Status Resource
-		{
-			URI:         "dokku://core/system/status",
-			Name:        "System Status",
-			Description: "Current Dokku server status including version, global configuration, and resource usage",
-			MIMEType:    "application/json",
-			Handler:     p.handleSystemStatusResource,
-		},
-
 		// Server Info Resource (comprehensive)
 		{
 			URI:         "dokku://core/server/info",
@@ -99,26 +95,6 @@ func (p *CoreServerPlugin) GetResources(ctx context.Context) ([]serverDomain.Res
 }
 
 // Resource handler methods
-func (p *CoreServerPlugin) handleSystemStatusResource(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
-	status, err := p.coreService.GetSystemStatus(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get system status: %w", err)
-	}
-
-	jsonData, err := json.MarshalIndent(status, "", "  ")
-	if err != nil {
-		return nil, fmt.Errorf("failed to serialize system status: %w", err)
-	}
-
-	return []mcp.ResourceContents{
-		mcp.TextResourceContents{
-			URI:      req.Params.URI,
-			MIMEType: "application/json",
-			Text:     string(jsonData),
-		},
-	}, nil
-}
-
 func (p *CoreServerPlugin) handleServerInfoResource(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
 	info, err := p.coreService.GetServerInfo(ctx)
 	if err != nil {
@@ -163,19 +139,14 @@ func (p *CoreServerPlugin) handlePluginsResource(ctx context.Context, req mcp.Re
 func (p *CoreServerPlugin) GetTools(ctx context.Context) ([]serverDomain.Tool, error) {
 	p.logger.Debug("Core plugin: Getting MCP tools")
 
-	tools := []serverDomain.Tool{
-		{
-			Name:        "get_system_status",
-			Description: "Get the current Dokku system status including version, configuration, and resource usage",
-			Builder:     p.buildGetSystemStatusTool,
-			Handler:     p.handleGetSystemStatusTool,
-		},
-		{
-			Name:        "list_plugins",
-			Description: "List all installed Dokku plugins with their status and versions",
-			Builder:     p.buildListPluginsTool,
-			Handler:     p.handleListPluginsTool,
-		},
+	tools := []serverDomain.Tool{}
+	if p.cfg != nil && p.cfg.ExposeServerLogs {
+		tools = append(tools, serverDomain.Tool{
+			Name:        "get_server_logs",
+			Description: "Get recent dokku-mcp server logs (in-memory ring buffer)",
+			Builder:     p.buildGetServerLogsTool,
+			Handler:     p.handleGetServerLogsTool,
+		})
 	}
 
 	p.logger.Debug("Core plugin: Generated tools", "count", len(tools))
@@ -183,93 +154,68 @@ func (p *CoreServerPlugin) GetTools(ctx context.Context) ([]serverDomain.Tool, e
 }
 
 // Tool builders
-func (p *CoreServerPlugin) buildGetSystemStatusTool() mcp.Tool {
-	return mcp.NewTool(
-		"get_system_status",
-		mcp.WithDescription("Get the current Dokku system status including version, configuration, and resource usage"),
-	)
-}
+// no builders for system status or plugin list tools; they are resources only
 
-func (p *CoreServerPlugin) buildListPluginsTool() mcp.Tool {
+func (p *CoreServerPlugin) buildGetServerLogsTool() mcp.Tool {
 	return mcp.NewTool(
-		"list_plugins",
-		mcp.WithDescription("List all installed Dokku plugins with their status and versions"),
+		"get_server_logs",
+		mcp.WithDescription("Get recent dokku-mcp server logs"),
+		mcp.WithNumber("last",
+			mcp.Description("Number of last lines to return (default 200)"),
+		),
+		mcp.WithString("level",
+			mcp.Description("Optional filter: debug|info|warn|error"),
+		),
+		mcp.WithString("contains",
+			mcp.Description("Optional substring filter"),
+		),
 	)
 }
 
 // Tool handlers
-func (p *CoreServerPlugin) handleGetSystemStatusTool(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	status, err := p.coreService.GetSystemStatus(ctx)
-	if err != nil {
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				mcp.TextContent{
-					Type: "text",
-					Text: fmt.Sprintf("Failed to get system status: %v", err),
-				},
-			},
-			IsError: true,
-		}, nil
+// no handlers for system status or plugin list tools; they are resources only
+
+func (p *CoreServerPlugin) handleGetServerLogsTool(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// Extract arguments
+	last := 200
+	if v, ok := req.GetArguments()["last"]; ok {
+		switch n := v.(type) {
+		case float64:
+			last = int(n)
+		case int:
+			last = n
+		}
+		if last <= 0 {
+			last = 200
+		}
+	}
+	levelFilter := ""
+	if v, ok := req.GetArguments()["level"].(string); ok {
+		levelFilter = strings.ToLower(v)
+	}
+	contains := ""
+	if v, ok := req.GetArguments()["contains"].(string); ok {
+		contains = v
 	}
 
-	jsonData, err := json.MarshalIndent(status, "", "  ")
-	if err != nil {
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				mcp.TextContent{
-					Type: "text",
-					Text: fmt.Sprintf("Failed to serialize system status: %v", err),
-				},
-			},
-			IsError: true,
-		}, nil
+	// Read from global ring buffer
+	lines := logger.GetLogBuffer().GetLast(last)
+	// Apply filters
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if levelFilter != "" && !strings.Contains(line, levelFilter) {
+			continue
+		}
+		if contains != "" && !strings.Contains(line, contains) {
+			continue
+		}
+		out = append(out, line)
 	}
 
+	// Return as single text block
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
-			mcp.TextContent{
-				Type: "text",
-				Text: string(jsonData),
-			},
+			mcp.TextContent{Type: "text", Text: strings.Join(out, "\n")},
 		},
-		IsError: false,
-	}, nil
-}
-
-func (p *CoreServerPlugin) handleListPluginsTool(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	plugins, err := p.coreService.ListPlugins(ctx)
-	if err != nil {
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				mcp.TextContent{
-					Type: "text",
-					Text: fmt.Sprintf("Failed to list plugins: %v", err),
-				},
-			},
-			IsError: true,
-		}, nil
-	}
-
-	jsonData, err := json.MarshalIndent(plugins, "", "  ")
-	if err != nil {
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				mcp.TextContent{
-					Type: "text",
-					Text: fmt.Sprintf("Failed to serialize plugins: %v", err),
-				},
-			},
-			IsError: true,
-		}, nil
-	}
-
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			mcp.TextContent{
-				Type: "text",
-				Text: string(jsonData),
-			},
-		},
-		IsError: false,
 	}, nil
 }

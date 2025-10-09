@@ -87,8 +87,16 @@ func (s *deploymentInfrastructure) PerformGitDeploy(ctx context.Context, deploym
 		s.logger.Debug("Deployment lock released", "app_name", appName, "deployment_id", deploymentID)
 	}()
 
-	// Perform git sync (fast operation)
-	_, err := s.executeCommand(ctx, domain.CommandGitSync, []string{appName, repoURL, gitRef})
+	// Perform git sync. Some environments may need a slightly longer timeout
+	// than the default client timeout due to network and repository size.
+	gitSyncCtx := ctx
+	if _, ok := ctx.Deadline(); !ok {
+		// Provide a modest 2 minute timeout for git:sync when caller didn't set one
+		var cancel context.CancelFunc
+		gitSyncCtx, cancel = context.WithTimeout(ctx, 2*time.Minute)
+		defer cancel()
+	}
+	_, err := s.executeCommand(gitSyncCtx, domain.CommandGitSync, []string{appName, repoURL, gitRef})
 	if err != nil {
 		return fmt.Errorf("git sync failed: %w", err)
 	}
@@ -126,7 +134,15 @@ func (s *deploymentInfrastructure) performAsyncRebuild(deploymentID, appName, gi
 
 		// SSH timeout is expected - the poller will track actual status
 		if err != nil {
-			if strings.Contains(err.Error(), "signal: killed") ||
+			if dokku_client.IsNotFoundError(err) {
+				s.logger.Warn("Rebuild command skipped (app missing)",
+					"deployment_id", deploymentID,
+					"app_name", appName)
+				// Update tracker with failed status but without surfacing an error
+				if s.tracker != nil {
+					_ = s.tracker.UpdateStatus(deploymentID, domain.DeploymentStatusFailed, "application no longer exists")
+				}
+			} else if strings.Contains(err.Error(), "signal: killed") ||
 				strings.Contains(err.Error(), "context deadline exceeded") ||
 				strings.Contains(err.Error(), "connection closed") ||
 				strings.Contains(err.Error(), "timeout") {
@@ -135,14 +151,24 @@ func (s *deploymentInfrastructure) performAsyncRebuild(deploymentID, appName, gi
 					"app_name", appName,
 					"note", "Poller will track actual completion status")
 			} else {
-				s.logger.Error("Rebuild command failed",
-					"deployment_id", deploymentID,
-					"app_name", appName,
-					"error", err)
+				// Demote expected not-found races using sentinel classification only
+				if dokku_client.IsNotFoundError(err) {
+					s.logger.Warn("Rebuild aborted (app removed during deploy)",
+						"deployment_id", deploymentID,
+						"app_name", appName)
+					if s.tracker != nil {
+						_ = s.tracker.UpdateStatus(deploymentID, domain.DeploymentStatusFailed, "application no longer exists")
+					}
+				} else {
+					s.logger.Error("Rebuild command failed",
+						"deployment_id", deploymentID,
+						"app_name", appName,
+						"error", err)
 
-				// Update tracker with error
-				if s.tracker != nil {
-					_ = s.tracker.UpdateStatus(deploymentID, domain.DeploymentStatusFailed, err.Error())
+					// Update tracker with error
+					if s.tracker != nil {
+						_ = s.tracker.UpdateStatus(deploymentID, domain.DeploymentStatusFailed, err.Error())
+					}
 				}
 			}
 		}

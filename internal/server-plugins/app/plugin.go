@@ -59,13 +59,6 @@ func (p *AppsServerPlugin) GetResources(ctx context.Context) ([]domain.Resource,
 			MIMEType:    "application/json",
 			Handler:     p.handleApplicationListResource,
 		},
-		{
-			URI:         "dokku://apps/summary",
-			Name:        "Applications Summary",
-			Description: "High-level summary of application statistics and health",
-			MIMEType:    "application/json",
-			Handler:     p.handleApplicationSummaryResource,
-		},
 	}, nil
 }
 
@@ -144,45 +137,6 @@ func (p *AppsServerPlugin) handleApplicationListResource(ctx context.Context, re
 	jsonData, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("failed to serialize applications: %w", err)
-	}
-
-	return []mcp.ResourceContents{
-		mcp.TextResourceContents{
-			URI:      req.Params.URI,
-			MIMEType: "application/json",
-			Text:     string(jsonData),
-		},
-	}, nil
-}
-
-func (p *AppsServerPlugin) handleApplicationSummaryResource(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
-	applications, err := p.applicationUseCase.GetAllApplications(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve applications: %w", err)
-	}
-
-	var runningApps, stoppedApps, deployedApps int
-	for _, app := range applications {
-		if app.IsRunning() {
-			runningApps++
-		} else {
-			stoppedApps++
-		}
-		if app.IsDeployed() {
-			deployedApps++
-		}
-	}
-
-	summary := appdomain.ApplicationSummaryData{
-		TotalApps:    len(applications),
-		RunningApps:  runningApps,
-		StoppedApps:  stoppedApps,
-		DeployedApps: deployedApps,
-	}
-
-	jsonData, err := json.MarshalIndent(summary, "", "  ")
-	if err != nil {
-		return nil, fmt.Errorf("failed to serialize summary: %w", err)
 	}
 
 	return []mcp.ResourceContents{
@@ -458,19 +412,35 @@ func (p *AppsServerPlugin) handleGetAppStatus(ctx context.Context, req mcp.CallT
 
 // Prompt implementations
 func (p *AppsServerPlugin) buildAppDoctorPrompt() mcp.Prompt {
-	return mcp.Prompt{}
+	return mcp.NewPrompt(
+		"app_doctor",
+		mcp.WithPromptDescription("Comprehensive application health diagnosis and troubleshooting"),
+		mcp.WithArgument("app_name",
+			mcp.RequiredArgument(),
+			mcp.ArgumentDescription("Name of the Dokku application to diagnose"),
+		),
+	)
 }
 
 func (p *AppsServerPlugin) handleAppDoctorPrompt(ctx context.Context, req mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+	// Extract required argument from request params (Arguments is a typed map)
+	appName, ok := req.Params.Arguments["app_name"]
+	if !ok || appName == "" {
+		return &mcp.GetPromptResult{
+			Description: "app_name parameter is required",
+		}, fmt.Errorf("app_name parameter is required")
+	}
+
+	// Use the diagnostic template
+	tmpl := NewApplicationPromptTemplates().GetDiagnosticPrompt()
+	promptText := fmt.Sprintf(tmpl.Template, appName)
+
 	return &mcp.GetPromptResult{
-		Description: "Application health diagnosis",
+		Description: tmpl.Description,
 		Messages: []mcp.PromptMessage{
 			{
-				Role: "user",
-				Content: mcp.TextContent{
-					Type: "text",
-					Text: "Please analyze the health and performance of my Dokku applications and provide recommendations.",
-				},
+				Role:    "user",
+				Content: mcp.TextContent{Type: "text", Text: promptText},
 			},
 		},
 	}, nil

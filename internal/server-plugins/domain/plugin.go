@@ -7,6 +7,7 @@ import (
 	"log/slog"
 
 	dokkuApi "github.com/alex-galey/dokku-mcp/internal/dokku-api"
+	"github.com/alex-galey/dokku-mcp/internal/server"
 	serverDomain "github.com/alex-galey/dokku-mcp/internal/server-plugin/domain"
 	"github.com/alex-galey/dokku-mcp/internal/server-plugins/domain/application"
 	"github.com/alex-galey/dokku-mcp/internal/server-plugins/domain/infrastructure"
@@ -96,13 +97,13 @@ func (p *DomainServerPlugin) buildListGlobalDomainsTool() mcp.Tool {
 func (p *DomainServerPlugin) handleListGlobalDomains(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	domains, err := p.domainService.ListGlobalDomains(ctx)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Failed to list global domains: %v", err)), nil
+		env := server.ToolResponse{Status: server.ToolStatusError, Code: "DOMAINS_LIST_FAILED", Message: fmt.Sprintf("Failed to list global domains: %v", err)}
+		b, _ := json.MarshalIndent(env, "", "  ")
+		return mcp.NewToolResultText(string(b)), nil
 	}
-	jsonData, err := json.MarshalIndent(domains, "", "  ")
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Failed to serialize domains: %v", err)), nil
-	}
-	return mcp.NewToolResultText(string(jsonData)), nil
+	env := server.ToolResponse{Status: server.ToolStatusOK, Code: "DOMAINS_OK", Data: map[string]any{"domains": domains}}
+	b, _ := json.MarshalIndent(env, "", "  ")
+	return mcp.NewToolResultText(string(b)), nil
 }
 
 func (p *DomainServerPlugin) buildAddGlobalDomainTool() mcp.Tool {

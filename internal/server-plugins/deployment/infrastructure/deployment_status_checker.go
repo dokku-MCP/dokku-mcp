@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	dokku_client "github.com/alex-galey/dokku-mcp/internal/dokku-api"
+	appdomain "github.com/alex-galey/dokku-mcp/internal/server-plugins/app/domain"
 	"github.com/alex-galey/dokku-mcp/internal/server-plugins/deployment/domain"
 )
 
@@ -23,26 +24,37 @@ func NewDeploymentStatusChecker(client dokku_client.DokkuClient) domain.Deployme
 
 // CheckStatus checks the deployment status by querying Dokku
 func (dsc *deploymentStatusChecker) CheckStatus(ctx context.Context, appName string) (domain.DeploymentStatus, string, error) {
+	if err := validateAppName(appName); err != nil {
+		return domain.DeploymentStatusFailed, "", err
+	}
 	// First, check if app exists and get its report
 	reportOutput, err := dsc.client.ExecuteCommand(ctx, "apps:report", []string{appName})
 	if err != nil {
-		// App might not exist yet or connection failed
+		// If app no longer exists, treat as a terminal state without surfacing an error
+		if dokku_client.IsNotFoundError(err) {
+			return domain.DeploymentStatusFailed, "application no longer exists", nil
+		}
+		// Otherwise, keep previous behavior (transient pending)
 		return domain.DeploymentStatusPending, "", fmt.Errorf("failed to get app report: %w", err)
 	}
 
 	reportStr := string(reportOutput)
+	lowerReport := strings.ToLower(reportStr)
 
 	// Check if app is deployed by looking for "deployed: true"
 	if !strings.Contains(reportStr, "deployed: true") && !strings.Contains(reportStr, "Deployed:") {
-		// App exists but not yet deployed
-		return domain.DeploymentStatusRunning, "", nil
+		// App exists but not yet deployed – treat as pending to avoid early log fetching
+		return domain.DeploymentStatusPending, "", nil
+	}
+
+	if strings.Contains(lowerReport, "app locked: true") {
+		return domain.DeploymentStatusFailed, "application locked after deployment", nil
 	}
 
 	// Check process status
 	psOutput, err := dsc.client.ExecuteCommand(ctx, "ps:report", []string{appName})
 	if err != nil {
-		// Can't determine process status, assume still running
-		return domain.DeploymentStatusRunning, "", nil
+		return domain.DeploymentStatusRunning, "unable to retrieve process report", nil
 	}
 
 	psStr := string(psOutput)
@@ -51,15 +63,10 @@ func (dsc *deploymentStatusChecker) CheckStatus(ctx context.Context, appName str
 	if strings.Contains(psStr, "Processes running") || strings.Contains(psStr, "running:") {
 		// Look for actual running processes
 		if strings.Contains(psStr, "running: 0") || strings.Contains(psStr, "Processes running: 0") {
-			// No processes running - check if deployment failed
-			logs, _ := dsc.GetLogs(ctx, appName, 100)
-			if strings.Contains(strings.ToLower(logs), "error") ||
-				strings.Contains(strings.ToLower(logs), "failed") ||
-				strings.Contains(strings.ToLower(logs), "exit code") {
-				return domain.DeploymentStatusFailed, "deployment failed - check logs for details", nil
+			if strings.Contains(lowerReport, "app locked: true") {
+				return domain.DeploymentStatusFailed, "application locked after deployment", nil
 			}
-			// Might be scaling down or just deployed
-			return domain.DeploymentStatusSucceeded, "", nil
+			return domain.DeploymentStatusPending, "waiting for processes to start", nil
 		}
 		// Processes are running - deployment succeeded
 		return domain.DeploymentStatusSucceeded, "", nil
@@ -77,6 +84,9 @@ func (dsc *deploymentStatusChecker) CheckStatus(ctx context.Context, appName str
 
 // GetLogs retrieves recent logs from the application
 func (dsc *deploymentStatusChecker) GetLogs(ctx context.Context, appName string, lines int) (string, error) {
+	if err := validateAppName(appName); err != nil {
+		return "", err
+	}
 	// Try to get logs with tail
 	output, err := dsc.client.ExecuteCommand(ctx, "logs", []string{appName, "--num", fmt.Sprintf("%d", lines)})
 	if err != nil {
@@ -85,4 +95,11 @@ func (dsc *deploymentStatusChecker) GetLogs(ctx context.Context, appName string,
 	}
 
 	return string(output), nil
+}
+
+func validateAppName(appName string) error {
+	if _, err := appdomain.NewApplicationName(appName); err != nil {
+		return fmt.Errorf("invalid app name: %w", err)
+	}
+	return nil
 }

@@ -508,6 +508,15 @@ func (r *DokkuApplicationRepository) extractEnvironmentVars(config *app.Applicat
 
 // determineStateFromInfo determines the application state from Dokku output
 func (r *DokkuApplicationRepository) determineStateFromInfo(info map[string]string) app.StateValue {
+	// Detect locked applications that have a deploy source but are not fully deployed
+	if locked, ok := info["App locked"]; ok && strings.EqualFold(locked, "true") {
+		if deploySource, ok := info["App deploy source"]; ok && strings.TrimSpace(deploySource) != "" {
+			if deployed, ok := info["Deployed"]; !ok || strings.EqualFold(deployed, "false") {
+				return app.StateError
+			}
+		}
+	}
+
 	// Check for deployment status first (from ps:report output)
 	if deployed, ok := info["Deployed"]; ok {
 		if deployed == "false" {
