@@ -51,12 +51,10 @@ jobs:
           echo "$CHANGELOG" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-  build-and-release:
-    name: Build and Release
+  build:
+    name: Build
     runs-on: ubuntu-latest
     needs: prepare-release
-    permissions:
-      contents: write
     strategy:
       matrix:
         os: [linux, darwin]
@@ -123,10 +121,12 @@ jobs:
           echo "binary_name=$BINARY_NAME" >> $GITHUB_OUTPUT
 
       - name: Create Release
+        if: matrix.os == 'linux' && matrix.arch == 'amd64'
         uses: ncipollo/release-action@v1
         with:
           tag: ${{ needs.prepare-release.outputs.version }}
           name: Release ${{ needs.prepare-release.outputs.version }}
+          allowUpdates: true
           body: |
             ## Changes
             ${{ needs.prepare-release.outputs.changelog }}
@@ -184,10 +184,9 @@ jobs:
             
             dokku-mcp
             ```
-          artifacts: "build/${{ steps.create_archive.outputs.binary_name }},build/${{ steps.create_archive.outputs.archive }}"
+          artifacts: "build/${{ steps.create_archive.outputs.archive }}"
           draft: false
-          prerelease: false
-          allowUpdates: true
+          prerelease: ${{ contains(needs.prepare-release.outputs.version, 'alpha') || contains(needs.prepare-release.outputs.version, 'beta') || contains(needs.prepare-release.outputs.version, 'rc') }}
           removeArtifacts: false
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -237,7 +236,7 @@ jobs:
   update-docs:
     name: Update Documentation
     runs-on: ubuntu-latest
-    needs: [prepare-release, build-and-release]
+    needs: [prepare-release, build]
     permissions:
       contents: write
     
@@ -247,27 +246,33 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Update version in docs
+      - name: Update version in docs and plugins
         run: |
           VERSION="${{ needs.prepare-release.outputs.version }}"
+          # Extract version number without 'v' prefix for plugin versions
+          PLUGIN_VERSION=$(echo "$VERSION" | sed 's/^v//')
+          
           # Update README.md with new version
           sed -i "s/Version: v.*/Version: $VERSION/g" README.md || true
           
           # Update installation instructions
           sed -i "s|releases/download/v[^/]\+/|releases/download/$VERSION/|g" README.md || true
+          
+          # Update server plugin versions
+          find internal/server-plugins -name "*.go" -type f -exec sed -i "s/Version() string { return \"[^\"]*\"/Version() string { return \"$PLUGIN_VERSION\"/g" {} \;
 
-      - name: Commit documentation updates
+      - name: Commit documentation and plugin updates
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add README.md
+          git add README.md internal/server-plugins/
           git diff --staged --quiet || git commit -m "docs: update version to ${{ needs.prepare-release.outputs.version }}"
           git push
 
   notify-success:
     name: Notify Success
     runs-on: ubuntu-latest
-    needs: [prepare-release, build-and-release, update-docs]
+    needs: [prepare-release, build, update-docs]
     if: success()
     
     steps:
