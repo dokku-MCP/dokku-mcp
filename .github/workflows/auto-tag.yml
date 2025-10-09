@@ -1,0 +1,50 @@
+name: Auto Tag on VERSION Change
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - VERSION
+
+permissions:
+  contents: read
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read VERSION
+        id: version
+        run: |
+          if [[ ! -f VERSION ]]; then
+            echo "VERSION file not found" >&2
+            exit 1
+          fi
+
+          VERSION_VALUE=$(tr -d ' \n' < VERSION)
+          if [[ -z "$VERSION_VALUE" ]]; then
+            echo "VERSION file is empty" >&2
+            exit 1
+          fi
+
+          echo "version=$VERSION_VALUE" >> "$GITHUB_OUTPUT"
+
+      - name: Check for existing tag
+        run: |
+          if git rev-parse --verify --quiet "${{ steps.version.outputs.version }}" >/dev/null; then
+            echo "Tag ${{ steps.version.outputs.version }} already exists, skipping."
+            exit 0
+          fi
+
+      - name: Create and push tag
+        run: |
+          git tag "${{ steps.version.outputs.version }}"
+          git push origin "${{ steps.version.outputs.version }}"
+

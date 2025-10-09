@@ -31,12 +31,39 @@ jobs:
       - name: Get version
         id: get_version
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            VERSION="${{ github.event.inputs.version }}"
+          EVENT_NAME="${{ github.event_name }}"
+          INPUT_VERSION="${{ github.event.inputs.version }}"
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" && -n "$INPUT_VERSION" ]]; then
+            VERSION_VALUE="$INPUT_VERSION"
           else
-            VERSION=${GITHUB_REF#refs/tags/}
+            if [[ ! -f VERSION ]]; then
+              echo "VERSION file not found" >&2
+              exit 1
+            fi
+
+            VERSION_VALUE=$(tr -d ' \n' < VERSION)
+            if [[ -z "$VERSION_VALUE" ]]; then
+              echo "VERSION file is empty" >&2
+              exit 1
+            fi
           fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAG_VERSION=${GITHUB_REF#refs/tags/}
+            if [[ ! -f VERSION ]]; then
+              echo "VERSION file not found for tag validation" >&2
+              exit 1
+            fi
+            FILE_VERSION=$(tr -d ' \n' < VERSION)
+            if [[ "$TAG_VERSION" != "$FILE_VERSION" ]]; then
+              echo "Tag version ($TAG_VERSION) does not match VERSION file ($FILE_VERSION)" >&2
+              exit 1
+            fi
+            VERSION_VALUE="$TAG_VERSION"
+          fi
+
+          echo "version=$VERSION_VALUE" >> $GITHUB_OUTPUT
 
       - name: Generate changelog
         id: changelog
@@ -66,11 +93,16 @@ jobs:
               while IFS= read -r LINE; do
                 LINE_TRIMMED=$(echo "$LINE" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
                 if [[ -n "$LINE_TRIMMED" ]]; then
-                  echo "  - $LINE_TRIMMED" >> "$TMP_CHANGELOG"
+                  LINE_NORMALIZED=$(echo "$LINE_TRIMMED" | sed 's/^- \+/- /')
+                  if [[ "$LINE_NORMALIZED" =~ ^- ]]; then
+                    echo "  $LINE_NORMALIZED" >> "$TMP_CHANGELOG"
+                  else
+                    echo "  - $LINE_NORMALIZED" >> "$TMP_CHANGELOG"
+                  fi
                 fi
               done <<< "$BODY"
             fi
-          done < <(git log --format='%H\t%s' $RANGE)
+          done < <(git -c color.ui=false log --format='%H%x09%s' $RANGE)
 
           if [[ ! -s "$TMP_CHANGELOG" ]]; then
             echo "Initial release" >> "$TMP_CHANGELOG"
