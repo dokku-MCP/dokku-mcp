@@ -1,50 +1,115 @@
 name: Auto Tag on VERSION Change
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - VERSION
+  workflow_run:
+    workflows:
+      - CI
+      - Dokku Compatibility Tests
+    types:
+      - completed
 
 permissions:
   contents: read
 
 jobs:
-  tag:
+  create-tag:
+    if: >
+      github.event.workflow.name == 'Dokku Compatibility Tests' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write
     steps:
+      - name: Ensure CI workflow succeeded
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const sha = context.payload.workflow_run.head_sha;
+
+            const { data } = await github.rest.actions.listWorkflowRuns({
+              owner,
+              repo,
+              workflow_id: 'CI',
+              head_sha: sha,
+              per_page: 5,
+            });
+
+            const run = data.workflow_runs.find(r => r.head_sha === sha);
+            if (!run) {
+              core.setFailed(`CI workflow has not produced a run for ${sha}`);
+              return;
+            }
+
+            if (run.conclusion !== 'success') {
+              core.setFailed(`CI workflow conclusion is ${run.conclusion}`);
+            }
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Read VERSION
-        id: version
+      - name: Verify VERSION was updated
+        id: version_change
         run: |
-          if [[ ! -f VERSION ]]; then
-            echo "VERSION file not found" >&2
-            exit 1
+          HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
+          git fetch --no-tags origin
+          git checkout "$HEAD_SHA"
+
+          PARENT_SHA=$(git rev-list --parents -n 1 "$HEAD_SHA" | cut -d' ' -f2)
+          if [[ -z "$PARENT_SHA" ]]; then
+            CHANGED_FILES=$(git show --pretty='' --name-only "$HEAD_SHA")
+          else
+            CHANGED_FILES=$(git diff --name-only "$PARENT_SHA" "$HEAD_SHA")
           fi
 
-          VERSION_VALUE=$(tr -d ' \n' < VERSION)
-          if [[ -z "$VERSION_VALUE" ]]; then
+          if ! echo "$CHANGED_FILES" | grep -qx 'VERSION'; then
+            echo "VERSION not modified in the latest commit. Skipping."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          VERSION=$(tr -d ' \n' < VERSION)
+          if [[ -z "$VERSION" ]]; then
             echo "VERSION file is empty" >&2
             exit 1
           fi
 
-          echo "version=$VERSION_VALUE" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
 
-      - name: Check for existing tag
+      - name: Create and push tag
+        if: steps.version_change.outputs.changed == 'true'
         run: |
-          if git rev-parse --verify --quiet "${{ steps.version.outputs.version }}" >/dev/null; then
-            echo "Tag ${{ steps.version.outputs.version }} already exists, skipping."
+          VERSION="${{ steps.version_change.outputs.version }}"
+          if git rev-parse --verify --quiet "$VERSION" >/dev/null; then
+            echo "Tag $VERSION already exists. Skipping."
             exit 0
           fi
 
-      - name: Create and push tag
-        run: |
-          git tag "${{ steps.version.outputs.version }}"
-          git push origin "${{ steps.version.outputs.version }}"
+          git tag "$VERSION" "${{ github.event.workflow_run.head_sha }}"
+          git push origin "$VERSION"
+
+      - name: Trigger release workflow
+        if: steps.version_change.outputs.changed == 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const version = `${{ steps.version_change.outputs.version }}`;
+            const ref = context.payload.workflow_run.head_branch || 'main';
+
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'release.yml',
+              ref,
+              inputs: {
+                version
+              }
+            });
 
