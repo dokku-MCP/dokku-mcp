@@ -7,8 +7,9 @@ transport:
   host: "localhost"  # Only used for sse/HTTP
   port: 8080         # Only used for sse/HTTP
 
-log_level: "info"        # debug, info, warn, error
-log_format: "json"       # json, text
+log_level: "info"           # debug, info, warn, error
+log_format: "json"          # json, text
+expose_server_logs: false   # expose get_server_logs tool (disabled by default for security)
 timeout: "30s"
 
 # Dokku configuration

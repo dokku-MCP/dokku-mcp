@@ -184,20 +184,30 @@ func (p *MyFeatureServerPlugin) buildFeatureAdvisorPrompt() mcp.Prompt {
     return mcp.NewPrompt(
         "feature_advisor",
         mcp.WithPromptDescription("Get personalized advice for using my feature"),
-        mcp.WithString("use_case",
-            mcp.Required(),
-            mcp.Description("Describe your use case"),
+        mcp.WithArgument("use_case",
+            mcp.RequiredArgument(),
+            mcp.ArgumentDescription("Describe your use case"),
         ),
-        mcp.WithString("experience_level",
-            mcp.Description("Your experience level: beginner, intermediate, advanced"),
+        mcp.WithArgument("experience_level",
+            mcp.ArgumentDescription("Your experience level: beginner, intermediate, advanced"),
         ),
     )
 }
 
 func (p *MyFeatureServerPlugin) handleFeatureAdvisorPrompt(ctx context.Context, req mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
-    args := req.GetArguments()
-    useCase := getStringArg(args, "use_case")
-    experienceLevel := getStringArg(args, "experience_level")
+    // Extract required argument from the request
+    useCase, ok := req.Params.Arguments["use_case"]
+    if !ok || useCase == "" {
+        return &mcp.GetPromptResult{
+            Description: "use_case parameter is required",
+        }, fmt.Errorf("use_case parameter is required")
+    }
+    
+    // Extract optional argument
+    experienceLevel := ""
+    if level, ok := req.Params.Arguments["experience_level"]; ok {
+        experienceLevel = level
+    }
     
     promptText := fmt.Sprintf("I need advice on using my feature for: %s", useCase)
     if experienceLevel != "" {

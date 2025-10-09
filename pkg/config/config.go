@@ -30,18 +30,21 @@ type SecurityConfig struct {
 }
 
 type ServerConfig struct {
-	Transport       TransportConfig       `mapstructure:"transport"`
-	Host            string                `mapstructure:"host"`
-	Port            int                   `mapstructure:"port"`
-	LogLevel        string                `mapstructure:"log_level"`
-	LogFormat       string                `mapstructure:"log_format"`
-	Timeout         time.Duration         `mapstructure:"timeout"`
-	DokkuPath       string                `mapstructure:"dokku_path"`
-	CacheEnabled    bool                  `mapstructure:"cache_enabled"`
-	CacheTTL        time.Duration         `mapstructure:"cache_ttl"`
-	SSH             SSHConfig             `mapstructure:"ssh"`
-	PluginDiscovery PluginDiscoveryConfig `mapstructure:"plugin_discovery"`
-	Security        SecurityConfig        `mapstructure:"security"`
+	Transport          TransportConfig       `mapstructure:"transport"`
+	Host               string                `mapstructure:"host"`
+	Port               int                   `mapstructure:"port"`
+	LogLevel           string                `mapstructure:"log_level"`
+	LogFormat          string                `mapstructure:"log_format"`
+	ExposeServerLogs   bool                  `mapstructure:"expose_server_logs"`
+	LogBufferCapacity  int                   `mapstructure:"log_buffer_capacity"`
+	DeploymentLogLines int                   `mapstructure:"deployment_log_lines"`
+	Timeout            time.Duration         `mapstructure:"timeout"`
+	DokkuPath          string                `mapstructure:"dokku_path"`
+	CacheEnabled       bool                  `mapstructure:"cache_enabled"`
+	CacheTTL           time.Duration         `mapstructure:"cache_ttl"`
+	SSH                SSHConfig             `mapstructure:"ssh"`
+	PluginDiscovery    PluginDiscoveryConfig `mapstructure:"plugin_discovery"`
+	Security           SecurityConfig        `mapstructure:"security"`
 }
 
 func DefaultConfig() *ServerConfig {
@@ -51,14 +54,17 @@ func DefaultConfig() *ServerConfig {
 			Host: "localhost",
 			Port: 8080,
 		},
-		Host:         "localhost",
-		Port:         8080,
-		LogLevel:     "info",
-		LogFormat:    "json",
-		Timeout:      30 * time.Second,
-		DokkuPath:    "/usr/bin/dokku",
-		CacheEnabled: true,
-		CacheTTL:     5 * time.Minute,
+		Host:               "localhost",
+		Port:               8080,
+		LogLevel:           "info",
+		LogFormat:          "json",
+		ExposeServerLogs:   false,
+		LogBufferCapacity:  2000,
+		DeploymentLogLines: 200,
+		Timeout:            30 * time.Second,
+		DokkuPath:          "/usr/bin/dokku",
+		CacheEnabled:       true,
+		CacheTTL:           5 * time.Minute,
 		SSH: SSHConfig{
 			Host:    "localhost",
 			Port:    3022,
@@ -95,6 +101,9 @@ func LoadConfig() (*ServerConfig, error) {
 	viper.SetDefault("port", config.Port)
 	viper.SetDefault("log_level", config.LogLevel)
 	viper.SetDefault("log_format", config.LogFormat)
+	viper.SetDefault("expose_server_logs", config.ExposeServerLogs)
+	viper.SetDefault("log_buffer_capacity", config.LogBufferCapacity)
+	viper.SetDefault("deployment_log_lines", config.DeploymentLogLines)
 	viper.SetDefault("timeout", config.Timeout)
 	viper.SetDefault("dokku_path", config.DokkuPath)
 	viper.SetDefault("cache_enabled", config.CacheEnabled)

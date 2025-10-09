@@ -8,6 +8,35 @@ This server exposes Dokku's management capabilities through the standardized Mod
 
 ⚠️ **Early Development**: This project is in its early stages. Breaking changes are expected, and it is not recommended for production use.
 
+### Try it now — turn your Dokku instance into an AI-manageable PaaS
+
+[Follow Installation](#installation) or grab a [prebuilt binary](https://github.com/alex-galey/dokku-mcp/releases) to get started in minutes with cursor, claude-code, goose and all agentic tools which support mcp.
+
+stdio default for easy local installation, sse available for containerized mcp service (NOT SAFE standalone : no auth).
+
+### Contribute — report issues or propose features
+
+[Open an issue](https://github.com/alex-galey/dokku-mcp/issues) or read [Contributing](CONTRIBUTING.md).
+
+## Highlights
+
+- **Core**: server info and plugin list resources; optional server logs tool.
+- **Apps**: create, deploy (Git URL + ref), scale, env config, status; app list resource; troubleshooting prompt.
+- **Deployments**: async deploys with IDs, background status and log polling.
+
+## Roadmap
+
+- **Demo**: agent self-deploys `dokku-mcp` via the `dokku-mcp` tool.
+- **Inter-plugin communication**: Eventbus maybe Watermill
+- **SSL Plugin**
+- **Service plugins**: database template
+- **SSH transactions / long-running connections**: streaming logs and interactive operations.
+
+## Dokku integrations
+
+- **Implemented**: `apps:list`, `apps:info`, `apps:create`, `apps:destroy`, `apps:exists`, `apps:report`, `config:show`, `config:set`, `ps:scale`, `ps:report`, `logs`, `plugin:list`, `plugin:install`, `plugin:uninstall`, `plugin:enable`, `plugin:disable`, `plugin:update`, `version`, `proxy:report`, `proxy:set`, `scheduler:report`, `scheduler:set`, `git:report`, `git:set`, `ssh-keys:list`, `ssh-keys:remove`, `registry:logout`, `logs:set`.
+- **Missing/partial**: `ssh-keys:add`, `registry:login`/registry listing, configuration key enumeration, Services plugin, SSL plugin, streaming/attach sessions.
+
 ## Table of Contents
 
 - [Installation](#installation)
@@ -116,15 +145,11 @@ For development and testing without needing a remote Dokku instance, you can run
    This command will download the necessary Docker images and configure the local Dokku instance. It only needs to be run once.
    ```bash
    make setup-dokku
-   ```
-   
-2. **Start the local Dokku container:**
 
-   ```bash
    make dokku-start
    ```
 
-3. **Stop the local Dokku container:**
+2. **Stop the local Dokku container:**
 
    ```bash
    make dokku-stop

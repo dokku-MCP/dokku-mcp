@@ -20,7 +20,7 @@ func NewMCPServerInstance(cfg *config.ServerConfig, logger *slog.Logger) *server
 		"Dokku MCP Server",
 		version,
 		server.WithToolCapabilities(true),
-		server.WithResourceCapabilities(false, true),
+		server.WithResourceCapabilities(true, true),
 		server.WithPromptCapabilities(true),
 	)
 	logger.Debug("MCP server instance created successfully")
@@ -39,6 +39,10 @@ var Module = fx.Module("server",
 			func(dynamicRegistry *plugins.DynamicServerPluginRegistry, mcpServer *server.MCPServer, logger *slog.Logger) *MCPAdapter {
 				return NewMCPAdapter(dynamicRegistry, mcpServer, logger)
 			},
+		),
+		fx.Annotate(
+			func(adapter *MCPAdapter) ServerPluginProvider { return adapter },
+			fx.As(new(ServerPluginProvider)),
 		),
 		fx.Annotate(
 			infrastructure.NewPluginDiscoveryService,

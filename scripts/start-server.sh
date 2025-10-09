@@ -18,6 +18,7 @@ DOKKU_MCP_PORT="${DOKKU_MCP_PORT:-8080}"
 DOKKU_MCP_LOG_LEVEL="${DOKKU_MCP_LOG_LEVEL:-info}"
 DOKKU_MCP_LOG_FORMAT="${DOKKU_MCP_LOG_FORMAT:-json}"
 DOKKU_MCP_DOKKU_PATH="${DOKKU_MCP_DOKKU_PATH:-/usr/bin/dokku}"
+DOKKU_MCP_EXPOSE_SERVER_LOGS="${DOKKU_MCP_EXPOSE_SERVER_LOGS:-true}"
 
 # Fonction d'affichage
 log() {
@@ -86,6 +87,7 @@ host: "$DOKKU_MCP_HOST"
 port: $DOKKU_MCP_PORT
 log_level: "$DOKKU_MCP_LOG_LEVEL"
 log_format: "$DOKKU_MCP_LOG_FORMAT"
+expose_server_logs: ${DOKKU_MCP_EXPOSE_SERVER_LOGS}
 timeout: "30s"
 
 # Configuration Dokku
@@ -143,6 +145,7 @@ start_server() {
     export DOKKU_MCP_LOG_LEVEL
     export DOKKU_MCP_LOG_FORMAT
     export DOKKU_MCP_DOKKU_PATH
+    export DOKKU_MCP_EXPOSE_SERVER_LOGS
     
     # Démarrer le serveur
     exec ./build/dokku-mcp "$@"

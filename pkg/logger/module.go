@@ -8,6 +8,10 @@ import (
 	"go.uber.org/fx"
 )
 
+var globalRing = NewRingBuffer(DefaultLogBufferCapacity)
+
+const DefaultLogBufferCapacity = 2000
+
 func NewSlogLogger(cfg *config.ServerConfig) *slog.Logger {
 	var handler slog.Handler
 
@@ -37,9 +41,18 @@ func NewSlogLogger(cfg *config.ServerConfig) *slog.Logger {
 		handler = slog.NewTextHandler(os.Stderr, opts)
 	}
 
-	return slog.New(handler)
+	capacity := DefaultLogBufferCapacity
+	if cfg.ExposeServerLogs && cfg.LogBufferCapacity > 0 {
+		capacity = cfg.LogBufferCapacity
+	}
+	globalRing = NewRingBuffer(capacity)
+	buffered := newBufferingHandler(handler, globalRing, opts)
+	return slog.New(buffered)
 }
 
 var Module = fx.Module("logger",
 	fx.Provide(NewSlogLogger),
 )
+
+// Expose accessors for MCP tools
+func GetLogBuffer() *RingBuffer { return globalRing }
