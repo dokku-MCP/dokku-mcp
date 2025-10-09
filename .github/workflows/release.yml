@@ -43,12 +43,41 @@ jobs:
         run: |
           PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")
           if [[ -n "$PREVIOUS_TAG" ]]; then
-            CHANGELOG=$(git log $PREVIOUS_TAG..HEAD --oneline --pretty=format:"- %s")
+            RANGE="$PREVIOUS_TAG..HEAD"
           else
-            CHANGELOG="Initial release"
+            RANGE="HEAD"
           fi
+
+          TMP_CHANGELOG=$(mktemp)
+
+          while IFS=$'\t' read -r COMMIT SUBJECT; do
+            if [[ -z "$COMMIT" ]]; then
+              continue
+            fi
+
+            if [[ "$SUBJECT" =~ ^Add\ Dokku\ v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+              continue
+            fi
+
+            echo "- $SUBJECT" >> "$TMP_CHANGELOG"
+
+            BODY=$(git log -1 --pretty=%b "$COMMIT")
+            if [[ -n "$BODY" ]]; then
+              while IFS= read -r LINE; do
+                LINE_TRIMMED=$(echo "$LINE" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+                if [[ -n "$LINE_TRIMMED" ]]; then
+                  echo "  - $LINE_TRIMMED" >> "$TMP_CHANGELOG"
+                fi
+              done <<< "$BODY"
+            fi
+          done < <(git log --format='%H\t%s' $RANGE)
+
+          if [[ ! -s "$TMP_CHANGELOG" ]]; then
+            echo "Initial release" >> "$TMP_CHANGELOG"
+          fi
+
           echo "changelog<<EOF" >> $GITHUB_OUTPUT
-          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          cat "$TMP_CHANGELOG" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
   build:
@@ -59,8 +88,23 @@ jobs:
       contents: write
     strategy:
       matrix:
-        os: [linux, darwin]
-        arch: [amd64, arm64]
+        include:
+          - os: linux
+            arch: amd64
+            archive_suffix: tar.gz
+            artifact_name: dokku-mcp-linux-amd64
+          - os: linux
+            arch: arm64
+            archive_suffix: tar.gz
+            artifact_name: dokku-mcp-linux-arm64
+          - os: darwin
+            arch: amd64
+            archive_suffix: tar.gz
+            artifact_name: dokku-mcp-darwin-amd64
+          - os: darwin
+            arch: arm64
+            archive_suffix: tar.gz
+            artifact_name: dokku-mcp-darwin-arm64
     
     steps:
       - name: Checkout code
@@ -91,10 +135,7 @@ jobs:
           CGO_ENABLED: 0
         run: |
           BINARY_NAME="dokku-mcp-${{ matrix.os }}-${{ matrix.arch }}"
-          if [[ "${{ matrix.os }}" == "windows" ]]; then
-            BINARY_NAME="${BINARY_NAME}.exe"
-          fi
-          
+
           mkdir -p build
           go build \
             -ldflags "-X main.Version=${{ needs.prepare-release.outputs.version }} -X main.BuildTime=$(date -u '+%Y-%m-%d_%H:%M:%S') -s -w" \
@@ -106,24 +147,34 @@ jobs:
         run: |
           cd build
           BINARY_NAME="dokku-mcp-${{ matrix.os }}-${{ matrix.arch }}"
-          if [[ "${{ matrix.os }}" == "windows" ]]; then
-            BINARY_NAME="${BINARY_NAME}.exe"
-          fi
-          
+
           # Create archive
-          if [[ "${{ matrix.os }}" == "windows" ]]; then
-            zip "${BINARY_NAME%.exe}.zip" "$BINARY_NAME"
-            ARCHIVE="${BINARY_NAME%.exe}.zip"
-          else
-            tar -czf "${BINARY_NAME}.tar.gz" "$BINARY_NAME"
-            ARCHIVE="${BINARY_NAME}.tar.gz"
-          fi
-          
+          tar -czf "${BINARY_NAME}.tar.gz" "$BINARY_NAME"
+          ARCHIVE="${BINARY_NAME}.tar.gz"
+
           echo "archive=$ARCHIVE" >> $GITHUB_OUTPUT
           echo "binary_name=$BINARY_NAME" >> $GITHUB_OUTPUT
 
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: build/${{ steps.create_archive.outputs.archive }}
+          retention-days: 5
+
+  release:
+    name: Publish Release
+    runs-on: ubuntu-latest
+    needs: [prepare-release, build]
+    permissions:
+      contents: write
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
       - name: Create Release
-        if: matrix.os == 'linux' && matrix.arch == 'amd64'
         uses: ncipollo/release-action@v1
         with:
           tag: ${{ needs.prepare-release.outputs.version }}
@@ -186,62 +237,22 @@ jobs:
             
             dokku-mcp
             ```
-          artifacts: "build/${{ steps.create_archive.outputs.archive }}"
+          artifacts: |
+            release-artifacts/dokku-mcp-linux-amd64/dokku-mcp-linux-amd64.tar.gz
+            release-artifacts/dokku-mcp-linux-arm64/dokku-mcp-linux-arm64.tar.gz
+            release-artifacts/dokku-mcp-darwin-amd64/dokku-mcp-darwin-amd64.tar.gz
+            release-artifacts/dokku-mcp-darwin-arm64/dokku-mcp-darwin-arm64.tar.gz
           draft: false
           prerelease: ${{ contains(needs.prepare-release.outputs.version, 'alpha') || contains(needs.prepare-release.outputs.version, 'beta') || contains(needs.prepare-release.outputs.version, 'rc') }}
           removeArtifacts: false
           token: ${{ secrets.GITHUB_TOKEN }}
 
-  # docker-build:
-  #   name: Build and Push Docker Image
-  #   runs-on: ubuntu-latest
-  #   needs: create-release
-    
-  #   steps:
-  #     - name: Checkout code
-  #       uses: actions/checkout@v4
-
-  #     - name: Set up Docker Buildx
-  #       uses: docker/setup-buildx-action@v3
-
-  #     - name: Login to Docker Hub
-  #       if: github.event_name != 'pull_request'
-  #       uses: docker/login-action@v3
-  #       with:
-  #         username: ${{ secrets.DOCKER_USERNAME }}
-  #         password: ${{ secrets.DOCKER_PASSWORD }}
-
-  #     - name: Extract metadata
-  #       id: meta
-  #       uses: docker/metadata-action@v5
-  #       with:
-  #         images: dokku/mcp-server
-  #         tags: |
-  #           type=ref,event=branch
-  #           type=ref,event=pr
-  #           type=semver,pattern={{version}}
-  #           type=semver,pattern={{major}}.{{minor}}
-  #           type=semver,pattern={{major}}
-
-  #     - name: Build and push Docker image
-  #       uses: docker/build-push-action@v5
-  #       with:
-  #         context: .
-  #         platforms: linux/amd64,linux/arm64
-  #         push: ${{ github.event_name != 'pull_request' }}
-  #         tags: ${{ steps.meta.outputs.tags }}
-  #         labels: ${{ steps.meta.outputs.labels }}
-  #         build-args: |
-  #           VERSION=${{ needs.create-release.outputs.version }}
-  #           BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S')
-
   update-docs:
     name: Update Documentation
     runs-on: ubuntu-latest
-    needs: [prepare-release, build]
+    needs: [prepare-release, release]
     permissions:
       contents: write
-    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -251,16 +262,11 @@ jobs:
       - name: Update version in docs and plugins
         run: |
           VERSION="${{ needs.prepare-release.outputs.version }}"
-          # Extract version number without 'v' prefix for plugin versions
           PLUGIN_VERSION=$(echo "$VERSION" | sed 's/^v//')
-          
-          # Update README.md with new version
+
           sed -i "s/Version: v.*/Version: $VERSION/g" README.md || true
-          
-          # Update installation instructions
           sed -i "s|releases/download/v[^/]\+/|releases/download/$VERSION/|g" README.md || true
-          
-          # Update server plugin versions
+
           find internal/server-plugins -name "*.go" -type f -exec sed -i "s/Version() string { return \"[^\"]*\"/Version() string { return \"$PLUGIN_VERSION\"/g" {} \;
 
       - name: Commit documentation and plugin updates
@@ -274,13 +280,11 @@ jobs:
   notify-success:
     name: Notify Success
     runs-on: ubuntu-latest
-    needs: [prepare-release, build, update-docs]
+    needs: [prepare-release, build, release, update-docs]
     if: success()
-    
     steps:
       - name: Success notification
         run: |
           echo "🎉 Release ${{ needs.prepare-release.outputs.version }} completed successfully!"
-          echo "📦 Binaries built for all platforms"
-          # echo "🐳 Docker image pushed"
-          echo "📚 Documentation updated" 
+          echo "📦 Binaries built and published"
+          echo "📚 Changelog generated"
