@@ -116,6 +116,7 @@ terraform.tfvars
 .bmad-core/
 .claude/
 .cursor/
+.mcp.json
 
 # Dokku local development
 docker-data/

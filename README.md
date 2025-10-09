@@ -22,6 +22,8 @@ make inspect
 
 It builds the binary (if needed), launches the MCP Inspector CLI, and connects it to the server in stdio mode. Inspector prints a local URL—open it in your browser to browse resources, prompts, and tools, or to issue ad-hoc calls. This is a great way to validate your setup before wiring Dokku MCP into Cursor, Claude, other IDE or internal tools.
 
+> **Tip:** Mention `:goose` in an issue label or PR comment to trigger the Goose helper workflow for automated assistance.
+
 ### Contribute — report issues or propose features
 
 [Open an issue](https://github.com/alex-galey/dokku-mcp/issues) or read [Contributing](CONTRIBUTING.md).

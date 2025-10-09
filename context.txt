@@ -1,6 +1,0 @@
-Issue Title: Inform of Goose Helper availability
-
-Issue Body:
-Add a short explaination on top of README between quickstart and contribution that Goose helper is available by tagging it : goose
-
-Issue URL: https://github.com/alex-galey/dokku-mcp/issues/9
