@@ -1,0 +1,49 @@
+name: Goose Helper
+
+on:
+  issues:
+    types:
+      - labeled
+  issue_comment:
+    types:
+      - created
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: goose-helper-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  assist:
+    if: >-
+      ${{
+        (github.event_name == 'issues' && github.event.action == 'labeled' && github.event.label.name == 'goose') ||
+        (github.event_name == 'issue_comment' && github.event.issue.pull_request != null && contains(github.event.comment.body, '@goose-ai'))
+      }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Goose helper
+        uses: michaelneale/goose-fix-it-action@main
+        with:
+          task_request: |
+            ${{ github.event.issue.title }}
+            ${{ github.event.issue.body }}
+            [Issue / PR link](${{ github.event.issue.html_url }})
+            ${{ github.event_name == 'issue_comment' && format('Comment: {0}', github.event.comment.body) || '' }}
+          validation: |
+            make test
+        env:
+          OPENAI_API_KEY: ${{ secrets.GOOSE_OPENAI_API_KEY }}
+          OPENAI_HOST: ${{ vars.GOOSE_OPENAI_HOST != '' && vars.GOOSE_OPENAI_HOST || 'https://api.openai.com' }}
+          GH_TOKEN: ${{ secrets.GOOSE_WORKFLOW_TOKEN != '' && secrets.GOOSE_WORKFLOW_TOKEN || github.token }}
+
