@@ -33,7 +33,7 @@ jobs:
           fetch-depth: 0
 
       - name: Run Goose helper
-        uses: michaelneale/goose-fix-it-action@main
+        uses: alex-galey/goose-fix-it-action@main
         with:
           task_request: |
             ${{ github.event.issue.title }}
