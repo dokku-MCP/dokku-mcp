@@ -101,7 +101,12 @@ func (p *DomainServerPlugin) handleListGlobalDomains(ctx context.Context, req mc
 		b, _ := json.MarshalIndent(env, "", "  ")
 		return mcp.NewToolResultText(string(b)), nil
 	}
-	env := server.ToolResponse{Status: server.ToolStatusOK, Code: "DOMAINS_OK", Data: map[string]any{"domains": domains}}
+	payload := server.NewToolResponseData()
+	if err := payload.Set("domains", domains); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to encode domains: %v", err)), nil
+	}
+
+	env := server.ToolResponse{Status: server.ToolStatusOK, Code: "DOMAINS_OK", Data: payload}
 	b, _ := json.MarshalIndent(env, "", "  ")
 	return mcp.NewToolResultText(string(b)), nil
 }

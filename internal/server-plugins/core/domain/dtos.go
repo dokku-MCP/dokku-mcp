@@ -3,11 +3,11 @@ package domain
 // Planner DTOs for MCP tool responses (domain-visible types)
 
 type PlanStep struct {
-	Tool    string         `json:"tool"`
-	Params  map[string]any `json:"params"`
-	Why     string         `json:"why,omitempty"`
-	DryRun  bool           `json:"dryRun,omitempty"`
-	Confirm bool           `json:"confirm,omitempty"`
+	Tool    string            `json:"tool"`
+	Params  map[string]string `json:"params"`
+	Why     string            `json:"why,omitempty"`
+	DryRun  bool              `json:"dryRun,omitempty"`
+	Confirm bool              `json:"confirm,omitempty"`
 }
 
 type Plan struct {

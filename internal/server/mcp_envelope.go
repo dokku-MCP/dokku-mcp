@@ -18,20 +18,35 @@ const (
 
 // ToolLink provides follow-up actions for LLMs to chain safely
 type ToolLink struct {
-	Rel    string         `json:"rel"`
-	Tool   string         `json:"tool"`
-	Params map[string]any `json:"params,omitempty"`
+	Rel    string            `json:"rel"`
+	Tool   string            `json:"tool"`
+	Params map[string]string `json:"params,omitempty"`
 }
 
 // ToolResponse is the canonical envelope returned by tools
 type ToolResponse struct {
-	Status    ToolStatus `json:"status"`
-	Code      string     `json:"code,omitempty"`
-	Message   string     `json:"message,omitempty"`
-	RequestID string     `json:"requestId,omitempty"`
-	Data      any        `json:"data,omitempty"`
-	Links     []ToolLink `json:"links,omitempty"`
-	Hint      string     `json:"hint,omitempty"`
+	Status    ToolStatus       `json:"status"`
+	Code      string           `json:"code,omitempty"`
+	Message   string           `json:"message,omitempty"`
+	RequestID string           `json:"requestId,omitempty"`
+	Data      ToolResponseData `json:"data,omitempty"`
+	Links     []ToolLink       `json:"links,omitempty"`
+	Hint      string           `json:"hint,omitempty"`
+}
+
+type ToolResponseData map[string]json.RawMessage
+
+func NewToolResponseData() ToolResponseData {
+	return make(ToolResponseData)
+}
+
+func (d ToolResponseData) Set(key string, value interface{}) error {
+	b, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	d[key] = b
+	return nil
 }
 
 // marshal pretty JSON for readability in clients
@@ -59,16 +74,16 @@ func NewResultWithLogger(resp ToolResponse, logger *slog.Logger) *mcp.CallToolRe
 }
 
 // OK is a convenience for success responses
-func OK(message string, data any) *mcp.CallToolResult {
+func OK(message string, data ToolResponseData) *mcp.CallToolResult {
 	return NewResult(ToolResponse{Status: ToolStatusOK, Message: message, Data: data})
 }
 
 // Error is a convenience for error responses
-func Error(code, message, hint string, data any) *mcp.CallToolResult {
+func Error(code, message, hint string, data ToolResponseData) *mcp.CallToolResult {
 	return NewResult(ToolResponse{Status: ToolStatusError, Code: code, Message: message, Hint: hint, Data: data})
 }
 
 // Partial is a convenience for partial success responses
-func Partial(message string, data any) *mcp.CallToolResult {
+func Partial(message string, data ToolResponseData) *mcp.CallToolResult {
 	return NewResult(ToolResponse{Status: ToolStatusPartial, Message: message, Data: data})
 }

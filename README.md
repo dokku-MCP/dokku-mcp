@@ -12,7 +12,15 @@ This server exposes Dokku's management capabilities through the standardized Mod
 
 [Follow Installation](#installation) or grab a [prebuilt binary](https://github.com/alex-galey/dokku-mcp/releases) to get started in minutes with cursor, claude-code, goose and all agentic tools which support mcp.
 
-stdio default for easy local installation, sse available for containerized mcp service (NOT SAFE standalone : no auth).
+### MCP Inspector Playground
+
+For a quick tour of the server without wiring up a full MCP client, use the dedicated make target:
+
+```bash
+make inspect
+```
+
+It builds the binary (if needed), launches the MCP Inspector CLI, and connects it to the server in stdio mode. Inspector prints a local URL—open it in your browser to browse resources, prompts, and tools, or to issue ad-hoc calls. This is a great way to validate your setup before wiring Dokku MCP into Cursor, Claude, other IDE or internal tools.
 
 ### Contribute — report issues or propose features
 
@@ -26,7 +34,8 @@ stdio default for easy local installation, sse available for containerized mcp s
 
 ## Roadmap
 
-- **Demo**: agent self-deploys `dokku-mcp` via the `dokku-mcp` tool.
+- **Build-level log**: expose build output for deploy invocations.
+- **App-level log**
 - **Inter-plugin communication**: Eventbus maybe Watermill
 - **SSL Plugin**
 - **Service plugins**: database template

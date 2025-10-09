@@ -100,52 +100,45 @@ func (p *OnboardingServerPlugin) handleQuickstartResource(ctx context.Context, r
 
 func (p *OnboardingServerPlugin) handleCapabilitiesIndexResource(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
 	// Build a minimal index from the provider
-	type ToolIndex struct {
-		Name        string           `json:"name"`
-		Description string           `json:"description"`
-		Examples    []map[string]any `json:"examples,omitempty"`
-	}
-	type ResourceIndex struct {
-		URI         string `json:"uri"`
-		Name        string `json:"name"`
-		Description string `json:"description"`
-		MIMEType    string `json:"mimeType"`
-	}
-	index := map[string]any{
-		"tools":     []ToolIndex{},
-		"resources": []ResourceIndex{},
-		"prompts":   []onbDomain.PromptMeta{},
-	}
+	index := onbDomain.NewCapabilityIndex()
 	// Tools
-	tools := make([]ToolIndex, 0)
+	tools := make([]onbDomain.CapabilityTool, 0)
 	for _, tp := range p.provider.GetToolProviders() {
 		ts, err := tp.GetTools(ctx)
 		if err == nil {
 			for _, t := range ts {
-				ex := []map[string]any{}
+				ex := make([]onbDomain.CapabilityToolExample, 0)
 				if t.Name == "deploy_app" {
-					ex = append(ex, map[string]any{"tool": t.Name, "params": map[string]any{"app_name": "my-app", "repo_url": "https://github.com/acme/app.git", "git_ref": "main", "validateOnly": true}})
+					ex = append(ex, onbDomain.CapabilityToolExample{
+						Tool: t.Name,
+						Params: onbDomain.CapabilityToolExampleParams{
+							AppName:      "my-app",
+							RepoURL:      "https://github.com/acme/app.git",
+							GitRef:       "main",
+							ValidateOnly: true,
+						},
+					})
 				}
-				tools = append(tools, ToolIndex{Name: t.Name, Description: t.Description, Examples: ex})
+				tools = append(tools, onbDomain.CapabilityTool{Name: t.Name, Description: t.Description, Examples: ex})
 			}
 		}
 	}
 	// Resources
-	resources := make([]ResourceIndex, 0)
+	resources := make([]onbDomain.CapabilityResource, 0)
 	for _, rp := range p.provider.GetResourceProviders() {
 		rs, err := rp.GetResources(ctx)
 		if err == nil {
 			for _, r := range rs {
-				resources = append(resources, ResourceIndex{URI: r.URI, Name: r.Name, Description: r.Description, MIMEType: r.MIMEType})
+				resources = append(resources, onbDomain.CapabilityResource{URI: r.URI, Name: r.Name, Description: r.Description, MIMEType: r.MIMEType})
 			}
 		}
 	}
 	// Prompts
 	caps, _ := p.aggregatePrompts(ctx)
 
-	index["tools"] = tools
-	index["resources"] = resources
-	index["prompts"] = caps.Prompts
+	index.Tools = tools
+	index.Resources = resources
+	index.Prompts = caps.Prompts
 
 	b, err := json.MarshalIndent(index, "", "  ")
 	if err != nil {
