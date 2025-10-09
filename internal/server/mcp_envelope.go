@@ -40,15 +40,6 @@ func NewToolResponseData() ToolResponseData {
 	return make(ToolResponseData)
 }
 
-func (d ToolResponseData) Set(key string, value interface{}) error {
-	b, err := json.Marshal(value)
-	if err != nil {
-		return err
-	}
-	d[key] = b
-	return nil
-}
-
 // marshal pretty JSON for readability in clients
 func (r ToolResponse) marshal(logger *slog.Logger) string {
 	b, err := json.MarshalIndent(r, "", "  ")
