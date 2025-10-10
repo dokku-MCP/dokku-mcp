@@ -9,8 +9,6 @@ updates:
     directory: "/"
     schedule:
       interval: "daily"
-
-github-actions:
   - package-ecosystem: "github-action"
     directory: "/"
     schedule:
