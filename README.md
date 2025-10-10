@@ -6,6 +6,8 @@ Version: v0.2.0
 
 This server exposes Dokku's management capabilities through the standardized Model Context Protocol (MCP), allowing Large Language Models (LLMs) to interact with and manage a Dokku instance.
 
+[![MCP Badge](https://lobehub.com/badge/mcp-full/alex-galey-dokku-mcp)](https://lobehub.com/mcp/alex-galey-dokku-mcp)
+
 ⚠️ **Early Development**: This project is in its early stages. Breaking changes are expected, and it is not recommended for production use.
 
 ### Try it now — turn your Dokku instance into an AI-manageable PaaS
