@@ -28,7 +28,7 @@ jobs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
     
     - name: Set matrix versions
       id: set-matrix
@@ -96,7 +96,7 @@ jobs:
         esac
     
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
     
     - name: Setup Go
       uses: actions/setup-go@v6
@@ -132,7 +132,7 @@ jobs:
     
   #   steps:
   #   - name: Checkout code
-  #     uses: actions/checkout@v4
+  #     uses: actions/checkout@v5
     
   #   - name: Setup Go
   #     uses: actions/setup-go@v6
