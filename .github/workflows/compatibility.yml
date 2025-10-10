@@ -213,7 +213,7 @@ jobs:
     
     - name: Create issue if tests fail
       if: needs.dokku-compatibility.result == 'failure'
-      uses: actions/github-script@v7
+      uses: actions/github-script@v8
       with:
         script: |
           const fs = require('fs');
