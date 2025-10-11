@@ -3,11 +3,11 @@ package server
 import (
 	"log/slog"
 
-	dokkuApi "github.com/alex-galey/dokku-mcp/internal/dokku-api"
-	plugins "github.com/alex-galey/dokku-mcp/internal/server-plugin/application"
-	"github.com/alex-galey/dokku-mcp/internal/server-plugin/domain"
-	"github.com/alex-galey/dokku-mcp/internal/server-plugin/infrastructure"
-	"github.com/alex-galey/dokku-mcp/pkg/config"
+	dokkuApi "github.com/dokku-mcp/dokku-mcp/internal/dokku-api"
+	plugins "github.com/dokku-mcp/dokku-mcp/internal/server-plugin/application"
+	"github.com/dokku-mcp/dokku-mcp/internal/server-plugin/domain"
+	"github.com/dokku-mcp/dokku-mcp/internal/server-plugin/infrastructure"
+	"github.com/dokku-mcp/dokku-mcp/pkg/config"
 	"github.com/mark3labs/mcp-go/server"
 	"go.uber.org/fx"
 )

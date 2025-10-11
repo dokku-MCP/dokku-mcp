@@ -4,7 +4,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	app "github.com/alex-galey/dokku-mcp/internal/server-plugins/app/domain"
+	app "github.com/dokku-mcp/dokku-mcp/internal/server-plugins/app/domain"
 )
 
 var _ = Describe("ApplicationCommand", func() {

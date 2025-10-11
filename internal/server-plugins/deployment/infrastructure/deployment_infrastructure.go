@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	dokku_client "github.com/alex-galey/dokku-mcp/internal/dokku-api"
-	"github.com/alex-galey/dokku-mcp/internal/server-plugins/deployment/domain"
+	dokku_client "github.com/dokku-mcp/dokku-mcp/internal/dokku-api"
+	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/deployment/domain"
 )
 
 // deploymentInfrastructure implements the simplified DeploymentInfrastructure interface

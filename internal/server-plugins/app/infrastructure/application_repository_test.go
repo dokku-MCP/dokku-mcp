@@ -3,7 +3,7 @@ package infrastructure
 import (
 	"testing"
 
-	app "github.com/alex-galey/dokku-mcp/internal/server-plugins/app/domain"
+	app "github.com/dokku-mcp/dokku-mcp/internal/server-plugins/app/domain"
 )
 
 func TestDetermineStateFromInfo(t *testing.T) {

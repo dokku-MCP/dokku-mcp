@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"strings"
 
-	dokkuApi "github.com/alex-galey/dokku-mcp/internal/dokku-api"
-	app "github.com/alex-galey/dokku-mcp/internal/server-plugins/app/domain"
-	"github.com/alex-galey/dokku-mcp/internal/shared/process"
+	dokkuApi "github.com/dokku-mcp/dokku-mcp/internal/dokku-api"
+	app "github.com/dokku-mcp/dokku-mcp/internal/server-plugins/app/domain"
+	"github.com/dokku-mcp/dokku-mcp/internal/shared/process"
 )
 
 // DokkuApplicationRepository implements the repository for applications via Dokku

@@ -6,7 +6,7 @@ import (
 	"sort"
 	"sync"
 
-	deployment "github.com/alex-galey/dokku-mcp/internal/server-plugins/deployment/domain"
+	deployment "github.com/dokku-mcp/dokku-mcp/internal/server-plugins/deployment/domain"
 )
 
 type deploymentRepository struct {

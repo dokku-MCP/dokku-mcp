@@ -4,7 +4,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/alex-galey/dokku-mcp/internal/shared/process"
+	"github.com/dokku-mcp/dokku-mcp/internal/shared/process"
 )
 
 var _ = Describe("Process", func() {

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/alex-galey/dokku-mcp/pkg/fxapp"
+	"github.com/dokku-mcp/dokku-mcp/pkg/fxapp"
 )
 
 var (

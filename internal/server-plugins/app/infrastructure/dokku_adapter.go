@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"strings"
 
-	dokkuApi "github.com/alex-galey/dokku-mcp/internal/dokku-api"
-	app "github.com/alex-galey/dokku-mcp/internal/server-plugins/app/domain"
+	dokkuApi "github.com/dokku-mcp/dokku-mcp/internal/dokku-api"
+	app "github.com/dokku-mcp/dokku-mcp/internal/server-plugins/app/domain"
 )
 
 // DokkuApplicationAdapter provides application-specific operations using the generic DokkuClient

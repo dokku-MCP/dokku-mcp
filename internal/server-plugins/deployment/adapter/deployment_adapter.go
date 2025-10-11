@@ -3,8 +3,8 @@ package adapter
 import (
 	"context"
 
-	deployment_domain "github.com/alex-galey/dokku-mcp/internal/server-plugins/deployment/domain"
-	"github.com/alex-galey/dokku-mcp/internal/shared"
+	deployment_domain "github.com/dokku-mcp/dokku-mcp/internal/server-plugins/deployment/domain"
+	"github.com/dokku-mcp/dokku-mcp/internal/shared"
 )
 
 // DeploymentServiceAdapter adapts the deployment plugin's service to the shared interface

@@ -7,12 +7,12 @@ import (
 	"fmt"
 	"log/slog"
 
-	dokkuApi "github.com/alex-galey/dokku-mcp/internal/dokku-api"
-	"github.com/alex-galey/dokku-mcp/internal/server-plugin/domain"
-	appusecases "github.com/alex-galey/dokku-mcp/internal/server-plugins/app/application"
-	appdomain "github.com/alex-galey/dokku-mcp/internal/server-plugins/app/domain"
-	"github.com/alex-galey/dokku-mcp/internal/server-plugins/app/infrastructure"
-	"github.com/alex-galey/dokku-mcp/internal/shared"
+	dokkuApi "github.com/dokku-mcp/dokku-mcp/internal/dokku-api"
+	"github.com/dokku-mcp/dokku-mcp/internal/server-plugin/domain"
+	appusecases "github.com/dokku-mcp/dokku-mcp/internal/server-plugins/app/application"
+	appdomain "github.com/dokku-mcp/dokku-mcp/internal/server-plugins/app/domain"
+	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/app/infrastructure"
+	"github.com/dokku-mcp/dokku-mcp/internal/shared"
 	"github.com/mark3labs/mcp-go/mcp"
 	"go.uber.org/fx"
 )

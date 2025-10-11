@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/alex-galey/dokku-mcp/internal/server-plugins/core/domain"
+	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/core/domain"
 )
 
 // CoreService provides application-level orchestration for core Dokku functionality

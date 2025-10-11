@@ -4,11 +4,11 @@ import (
 	"log/slog"
 	"time"
 
-	dokkuApi "github.com/alex-galey/dokku-mcp/internal/dokku-api"
-	"github.com/alex-galey/dokku-mcp/internal/server-plugins/deployment/adapter"
-	"github.com/alex-galey/dokku-mcp/internal/server-plugins/deployment/domain"
-	deployment_infrastructure "github.com/alex-galey/dokku-mcp/internal/server-plugins/deployment/infrastructure"
-	"github.com/alex-galey/dokku-mcp/internal/shared"
+	dokkuApi "github.com/dokku-mcp/dokku-mcp/internal/dokku-api"
+	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/deployment/adapter"
+	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/deployment/domain"
+	deployment_infrastructure "github.com/dokku-mcp/dokku-mcp/internal/server-plugins/deployment/infrastructure"
+	"github.com/dokku-mcp/dokku-mcp/internal/shared"
 	"go.uber.org/fx"
 )
 

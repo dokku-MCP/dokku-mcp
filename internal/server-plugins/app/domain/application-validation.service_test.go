@@ -5,8 +5,8 @@ package app
 import (
 	"context"
 
-	"github.com/alex-galey/dokku-mcp/internal/shared"
-	"github.com/alex-galey/dokku-mcp/internal/shared/process"
+	"github.com/dokku-mcp/dokku-mcp/internal/shared"
+	"github.com/dokku-mcp/dokku-mcp/internal/shared/process"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )

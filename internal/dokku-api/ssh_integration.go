@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/alex-galey/dokku-mcp/pkg/config"
+	"github.com/dokku-mcp/dokku-mcp/pkg/config"
 )
 
 // SSHConnectionManager combines SSH configuration with authentication management

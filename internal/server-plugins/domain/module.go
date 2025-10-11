@@ -1,7 +1,7 @@
 package domain
 
 import (
-	serverDomain "github.com/alex-galey/dokku-mcp/internal/server-plugin/domain"
+	serverDomain "github.com/dokku-mcp/dokku-mcp/internal/server-plugin/domain"
 	"go.uber.org/fx"
 )
 

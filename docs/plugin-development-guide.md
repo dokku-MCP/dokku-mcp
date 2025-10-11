@@ -22,7 +22,7 @@ import (
     "context"
     "log/slog"
     
-    "github.com/alex-galey/dokku-mcp/internal/server-plugin/domain"
+    "github.com/dokku-mcp/dokku-mcp/internal/server-plugin/domain"
     "github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -252,7 +252,7 @@ package myfeature
 
 import (
     "go.uber.org/fx"
-    "github.com/alex-galey/dokku-mcp/internal/server-plugin/domain"
+    "github.com/dokku-mcp/dokku-mcp/internal/server-plugin/domain"
 )
 
 var Module = fx.Module("myfeature",

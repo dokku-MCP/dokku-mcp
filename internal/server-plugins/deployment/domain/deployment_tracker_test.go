@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alex-galey/dokku-mcp/internal/server-plugins/deployment/domain"
+	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/deployment/domain"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )

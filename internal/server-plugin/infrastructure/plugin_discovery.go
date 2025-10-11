@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	dokkuApi "github.com/alex-galey/dokku-mcp/internal/dokku-api"
-	"github.com/alex-galey/dokku-mcp/internal/server-plugin/domain"
+	dokkuApi "github.com/dokku-mcp/dokku-mcp/internal/dokku-api"
+	"github.com/dokku-mcp/dokku-mcp/internal/server-plugin/domain"
 )
 
 // srvPluginDiscoveryService implements the domain.PluginDiscoveryService interface

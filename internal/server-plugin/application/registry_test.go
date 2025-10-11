@@ -12,9 +12,9 @@ import (
 	. "github.com/onsi/gomega"
 	"go.uber.org/fx"
 
-	plugins "github.com/alex-galey/dokku-mcp/internal/server-plugin/application"
-	"github.com/alex-galey/dokku-mcp/internal/server-plugin/domain"
-	"github.com/alex-galey/dokku-mcp/pkg/config"
+	plugins "github.com/dokku-mcp/dokku-mcp/internal/server-plugin/application"
+	"github.com/dokku-mcp/dokku-mcp/internal/server-plugin/domain"
+	"github.com/dokku-mcp/dokku-mcp/pkg/config"
 	"github.com/mark3labs/mcp-go/server"
 )
 

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	dokkuApi "github.com/alex-galey/dokku-mcp/internal/dokku-api"
-	"github.com/alex-galey/dokku-mcp/internal/server-plugins/core/domain"
+	dokkuApi "github.com/dokku-mcp/dokku-mcp/internal/dokku-api"
+	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/core/domain"
 )
 
 // DokkuCoreAdapter implements core domain repositories using Dokku CLI

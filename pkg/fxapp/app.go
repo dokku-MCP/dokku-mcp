@@ -3,14 +3,14 @@ package fxapp
 import (
 	"log"
 
-	"github.com/alex-galey/dokku-mcp/internal/server"
-	"github.com/alex-galey/dokku-mcp/internal/server-plugins/app"
-	"github.com/alex-galey/dokku-mcp/internal/server-plugins/core"
-	"github.com/alex-galey/dokku-mcp/internal/server-plugins/deployment"
-	"github.com/alex-galey/dokku-mcp/internal/server-plugins/domain"
-	"github.com/alex-galey/dokku-mcp/internal/server-plugins/onboarding"
-	"github.com/alex-galey/dokku-mcp/pkg/config"
-	"github.com/alex-galey/dokku-mcp/pkg/logger"
+	"github.com/dokku-mcp/dokku-mcp/internal/server"
+	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/app"
+	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/core"
+	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/deployment"
+	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/domain"
+	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/onboarding"
+	"github.com/dokku-mcp/dokku-mcp/pkg/config"
+	"github.com/dokku-mcp/dokku-mcp/pkg/logger"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxevent"
 )

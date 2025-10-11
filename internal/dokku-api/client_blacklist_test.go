@@ -6,7 +6,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	dokkuApi "github.com/alex-galey/dokku-mcp/internal/dokku-api"
+	dokkuApi "github.com/dokku-mcp/dokku-mcp/internal/dokku-api"
 )
 
 var _ = Describe("DokkuClient", func() {
