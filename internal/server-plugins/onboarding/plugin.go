@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	mcpserver "github.com/alex-galey/dokku-mcp/internal/server"
-	serverDomain "github.com/alex-galey/dokku-mcp/internal/server-plugin/domain"
-	onbDomain "github.com/alex-galey/dokku-mcp/internal/server-plugins/onboarding/domain"
+	mcpserver "github.com/dokku-mcp/dokku-mcp/internal/server"
+	serverDomain "github.com/dokku-mcp/dokku-mcp/internal/server-plugin/domain"
+	onbDomain "github.com/dokku-mcp/dokku-mcp/internal/server-plugins/onboarding/domain"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 

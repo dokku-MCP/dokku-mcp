@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 
-	dokkuApi "github.com/alex-galey/dokku-mcp/internal/dokku-api"
-	"github.com/alex-galey/dokku-mcp/internal/server"
-	serverDomain "github.com/alex-galey/dokku-mcp/internal/server-plugin/domain"
-	"github.com/alex-galey/dokku-mcp/internal/server-plugins/domain/application"
-	"github.com/alex-galey/dokku-mcp/internal/server-plugins/domain/infrastructure"
+	dokkuApi "github.com/dokku-mcp/dokku-mcp/internal/dokku-api"
+	"github.com/dokku-mcp/dokku-mcp/internal/server"
+	serverDomain "github.com/dokku-mcp/dokku-mcp/internal/server-plugin/domain"
+	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/domain/application"
+	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/domain/infrastructure"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 

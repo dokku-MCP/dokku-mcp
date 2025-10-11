@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/alex-galey/dokku-mcp/internal/server-plugins/domain/domain"
+	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/domain/domain"
 )
 
 // DomainService provides application-level orchestration for domain functionality

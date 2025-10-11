@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	dokku_client "github.com/alex-galey/dokku-mcp/internal/dokku-api"
-	appdomain "github.com/alex-galey/dokku-mcp/internal/server-plugins/app/domain"
-	"github.com/alex-galey/dokku-mcp/internal/server-plugins/deployment/domain"
+	dokku_client "github.com/dokku-mcp/dokku-mcp/internal/dokku-api"
+	appdomain "github.com/dokku-mcp/dokku-mcp/internal/server-plugins/app/domain"
+	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/deployment/domain"
 )
 
 // deploymentStatusChecker implements DeploymentStatusChecker

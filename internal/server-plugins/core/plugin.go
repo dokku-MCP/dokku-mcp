@@ -7,12 +7,12 @@ import (
 	"log/slog"
 	"strings"
 
-	dokkuApi "github.com/alex-galey/dokku-mcp/internal/dokku-api"
-	serverDomain "github.com/alex-galey/dokku-mcp/internal/server-plugin/domain"
-	"github.com/alex-galey/dokku-mcp/internal/server-plugins/core/application"
-	"github.com/alex-galey/dokku-mcp/internal/server-plugins/core/infrastructure"
-	"github.com/alex-galey/dokku-mcp/pkg/config"
-	"github.com/alex-galey/dokku-mcp/pkg/logger"
+	dokkuApi "github.com/dokku-mcp/dokku-mcp/internal/dokku-api"
+	serverDomain "github.com/dokku-mcp/dokku-mcp/internal/server-plugin/domain"
+	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/core/application"
+	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/core/infrastructure"
+	"github.com/dokku-mcp/dokku-mcp/pkg/config"
+	"github.com/dokku-mcp/dokku-mcp/pkg/logger"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 

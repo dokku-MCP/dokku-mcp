@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"time"
 
-	plugins "github.com/alex-galey/dokku-mcp/internal/server-plugin/application"
-	"github.com/alex-galey/dokku-mcp/pkg/config"
+	plugins "github.com/dokku-mcp/dokku-mcp/internal/server-plugin/application"
+	"github.com/dokku-mcp/dokku-mcp/pkg/config"
 	"github.com/mark3labs/mcp-go/server"
 	"go.uber.org/fx"
 )

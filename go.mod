@@ -1,4 +1,4 @@
-module github.com/alex-galey/dokku-mcp
+module github.com/dokku-mcp/dokku-mcp
 
 go 1.24.6
 

@@ -8,8 +8,8 @@ There are many ways to contribute, from writing tutorials or blog posts, improvi
 
 ### Reporting Bugs
 
-- **Ensure the bug was not already reported** by searching on GitHub under [Issues](https://github.com/alex-galey/dokku-mcp/issues).
-- If you're unable to find an open issue addressing the problem, [open a new one](https://github.com/alex-galey/dokku-mcp/issues/new). Be sure to include a **title and clear description**, as much relevant information as possible, and a **code sample** or an **executable test case** demonstrating the expected behavior that is not occurring.
+- **Ensure the bug was not already reported** by searching on GitHub under [Issues](https://github.com/dokku-mcp/dokku-mcp/issues).
+- If you're unable to find an open issue addressing the problem, [open a new one](https://github.com/dokku-mcp/dokku-mcp/issues/new). Be sure to include a **title and clear description**, as much relevant information as possible, and a **code sample** or an **executable test case** demonstrating the expected behavior that is not occurring.
 
 ### Suggesting Enhancements
 
@@ -25,7 +25,7 @@ Here is the recommended workflow for contributing code.
 Follow the [Getting Started](./README.md#getting-started) guide in the README to set up your local development environment. The key steps are:
 
 ```bash
-git clone https://github.com/alex-galey/dokku-mcp.git
+git clone https://github.com/dokku-mcp/dokku-mcp.git
 cd dokku-mcp
 make install-tools
 make setup-dev

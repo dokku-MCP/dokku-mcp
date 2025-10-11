@@ -4,7 +4,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/alex-galey/dokku-mcp/internal/shared"
+	"github.com/dokku-mcp/dokku-mcp/internal/shared"
 )
 
 var _ = Describe("DockerImage", func() {

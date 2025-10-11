@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	dokkuApi "github.com/alex-galey/dokku-mcp/internal/dokku-api"
+	dokkuApi "github.com/dokku-mcp/dokku-mcp/internal/dokku-api"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )

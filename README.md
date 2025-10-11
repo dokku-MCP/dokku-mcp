@@ -12,7 +12,7 @@ This server exposes Dokku's management capabilities through the standardized Mod
 
 ### Try it now — turn your Dokku instance into an AI-manageable PaaS
 
-[Follow Installation](#installation) or grab a [prebuilt binary](https://github.com/alex-galey/dokku-mcp/releases) to get started in minutes with cursor, claude-code, goose and all agentic tools which support mcp.
+[Follow Installation](#installation) or grab a [prebuilt binary](https://github.com/dokku-mcp/dokku-mcp/releases) to get started in minutes with cursor, claude-code, goose and all agentic tools which support mcp.
 
 ### MCP Inspector Playground
 
@@ -28,11 +28,11 @@ It builds the binary (if needed), launches the MCP Inspector CLI, and connects i
 
 Need help with the dokku-mcp project? Goose AI is available to assist you! Simply tag your GitHub issues or pull requests with the `:goose` label, and Goose AI will automatically be notified to help with development, debugging, feature implementation, and other project-related tasks.
 
-[Example of Goose AI in action](https://github.com/alex-galey/dokku-mcp/issues/12)
+[Example of Goose AI in action](https://github.com/dokku-mcp/dokku-mcp/issues/12)
 
 ### Contribute — report issues or propose features
 
-[Open an issue](https://github.com/alex-galey/dokku-mcp/issues) or read [Contributing](CONTRIBUTING.md).
+[Open an issue](https://github.com/dokku-mcp/dokku-mcp/issues) or read [Contributing](CONTRIBUTING.md).
 
 ## Highlights
 
@@ -77,12 +77,12 @@ Download the latest release for your platform:
 
 ```bash
 # Linux (amd64 / arm64 / arm)
-curl -L -o dokku-mcp https://github.com/alex-galey/dokku-mcp/releases/download/v0.2.0/dokku-mcp-linux-amd64
+curl -L -o dokku-mcp https://github.com/dokku-mcp/dokku-mcp/releases/download/v0.2.0/dokku-mcp-linux-amd64
 chmod +x dokku-mcp
 sudo mv dokku-mcp /usr/local/bin/
 
 # macOS (amd64 / arm64)  
-curl -L -o dokku-mcp https://github.com/alex-galey/dokku-mcp/releases/download/v0.2.0/dokku-mcp-darwin-amd64
+curl -L -o dokku-mcp https://github.com/dokku-mcp/dokku-mcp/releases/download/v0.2.0/dokku-mcp-darwin-amd64
 chmod +x dokku-mcp
 sudo mv dokku-mcp /usr/local/bin/
 ```
@@ -102,7 +102,7 @@ If you prefer to build from source:
 
 2. **Clone and build:**
    ```bash
-   git clone https://github.com/alex-galey/dokku-mcp.git
+   git clone https://github.com/dokku-mcp/dokku-mcp.git
    cd dokku-mcp
    make build
    ```
@@ -219,7 +219,7 @@ This section is for developers who want to contribute to the project or modify t
 2. **Clone the repository:**
 
    ```bash
-   git clone https://github.com/alex-galey/dokku-mcp.git
+   git clone https://github.com/dokku-mcp/dokku-mcp.git
    cd dokku-mcp
    ```
 

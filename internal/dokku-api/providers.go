@@ -3,7 +3,7 @@ package dokkuApi
 import (
 	"log/slog"
 
-	"github.com/alex-galey/dokku-mcp/pkg/config"
+	"github.com/dokku-mcp/dokku-mcp/pkg/config"
 )
 
 // NewDokkuClientFromConfig creates a DokkuClient from the server configuration.

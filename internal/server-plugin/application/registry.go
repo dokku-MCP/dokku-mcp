@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alex-galey/dokku-mcp/internal/server-plugin/domain"
-	"github.com/alex-galey/dokku-mcp/pkg/config"
+	"github.com/dokku-mcp/dokku-mcp/internal/server-plugin/domain"
+	"github.com/dokku-mcp/dokku-mcp/pkg/config"
 	"go.uber.org/fx"
 )
 

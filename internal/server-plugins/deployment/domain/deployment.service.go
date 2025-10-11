@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"sort"
 
-	"github.com/alex-galey/dokku-mcp/internal/shared"
+	"github.com/dokku-mcp/dokku-mcp/internal/shared"
 )
 
 // DeploymentService interface pour les opérations de déploiement

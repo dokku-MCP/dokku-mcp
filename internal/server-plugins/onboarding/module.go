@@ -4,8 +4,8 @@ import (
 	"context"
 	"log/slog"
 
-	mcpserver "github.com/alex-galey/dokku-mcp/internal/server"
-	serverDomain "github.com/alex-galey/dokku-mcp/internal/server-plugin/domain"
+	mcpserver "github.com/dokku-mcp/dokku-mcp/internal/server"
+	serverDomain "github.com/dokku-mcp/dokku-mcp/internal/server-plugin/domain"
 	"go.uber.org/fx"
 )
 
