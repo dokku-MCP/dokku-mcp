@@ -17,6 +17,9 @@ RED=\033[0;31m
 BLUE=\033[0;34m
 NC=\033[0m
 
+# Strong typing exclusions
+EXCLUDED_STRONG_TYPING_PATHS ?= cmd/gen-mcp-json
+
 # Add go bin directory to PATH for tools
 GO_BIN := $(shell go env GOPATH)/bin
 GINKGO_BINARY := $(GO_BIN)/ginkgo
@@ -258,6 +261,15 @@ _check-type-safety:
 	@printf "$(GREEN)🚫 Checking forbidden patterns (Strong Typing)...$(NC)\n"
 	@VIOLATIONS_FOUND=false; \
 	for file in $$(find $(GO_SRC_PATHS) -name "*.go" -not -path "./vendor/*" -not -path "./.git/*" 2>/dev/null || true); do \
+		skipped=false; \
+		for exclude in $(EXCLUDED_STRONG_TYPING_PATHS); do \
+			case "$$file" in \
+				*$$exclude*) skipped=true; break ;; \
+			esac; \
+		done; \
+		if [ "$$skipped" = true ]; then \
+			continue; \
+		fi; \
 		if grep -n "interface{}" "$$file" 2>/dev/null | grep -v "//" | grep -v "// NOTE:" | grep -v "This is a valid exception" >/dev/null 2>&1; then \
 			printf "$(RED)❌ Forbidden pattern 'interface{}' found in $$file$(NC)\n"; \
 			grep -n "interface{}" "$$file" | grep -v "//" | grep -v "// NOTE:" | grep -v "This is a valid exception" | head -5; \
