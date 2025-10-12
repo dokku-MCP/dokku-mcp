@@ -1,11 +1,15 @@
 {
   "mcpServers": {
     "dokku": {
-      "command": "./build/dokku-mcp",
+      "command": "build/dokku-mcp",
       "args": [],
       "env": {
-        "DOKKU_MCP_LOG_LEVEL": "debug"
+        "DOKKU_MCP_SECURITY_BLACKLIST": "destroy,uninstall,remove",
+        "DOKKU_MCP_SSH_HOST": "127.0.0.1",
+        "DOKKU_MCP_SSH_KEY_PATH": ".ssh/dokku_mcp_test",
+        "DOKKU_MCP_SSH_PORT": "3022",
+        "DOKKU_MCP_SSH_USER": "dokku"
       }
     }
   }
-} 
+}
