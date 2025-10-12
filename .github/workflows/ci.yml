@@ -7,12 +7,36 @@ on:
 
 env:
   GO_VERSION: '1.24'
-  GINKGO_VERSION: 'latest'
+  GINKGO_VERSION: 'v2.17.3'
 
 jobs:
+  toolchain:
+    name: Toolchain
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Restore Go tools cache
+        id: cache-tools
+        uses: actions/cache@v4
+        with:
+          path: ~/go/bin
+          key: ${{ runner.os }}-go-bin-${{ env.GO_VERSION }}-${{ hashFiles('Makefile') }}
+
+      - name: Install development tools
+        if: steps.cache-tools.outputs.cache-hit != 'true'
+        run: make install-tools
+
   build:
     name: Build
     runs-on: ubuntu-latest
+    needs: [toolchain]
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -51,6 +75,7 @@ jobs:
   quality-checks:
     name: Quality Checks
     runs-on: ubuntu-latest
+    needs: [toolchain]
     strategy:
       fail-fast: false
       matrix:
@@ -78,8 +103,11 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-      - name: Install development tools
-        run: make install-tools
+      - name: Restore Go tools cache
+        uses: actions/cache@v4
+        with:
+          path: ~/go/bin
+          key: ${{ runner.os }}-go-bin-${{ env.GO_VERSION }}-${{ hashFiles('Makefile') }}
 
       - name: Run format check
         if: matrix.check == 'format'
@@ -118,6 +146,7 @@ jobs:
   tests:
     name: Tests - unit / integration
     runs-on: ubuntu-latest
+    needs: [toolchain]
     strategy:
       fail-fast: false
       matrix:
@@ -145,8 +174,11 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-      - name: Install Ginkgo
-        run: go install github.com/onsi/ginkgo/v2/ginkgo@${{ env.GINKGO_VERSION }}
+      - name: Restore Go tools cache
+        uses: actions/cache@v4
+        with:
+          path: ~/go/bin
+          key: ${{ runner.os }}-go-bin-${{ env.GO_VERSION }}-${{ hashFiles('Makefile') }}
 
       - name: Run tests
         if: matrix.test-type == 'standard'
@@ -166,6 +198,7 @@ jobs:
   dependency-analysis:
     name: Dependency Analysis
     runs-on: ubuntu-latest
+    needs: [toolchain]
     
     steps:
       - name: Checkout code
@@ -202,7 +235,7 @@ jobs:
   ci-success:
     name: CI Success
     runs-on: ubuntu-latest
-    needs: [build, quality-checks, tests, dependency-analysis]
+    needs: [toolchain, build, quality-checks, tests, dependency-analysis]
     if: always()
     
     steps:

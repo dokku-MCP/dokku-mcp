@@ -55,7 +55,7 @@ install-tools: ## Install development tools
 	go install github.com/onsi/ginkgo/v2/ginkgo@latest
 	go install github.com/go-delve/delve/cmd/dlv@latest
 	go install golang.org/x/tools/cmd/godoc@latest
-	go install github.com/air-verse/air@latest
+	go install github.com/air-verse/air@v1.62.0
 
 $(GINKGO_BINARY):
 	go install github.com/onsi/ginkgo/v2/ginkgo@latest
