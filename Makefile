@@ -1,10 +1,15 @@
-BINARY_NAME=dokku-mcp
+BINARY_NAME?=dokku-mcp
 VERSION?=dev-$(shell git rev-parse --short HEAD)
-ENTRYPOINT=cmd/server/main.go
-BUILD_DIR=build
+ENTRYPOINT?=cmd/server/main.go
+BUILD_DIR?=build
 GO_SRC_DIRS=./cmd/... ./internal/... ./pkg/...
 GO_SRC_PATHS=cmd internal pkg
 LDFLAGS=-ldflags "-X main.Version=$(VERSION) -X main.BuildTime=$(shell date -u '+%Y-%m-%d_%H:%M:%S')"
+
+# Export key vars so sub-commands (e.g., go generate) can read them
+export BUILD_DIR
+export BINARY_NAME
+export VERSION
 
 GREEN=\033[0;32m
 YELLOW=\033[0;33m
@@ -78,7 +83,7 @@ inspect: ## Inspect the MCP server
 	@printf "$(GREEN)🔍 Inspecting MCP server...$(NC)\n"
 	npx @modelcontextprotocol/inspector
 
-build: ## Build the MCP server
+build:	generate ## Build the MCP server
 	@printf "$(GREEN)📦 Building MCP server...$(NC)\n"
 	go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) $(ENTRYPOINT)
 
@@ -86,7 +91,7 @@ build-docker:
 	@printf "$(GREEN)📦 Building MCP server docker container...$(NC)\n"
 	docker build -t dokku-mcp .
 
-build-all: ## Build for all platforms
+build-all:	generate ## Build for all platforms
 	@printf "$(GREEN)📦 Multi-platform build...$(NC)\n"
 	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 $(ENTRYPOINT)
 	GOOS=linux GOARCH=arm64 go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 $(ENTRYPOINT)
@@ -237,10 +242,17 @@ dokku-clean: ## Clean local Dokku data and containers
 
 .DEFAULT_GOAL := help
 
-.PHONY: all build test clean install-tools lint staticcheck fmt vet dev debug
-.PHONY: test test-verbose test-integration-local test-integration-ci test-all test-race
-.PHONY: setup-dokku dokku-start dokku-stop dokku-status dokku-logs dokku-shell dokku-clean
-.PHONY: security _check-security _check-type-safety _check-security-detailed docs
+.PHONY: \
+all help \
+build build-all build-docker \
+start start-docker inspect \
+dev setup-dev setup-dokku install-tools \
+check lint staticcheck fmt vet cyclo dupl type \
+test test-race test-integration-local test-integration-ci \
+dep-graph-dot dep-graph \
+docs security _check-security _check-type-safety _check-security-detailed \
+bump-version changelog generate clean \
+dokku-start dokku-stop dokku-status dokku-logs dokku-shell dokku-clean
 
 _check-type-safety:
 	@printf "$(GREEN)🚫 Checking forbidden patterns (Strong Typing)...$(NC)\n"

@@ -7,6 +7,8 @@ import (
 	"github.com/spf13/viper"
 )
 
+//go:generate go run ../../cmd/gen-mcp-json
+
 type TransportConfig struct {
 	Type string `mapstructure:"type"` // "stdio" or "sse"
 	Host string `mapstructure:"host"`

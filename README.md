@@ -6,13 +6,16 @@ Version: v0.2.0
 
 This server exposes Dokku's management capabilities through the standardized Model Context Protocol (MCP), allowing Large Language Models (LLMs) to interact with and manage a Dokku instance.
 
-[![MCP Badge](https://lobehub.com/badge/mcp-full/alex-galey-dokku-mcp)](https://lobehub.com/mcp/alex-galey-dokku-mcp)
-
 ⚠️ **Early Development**: This project is in its early stages. Breaking changes are expected, and it is not recommended for production use.
 
-### Try it now — turn your Dokku instance into an AI-manageable PaaS
+
+[![MCP Badge](https://lobehub.com/badge/mcp-full/dokku-mcp-dokku-mcp)](https://lobehub.com/mcp/dokku-mcp-dokku-mcp)
+
+## Try it now — turn your Dokku instance into an AI-manageable PaaS
 
 [Follow Installation](#installation) or grab a [prebuilt binary](https://github.com/dokku-mcp/dokku-mcp/releases) to get started in minutes with cursor, claude-code, goose and all agentic tools which support mcp.
+
+Or ```make start``` if you already have go locally.
 
 ### MCP Inspector Playground
 
@@ -24,35 +27,70 @@ make inspect
 
 It builds the binary (if needed), launches the MCP Inspector CLI, and connects it to the server in stdio mode. Inspector prints a local URL—open it in your browser to browse resources, prompts, and tools, or to issue ad-hoc calls. This is a great way to validate your setup before wiring Dokku MCP into Cursor, Claude, other IDE or internal tools.
 
-### 🪿 Get Help from Goose AI
+### Connecting MCP Clients
 
-Need help with the dokku-mcp project? Goose AI is available to assist you! Simply tag your GitHub issues or pull requests with the `:goose` label, and Goose AI will automatically be notified to help with development, debugging, feature implementation, and other project-related tasks.
+The server can be used with any MCP-compatible client.
 
-[Example of Goose AI in action](https://github.com/dokku-mcp/dokku-mcp/issues/12)
+Add the following to your zed, `.cursor/mcp.json`, windsurf, `claude_desktop_config.json` or `.mcp.json`:
 
-### Contribute — report issues or propose features
+```json
+{
+  "mcpServers": {
+    "dokku": {
+      "command": "/home/user/dokku-mcp/build/dokku-mcp",
+      "args": [],
+      "env": {
+        "DOKKU_MCP_SECURITY_BLACKLIST": "destroy,uninstall,remove",
+        "DOKKU_MCP_SSH_HOST": "127.0.0.1",
+        "DOKKU_MCP_SSH_KEY_PATH": "/home/user/.ssh/id_rsa",
+        "DOKKU_MCP_SSH_PORT": "22",
+        "DOKKU_MCP_SSH_USER": "dokku"
+      }
+    }
+  }
+}
+```
+*Remember to replace the `command` path with the absolute path to the binary.*
 
-[Open an issue](https://github.com/dokku-mcp/dokku-mcp/issues) or read [Contributing](CONTRIBUTING.md).
-
-## Highlights
+### Highlights
 
 - **Core**: server info and plugin list resources; optional server logs tool.
 - **Apps**: create, deploy (Git URL + ref), scale, env config, status; app list resource; troubleshooting prompt.
-- **Deployments**: async deploys with IDs, background status and log polling.
+- **Deployments**: async deploys with IDs and background status.
 
 ## Roadmap
 
+Submit an issue for re-priorizing proposal
+
+### NEXT
+
 - **Build-level log**: expose build output for deploy invocations.
-- **App-level log**
-- **Inter-plugin communication**: Eventbus maybe Watermill
-- **SSL Plugin**
-- **Service plugins**: database template
+- **App-level log**: expose runtime logs.
+- **Inter-plugin communication**: allow inter-plugin events management, Eventbus maybe Watermill.
+- **User management**: ssh-keys:add, boundaries and prompting.
+- **Service plugins**: service templating, postgresql first implementation.
+
+### IDEAS
+
 - **SSH transactions / long-running connections**: streaming logs and interactive operations.
+- **Enforce allow-list**: enforce least-principles with explicit allow-list over block-list.
 
 ## Dokku integrations
 
 - **Implemented**: `apps:list`, `apps:info`, `apps:create`, `apps:destroy`, `apps:exists`, `apps:report`, `config:show`, `config:set`, `ps:scale`, `ps:report`, `logs`, `plugin:list`, `plugin:install`, `plugin:uninstall`, `plugin:enable`, `plugin:disable`, `plugin:update`, `version`, `proxy:report`, `proxy:set`, `scheduler:report`, `scheduler:set`, `git:report`, `git:set`, `ssh-keys:list`, `ssh-keys:remove`, `registry:logout`, `logs:set`.
 - **Missing/partial**: `ssh-keys:add`, `registry:login`/registry listing, configuration key enumeration, Services plugin, SSL plugin, streaming/attach sessions.
+
+## Contribute — report issues or propose features
+
+[Open an issue](https://github.com/dokku-mcp/dokku-mcp/issues) or read [Contributing](CONTRIBUTING.md).
+
+### 🪿 Get Help from Goose AI within issues
+
+Need help with the dokku-mcp project? Goose AI is available to assist you! Simply tag your GitHub issues or pull requests with the `:goose` label, and Goose AI will automatically be notified to help with development, debugging, feature implementation, and other project-related tasks.
+
+[Example of Goose AI in action](https://github.com/dokku-mcp/dokku-mcp/issues/12)
+[Another example](https://github.com/dokku-MCP/dokku-mcp/issues/27)
+
 
 ## Table of Contents
 
@@ -174,30 +212,7 @@ For development and testing without needing a remote Dokku instance, you can run
 
 When the local Dokku container is running, the MCP server (with default config) should be able to connect to it. You can run integration tests against this local instance.
 
-## Connecting MCP Clients
-
-The server can be used with any MCP-compatible client.
-
-### Claude Desktop
-
-Add the following to your `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "dokku": {
-      "command": "/path/to/your/dokku-mcp",
-      "args": [],
-      "env": {
-        "DOKKU_MCP_LOG_LEVEL": "info"
-      }
-    }
-  }
-}
-```
-*Remember to replace the `command` path with the absolute path to the binary.*
-
-### Transport Modes
+## Transport Modes
 The server supports two transport modes for clients:
 - **`stdio` (default):** Standard input/output for direct process communication.
 - **`sse` (Server-Sent Events):** HTTP-based transport for web clients.
