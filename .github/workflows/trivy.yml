@@ -36,7 +36,7 @@ jobs:
           category: 'trivy-fs-scan'
           
       - name: Upload Trivy results as artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         if: always()
         with:
           name: trivy-results
@@ -81,14 +81,14 @@ jobs:
           scanners: 'vuln,secret,config'
           
       - name: Upload Trivy container scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v4.30.8
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: 'trivy-container-results.sarif'
           category: 'trivy-container-scan'
           
       - name: Upload Trivy container results as artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         if: always()
         with:
           name: trivy-container-results
