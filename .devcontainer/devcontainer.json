@@ -1,0 +1,75 @@
+{
+	"name": "Dokku MCP - Go Development",
+	"build": {
+		"dockerfile": "Dockerfile",
+		"context": "."
+	},
+	"features": {
+		"ghcr.io/devcontainers/features/docker-in-docker:2": {
+			"moby": true,
+			"dockerDashComposeVersion": "v2"
+		},
+		"ghcr.io/devcontainers/features/github-cli:1": {
+			"installDirectlyFromGitHubRelease": true,
+			"version": "latest"
+		}
+	},
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"golang.go",
+				"GitHub.copilot",
+				"GitHub.copilot-chat",
+				"eamodio.gitlens",
+				"ms-azuretools.vscode-docker",
+				"redhat.vscode-yaml",
+				"tamasfe.even-better-toml",
+				"streetsidesoftware.code-spell-checker",
+				"davidanson.vscode-markdownlint",
+				"yzhang.markdown-all-in-one",
+				"premparihar.gotestexplorer",
+				"hbenl.vscode-test-explorer",
+				"golang.go-nightly"
+			],
+			"settings": {
+				"go.toolsManagement.autoUpdate": true,
+				"go.useLanguageServer": true,
+				"go.lintTool": "golangci-lint",
+				"go.lintOnSave": "workspace",
+				"go.formatTool": "goimports",
+				"go.testFlags": ["-v", "-race"],
+				"go.coverOnSave": false,
+				"go.coverageDecorator": {
+					"type": "gutter"
+				},
+				"go.testTimeout": "300s",
+				"editor.formatOnSave": true,
+				"editor.codeActionsOnSave": {
+					"source.organizeImports": "explicit"
+				},
+				"files.eol": "\n",
+				"files.insertFinalNewline": true,
+				"files.trimTrailingWhitespace": true,
+				"terminal.integrated.defaultProfile.linux": "bash"
+			}
+		}
+	},
+	"postCreateCommand": "make install-tools && go mod download",
+	"postStartCommand": "git config --global --add safe.directory ${containerWorkspaceFolder}",
+	"postAttachCommand": "echo '✅ Dokku MCP Dev Container Ready!' && echo 'Run: make dev (live reload) or make test'",
+	"remoteEnv": {
+		"GOPROXY": "https://proxy.golang.org,direct",
+		"GOSUMDB": "sum.golang.org",
+		"CGO_ENABLED": "0"
+	},
+	"mounts": [
+		"source=${localEnv:HOME}${localEnv:USERPROFILE}/.ssh,target=/home/vscode/.ssh,readonly,type=bind,consistency=cached"
+	],
+	"forwardPorts": [8080],
+	"portsAttributes": {
+		"8080": {
+			"label": "MCP Server (SSE)",
+			"onAutoForward": "notify"
+		}
+	}
+}
