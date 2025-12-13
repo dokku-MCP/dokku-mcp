@@ -124,3 +124,6 @@ docker-data/
 
 dokku-mcp
 dokku-mcp-server
+
+# Build artifacts in root
+main
