@@ -32,7 +32,7 @@ func (p *OnboardingServerPlugin) Name() string { return "Onboarding & Discovery"
 func (p *OnboardingServerPlugin) Description() string {
 	return "LLM onboarding resources and prompt discovery"
 }
-func (p *OnboardingServerPlugin) Version() string { return "0.2.0" }
+func (p *OnboardingServerPlugin) Version() string { return "0.2.2" }
 func (p *OnboardingServerPlugin) DokkuPluginName() string {
 	return "" // always active
 }

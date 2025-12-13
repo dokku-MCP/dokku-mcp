@@ -44,7 +44,7 @@ func (p *AppsServerPlugin) Description() string {
 	return "Comprehensive Dokku application management including deployment, scaling, and configuration"
 }
 
-func (p *AppsServerPlugin) Version() string { return "0.2.0" }
+func (p *AppsServerPlugin) Version() string { return "0.2.2" }
 
 // Core apps functionality - no specific plugin dependency
 func (p *AppsServerPlugin) DokkuPluginName() string { return "" }

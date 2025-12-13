@@ -5,16 +5,32 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	plugins "github.com/dokku-mcp/dokku-mcp/internal/server-plugin/application"
+	"github.com/dokku-mcp/dokku-mcp/internal/server/auth"
+	"github.com/dokku-mcp/dokku-mcp/internal/shared"
 	"github.com/dokku-mcp/dokku-mcp/pkg/config"
 	"github.com/mark3labs/mcp-go/server"
 	"go.uber.org/fx"
 )
 
-// registerServerHooks uses fx.Hook to manage the server's lifecycle.
-func registerServerHooks(lc fx.Lifecycle, cfg *config.ServerConfig, mcpServer *server.MCPServer, adapter *MCPAdapter, dynamicRegistry *plugins.DynamicServerPluginRegistry, logger *slog.Logger) {
+type AuthenticatorParams struct {
+	fx.In
+
+	Authenticator auth.Authenticator `optional:"true"`
+}
+
+func registerServerHooks(
+	lc fx.Lifecycle,
+	cfg *config.ServerConfig,
+	mcpServer *server.MCPServer,
+	adapter *MCPAdapter,
+	dynamicRegistry *plugins.DynamicServerPluginRegistry,
+	authParams AuthenticatorParams,
+	logger *slog.Logger,
+) {
 	var httpServer *http.Server
 
 	lc.Append(fx.Hook{
@@ -32,15 +48,54 @@ func registerServerHooks(lc fx.Lifecycle, cfg *config.ServerConfig, mcpServer *s
 
 			switch cfg.Transport.Type {
 			case "sse":
-				logger.Info("Starting MCP server with 'sse' transport.")
-				sseServer := server.NewSSEServer(mcpServer)
+				addr := fmt.Sprintf("%s:%d", cfg.Transport.Host, cfg.Transport.Port)
+				httpServer = &http.Server{
+					Addr:              addr,
+					ReadHeaderTimeout: 10 * time.Second,
+					WriteTimeout:      30 * time.Second,
+					IdleTimeout:       120 * time.Second,
+					MaxHeaderBytes:    1 << 20, // 1 MB
+				}
+
+				var sseServer *server.SSEServer
+				var handler http.Handler
+
+				if cfg.MultiTenant.Enabled && authParams.Authenticator != nil {
+					logger.Info("Starting MCP server with SSE transport and multi-tenant authentication")
+
+					sseServer = server.NewSSEServer(
+						mcpServer,
+						server.WithHTTPServer(httpServer),
+						server.WithSSEContextFunc(func(ctx context.Context, r *http.Request) context.Context {
+							return injectTenantContext(ctx, r, authParams.Authenticator, logger)
+						}),
+					)
+				} else {
+					logger.Info("Starting MCP server with SSE transport (single-tenant mode)")
+					sseServer = server.NewSSEServer(
+						mcpServer,
+						server.WithHTTPServer(httpServer),
+					)
+				}
+
+				// Apply CORS middleware if enabled
+				if cfg.Transport.CORS.Enabled {
+					logger.Info("CORS middleware enabled",
+						"allowed_origins", cfg.Transport.CORS.AllowedOrigins,
+						"allowed_methods", cfg.Transport.CORS.AllowedMethods)
+					handler = CORSMiddleware(&cfg.Transport.CORS)(sseServer)
+					httpServer.Handler = handler
+				} else {
+					logger.Debug("CORS middleware disabled, using mcp-go default CORS (*)")
+				}
+
 				go func() {
-					addr := fmt.Sprintf("%s:%d", cfg.Transport.Host, cfg.Transport.Port)
 					logger.Info("SSE server listening", "address", addr)
 					if err := sseServer.Start(addr); err != nil && err != http.ErrServerClosed {
 						logger.Error("SSE server failed", "error", err)
 					}
 				}()
+
 			case "stdio":
 				logger.Info("Starting MCP server with 'stdio' transport.")
 				go func() {
@@ -64,4 +119,34 @@ func registerServerHooks(lc fx.Lifecycle, cfg *config.ServerConfig, mcpServer *s
 			return nil
 		},
 	})
+}
+
+func injectTenantContext(ctx context.Context, r *http.Request, authenticator auth.Authenticator, logger *slog.Logger) context.Context {
+	token := r.URL.Query().Get("token")
+	if token == "" {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader != "" {
+			token = strings.TrimPrefix(authHeader, "Bearer ")
+		}
+	}
+
+	if token == "" {
+		logger.Debug("No authentication token provided, using single-tenant mode")
+		return ctx
+	}
+
+	tenantCtx, err := authenticator.Authenticate(ctx, token)
+	if err != nil {
+		logger.Warn("Authentication failed",
+			"error", err,
+			"remote_addr", r.RemoteAddr)
+		return ctx
+	}
+
+	logger.Debug("Authentication successful",
+		"tenant_id", tenantCtx.TenantID,
+		"user_id", tenantCtx.UserID,
+		"permissions", tenantCtx.Permissions)
+
+	return shared.WithTenantContext(ctx, tenantCtx)
 }

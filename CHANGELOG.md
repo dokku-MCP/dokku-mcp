@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.2.2] - 2025-12-13
+
+### Added
+- **CORS Configuration**: Optional CORS middleware for SSE transport
+  - Configurable allowed origins (supports wildcards like `*.example.com`)
+  - Configurable allowed methods and headers
+  - Preflight request handling
+  - Disabled by default (uses mcp-go's `Access-Control-Allow-Origin: *`)
+  - See `docs/CORS.md` for configuration details and security best practices
+
+### Changed
+- **mcp-go**: Updated from v0.43.0 to v0.43.2
+  - Improved SSE server stability
+  - Enhanced streaming support
+
+### Documentation
+- Added `docs/CORS.md` with security analysis and configuration guide
+- Updated `config.yaml.example` with CORS configuration examples
+- Updated README.md with CORS section under Transport Modes
+
 ## [v0.2.1] - 2025-11-06
 
 ### Changed

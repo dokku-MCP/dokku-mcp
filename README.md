@@ -2,7 +2,7 @@
 
 **Model Context Protocol (MCP)** server for **Dokku**, written in Go.
 
-Version: v0.2.0
+Version: v0.2.2
 
 This server exposes Dokku's management capabilities through the standardized Model Context Protocol (MCP), allowing Large Language Models (LLMs) to interact with and manage a Dokku instance.
 
@@ -219,6 +219,22 @@ The server supports two transport modes for clients:
   ```bash
   DOKKU_MCP_TRANSPORT_TYPE=sse dokku-mcp
   ```
+
+### CORS Configuration
+
+For SSE transport, CORS is handled by default with `Access-Control-Allow-Origin: *`. For remote deployments, you can enable custom CORS middleware:
+
+```yaml
+transport:
+  type: sse
+  cors:
+    enabled: true
+    allowed_origins:
+      - "https://app.example.com"
+      - "*.example.com"
+```
+
+See [docs/CORS.md](docs/CORS.md) for detailed configuration options and security best practices.
 
 ## Development
 

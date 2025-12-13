@@ -10,9 +10,18 @@ import (
 //go:generate go run ../../cmd/gen-mcp-json
 
 type TransportConfig struct {
-	Type string `mapstructure:"type"` // "stdio" or "sse"
-	Host string `mapstructure:"host"`
-	Port int    `mapstructure:"port"`
+	Type string     `mapstructure:"type"` // "stdio" or "sse"
+	Host string     `mapstructure:"host"`
+	Port int        `mapstructure:"port"`
+	CORS CORSConfig `mapstructure:"cors"`
+}
+
+type CORSConfig struct {
+	Enabled        bool     `mapstructure:"enabled"`
+	AllowedOrigins []string `mapstructure:"allowed_origins"` // If empty and enabled, uses "*"
+	AllowedMethods []string `mapstructure:"allowed_methods"`
+	AllowedHeaders []string `mapstructure:"allowed_headers"`
+	MaxAge         int      `mapstructure:"max_age"` // In seconds
 }
 
 type SSHConfig struct {
@@ -31,6 +40,31 @@ type SecurityConfig struct {
 	Blacklist []string `mapstructure:"blacklist"`
 }
 
+type MultiTenantConfig struct {
+	Enabled        bool                 `mapstructure:"enabled"`
+	Authentication AuthenticationConfig `mapstructure:"authentication"`
+	Authorization  AuthorizationConfig  `mapstructure:"authorization"`
+	Observability  ObservabilityConfig  `mapstructure:"observability"`
+}
+
+type AuthenticationConfig struct {
+	Enabled         bool   `mapstructure:"enabled"`
+	JWTSecret       string `mapstructure:"jwt_secret"`
+	TokenHeader     string `mapstructure:"token_header"`
+	TokenQueryParam string `mapstructure:"token_query_param"`
+}
+
+type AuthorizationConfig struct {
+	Enabled            bool     `mapstructure:"enabled"`
+	DefaultPermissions []string `mapstructure:"default_permissions"`
+}
+
+type ObservabilityConfig struct {
+	AuditEnabled   bool `mapstructure:"audit_enabled"`
+	MetricsEnabled bool `mapstructure:"metrics_enabled"`
+	TracingEnabled bool `mapstructure:"tracing_enabled"`
+}
+
 type ServerConfig struct {
 	Transport          TransportConfig       `mapstructure:"transport"`
 	Host               string                `mapstructure:"host"`
@@ -47,6 +81,7 @@ type ServerConfig struct {
 	SSH                SSHConfig             `mapstructure:"ssh"`
 	PluginDiscovery    PluginDiscoveryConfig `mapstructure:"plugin_discovery"`
 	Security           SecurityConfig        `mapstructure:"security"`
+	MultiTenant        MultiTenantConfig     `mapstructure:"multi_tenant"`
 }
 
 func DefaultConfig() *ServerConfig {
@@ -55,6 +90,13 @@ func DefaultConfig() *ServerConfig {
 			Type: "stdio",
 			Host: "localhost",
 			Port: 8080,
+			CORS: CORSConfig{
+				Enabled:        false, // Disabled by default, mcp-go handles CORS with "*"
+				AllowedOrigins: []string{},
+				AllowedMethods: []string{"GET", "POST", "OPTIONS"},
+				AllowedHeaders: []string{"Content-Type", "Authorization"},
+				MaxAge:         300, // 5 minutes
+			},
 		},
 		Host:               "localhost",
 		Port:               8080,
@@ -80,6 +122,23 @@ func DefaultConfig() *ServerConfig {
 		Security: SecurityConfig{
 			Blacklist: []string{},
 		},
+		MultiTenant: MultiTenantConfig{
+			Enabled: false,
+			Authentication: AuthenticationConfig{
+				Enabled:         false,
+				TokenHeader:     "Authorization",
+				TokenQueryParam: "token",
+			},
+			Authorization: AuthorizationConfig{
+				Enabled:            false,
+				DefaultPermissions: []string{},
+			},
+			Observability: ObservabilityConfig{
+				AuditEnabled:   false,
+				MetricsEnabled: false,
+				TracingEnabled: false,
+			},
+		},
 	}
 }
 
@@ -99,6 +158,11 @@ func LoadConfig() (*ServerConfig, error) {
 	viper.SetDefault("transport.type", config.Transport.Type)
 	viper.SetDefault("transport.host", config.Transport.Host)
 	viper.SetDefault("transport.port", config.Transport.Port)
+	viper.SetDefault("transport.cors.enabled", config.Transport.CORS.Enabled)
+	viper.SetDefault("transport.cors.allowed_origins", config.Transport.CORS.AllowedOrigins)
+	viper.SetDefault("transport.cors.allowed_methods", config.Transport.CORS.AllowedMethods)
+	viper.SetDefault("transport.cors.allowed_headers", config.Transport.CORS.AllowedHeaders)
+	viper.SetDefault("transport.cors.max_age", config.Transport.CORS.MaxAge)
 	viper.SetDefault("host", config.Host)
 	viper.SetDefault("port", config.Port)
 	viper.SetDefault("log_level", config.LogLevel)

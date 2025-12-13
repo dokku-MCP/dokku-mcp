@@ -3,7 +3,7 @@ module github.com/dokku-mcp/dokku-mcp
 go 1.25.4
 
 require (
-	github.com/mark3labs/mcp-go v0.43.0
+	github.com/mark3labs/mcp-go v0.43.2
 	github.com/onsi/ginkgo/v2 v2.23.4
 	github.com/onsi/gomega v1.37.0
 	github.com/spf13/viper v1.21.0

@@ -6,6 +6,23 @@ transport:
   type: "stdio"      # "stdio" or "sse"
   host: "localhost"  # Only used for sse/HTTP
   port: 8080         # Only used for sse/HTTP
+  
+  # CORS configuration (only applies to SSE transport)
+  cors:
+    enabled: false   # Enable custom CORS middleware (default: false, uses mcp-go's "*")
+    allowed_origins: []  # Empty = allow all when enabled
+    # Examples:
+    # - "https://app.example.com"      # Exact origin
+    # - "*.example.com"                # Wildcard subdomain
+    # - "*"                            # Allow all (explicit)
+    allowed_methods:
+      - "GET"
+      - "POST"
+      - "OPTIONS"
+    allowed_headers:
+      - "Content-Type"
+      - "Authorization"
+    max_age: 300     # Preflight cache duration in seconds (5 minutes)
 
 log_level: "info"           # debug, info, warn, error
 log_format: "json"          # json, text
@@ -55,28 +72,48 @@ security:
 
 # Example configurations for different scenarios:
 
-# Example 1: Local Dokku instance
+# Example 1: SSE transport with CORS for SaaS/production
+# transport:
+#   type: "sse"
+#   host: "0.0.0.0"
+#   port: 8080
+#   cors:
+#     enabled: true
+#     allowed_origins:
+#       - "https://app.yourdomain.com"
+#       - "https://dashboard.yourdomain.com"
+#       - "*.yourdomain.com"
+#     allowed_methods:
+#       - "GET"
+#       - "POST"
+#       - "OPTIONS"
+#     allowed_headers:
+#       - "Content-Type"
+#       - "Authorization"
+#     max_age: 300
+
+# Example 2: Local Dokku instance
 # ssh:
 #   host: "localhost"
 #   port: 22
 #   user: "dokku"
 #   key_path: ""
 
-# Example 2: Remote Dokku with custom SSH key
+# Example 3: Remote Dokku with custom SSH key
 # ssh:
 #   host: "dokku.mydomain.com"
 #   port: 22
 #   user: "dokku"
 #   key_path: "/home/user/.ssh/dokku_rsa"
 
-# Example 3: Remote Dokku with custom port
+# Example 4: Remote Dokku with custom port
 # ssh:
 #   host: "dokku.mydomain.com"
 #   port: 2222
 #   user: "dokku"
 #   key_path: ""
 
-# Example 4: Development environment with longer timeouts
+# Example 5: Development environment with longer timeouts
 # ssh:
 #   host: "dev-dokku.local"
 #   port: 22
