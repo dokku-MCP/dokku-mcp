@@ -70,6 +70,17 @@ security:
     # - "postgres:"      # Blocks all postgres commands
     # - ":destroy"       # Blocks any service destroy command
 
+# Logs configuration
+logs:
+  runtime:
+    default_lines: 100      # Default number of log lines to retrieve
+    max_lines: 1000         # Maximum number of log lines allowed
+    stream_buffer_size: 1000 # Buffer size for log streaming (SSE only)
+  
+  build:
+    max_size_mb: 10         # Maximum build log size in memory
+    retention_minutes: 5    # How long to keep completed deployment logs
+
 # Example configurations for different scenarios:
 
 # Example 1: SSE transport with CORS for SaaS/production

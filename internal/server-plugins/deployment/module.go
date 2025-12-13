@@ -5,8 +5,9 @@ import (
 	"time"
 
 	dokkuApi "github.com/dokku-mcp/dokku-mcp/internal/dokku-api"
+	server_plugin_domain "github.com/dokku-mcp/dokku-mcp/internal/server-plugin/domain"
 	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/deployment/adapter"
-	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/deployment/domain"
+	deployment_domain "github.com/dokku-mcp/dokku-mcp/internal/server-plugins/deployment/domain"
 	deployment_infrastructure "github.com/dokku-mcp/dokku-mcp/internal/server-plugins/deployment/infrastructure"
 	"github.com/dokku-mcp/dokku-mcp/internal/shared"
 	"go.uber.org/fx"
@@ -16,28 +17,28 @@ var Module = fx.Module("deployment",
 	fx.Provide(
 		// Deployment repository
 		fx.Annotate(
-			func(logger *slog.Logger) domain.DeploymentRepository {
+			func(logger *slog.Logger) deployment_domain.DeploymentRepository {
 				return deployment_infrastructure.NewDeploymentRepository(logger)
 			},
 		),
 		// Deployment tracker
 		fx.Annotate(
-			domain.NewDeploymentTracker,
+			deployment_domain.NewDeploymentTracker,
 		),
 		// Deployment status checker
 		fx.Annotate(
-			func(client dokkuApi.DokkuClient) domain.DeploymentStatusChecker {
+			func(client dokkuApi.DokkuClient) deployment_domain.DeploymentStatusChecker {
 				return deployment_infrastructure.NewDeploymentStatusChecker(client)
 			},
 		),
 		// Deployment poller
 		fx.Annotate(
 			func(
-				tracker *domain.DeploymentTracker,
-				statusChecker domain.DeploymentStatusChecker,
+				tracker *deployment_domain.DeploymentTracker,
+				statusChecker deployment_domain.DeploymentStatusChecker,
 				logger *slog.Logger,
-			) *domain.DeploymentPoller {
-				return domain.NewDeploymentPoller(
+			) *deployment_domain.DeploymentPoller {
+				return deployment_domain.NewDeploymentPoller(
 					tracker,
 					statusChecker,
 					logger,
@@ -52,13 +53,19 @@ var Module = fx.Module("deployment",
 		),
 		// Deployment service
 		fx.Annotate(
-			domain.NewApplicationDeploymentService,
-			fx.As(new(domain.DeploymentService)),
+			deployment_domain.NewApplicationDeploymentService,
+			fx.As(new(deployment_domain.DeploymentService)),
 		),
 		// Deployment adapter
 		fx.Annotate(
 			adapter.NewDeploymentServiceAdapter,
 			fx.As(new(shared.DeploymentService)),
+		),
+		// Deployment server plugin
+		fx.Annotate(
+			NewDeploymentServerPlugin,
+			fx.As(new(server_plugin_domain.ServerPlugin)),
+			fx.ResultTags(`group:"server_plugins"`),
 		),
 	),
 )

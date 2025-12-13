@@ -65,6 +65,22 @@ type ObservabilityConfig struct {
 	TracingEnabled bool `mapstructure:"tracing_enabled"`
 }
 
+type LogsConfig struct {
+	Runtime RuntimeLogsConfig `mapstructure:"runtime"`
+	Build   BuildLogsConfig   `mapstructure:"build"`
+}
+
+type RuntimeLogsConfig struct {
+	DefaultLines     int `mapstructure:"default_lines"`
+	MaxLines         int `mapstructure:"max_lines"`
+	StreamBufferSize int `mapstructure:"stream_buffer_size"`
+}
+
+type BuildLogsConfig struct {
+	MaxSizeMB        int `mapstructure:"max_size_mb"`
+	RetentionMinutes int `mapstructure:"retention_minutes"`
+}
+
 type ServerConfig struct {
 	Transport          TransportConfig       `mapstructure:"transport"`
 	Host               string                `mapstructure:"host"`
@@ -82,6 +98,7 @@ type ServerConfig struct {
 	PluginDiscovery    PluginDiscoveryConfig `mapstructure:"plugin_discovery"`
 	Security           SecurityConfig        `mapstructure:"security"`
 	MultiTenant        MultiTenantConfig     `mapstructure:"multi_tenant"`
+	Logs               LogsConfig            `mapstructure:"logs"`
 }
 
 func DefaultConfig() *ServerConfig {
@@ -137,6 +154,17 @@ func DefaultConfig() *ServerConfig {
 				AuditEnabled:   false,
 				MetricsEnabled: false,
 				TracingEnabled: false,
+			},
+		},
+		Logs: LogsConfig{
+			Runtime: RuntimeLogsConfig{
+				DefaultLines:     100,
+				MaxLines:         1000,
+				StreamBufferSize: 1000,
+			},
+			Build: BuildLogsConfig{
+				MaxSizeMB:        10,
+				RetentionMinutes: 5,
 			},
 		},
 	}

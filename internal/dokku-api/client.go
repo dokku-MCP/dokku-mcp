@@ -1,6 +1,7 @@
 package dokkuApi
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -189,6 +190,34 @@ func prepareSSHExecCommand(ctx context.Context, sshArgs []string, env []string) 
 	cmd.Stdin = nil
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pgid: 0}
 	return cmd, nil
+}
+
+// buildCommand builds an SSH command for execution
+// This is used by StreamLogs to create a command that can be started and have its stdout piped
+func (c *client) buildCommand(ctx context.Context, args []string) (*exec.Cmd, error) {
+	commandName := "logs"
+
+	// Build the Dokku command
+	dokkuCommand := buildDokkuCommand(commandName, args)
+
+	// Prepare SSH command
+	sshArgs, env, err := c.sshConnManager.PrepareSSHCommand(dokkuCommand)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare SSH command: %w", err)
+	}
+
+	// Create command context
+	cmdCtx := ctx
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		if c.config.CommandTimeout > 0 {
+			var cancel context.CancelFunc
+			cmdCtx, cancel = context.WithTimeout(ctx, c.config.CommandTimeout)
+			defer cancel()
+		}
+	}
+
+	// Prepare and return the command
+	return prepareSSHExecCommand(cmdCtx, sshArgs, env)
 }
 
 func (c *client) logCommandExecutionStart(ctx context.Context, commandName string, args []string, dokkuCommand string, sshArgs []string, env []string) {
@@ -487,4 +516,105 @@ func (c *client) GetTableOutput(ctx context.Context, command string, args []stri
 	}
 
 	return result.TableData, nil
+}
+
+// parseLogLine parses a Dokku log line
+// Format: "2025-12-13T01:30:00.000000000Z app[web.1]: message"
+func parseLogLine(line string) LogLine {
+	// Simple parsing - enhance as needed
+	parts := strings.SplitN(line, " ", 3)
+	if len(parts) < 3 {
+		return LogLine{
+			Timestamp: time.Now(),
+			Message:   line,
+		}
+	}
+
+	timestamp, _ := time.Parse(time.RFC3339Nano, parts[0])
+	container := strings.Trim(parts[1], ":")
+
+	return LogLine{
+		Timestamp: timestamp,
+		Container: container,
+		Message:   parts[2],
+	}
+}
+
+// GetLogs retrieves application logs (polling mode for stdio transport)
+func (c *client) GetLogs(ctx context.Context, appName string, options LogOptions) (string, error) {
+	if appName == "" {
+		return "", fmt.Errorf("application name cannot be empty")
+	}
+
+	args := []string{"logs", appName}
+
+	if options.Lines > 0 {
+		args = append(args, "--num", fmt.Sprintf("%d", options.Lines))
+	}
+
+	if options.Tail {
+		return "", fmt.Errorf("use StreamLogs for tailing logs")
+	}
+
+	output, err := c.ExecuteCommand(ctx, "logs", args)
+	if err != nil {
+		return "", fmt.Errorf("failed to get logs: %w", err)
+	}
+
+	return string(output), nil
+}
+
+// StreamLogs streams application logs (for SSE transport)
+// Returns channels for log lines and errors
+func (c *client) StreamLogs(ctx context.Context, appName string) (<-chan LogLine, <-chan error, error) {
+	if appName == "" {
+		return nil, nil, fmt.Errorf("application name cannot be empty")
+	}
+
+	logChan := make(chan LogLine, 100)
+	errChan := make(chan error, 1)
+
+	go func() {
+		defer close(logChan)
+		defer close(errChan)
+
+		args := []string{"logs", appName, "-t"}
+
+		cmd, err := c.buildCommand(ctx, args)
+		if err != nil {
+			errChan <- fmt.Errorf("failed to build command: %w", err)
+			return
+		}
+
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			errChan <- fmt.Errorf("failed to create stdout pipe: %w", err)
+			return
+		}
+
+		if err := cmd.Start(); err != nil {
+			errChan <- fmt.Errorf("failed to start command: %w", err)
+			return
+		}
+
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			line := scanner.Text()
+
+			select {
+			case logChan <- parseLogLine(line):
+			case <-ctx.Done():
+				cmd.Process.Kill()
+				return
+			}
+		}
+
+		if err := scanner.Err(); err != nil {
+			errChan <- fmt.Errorf("error reading logs: %w", err)
+		}
+
+		cmd.Wait()
+	}()
+
+	return logChan, errChan, nil
 }
