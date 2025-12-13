@@ -2,18 +2,12 @@ package shared_test
 
 import (
 	"context"
-	"testing"
 	"time"
 
 	"github.com/dokku-mcp/dokku-mcp/internal/shared"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
-
-func TestTenantContext(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "TenantContext Suite")
-}
 
 var _ = Describe("TenantContext", func() {
 	var tenantCtx *shared.TenantContext
