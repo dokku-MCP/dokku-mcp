@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/dokku-mcp/dokku-mcp/internal/server-plugin/domain"
 	deployment_domain "github.com/dokku-mcp/dokku-mcp/internal/server-plugins/deployment/domain"
@@ -125,35 +126,56 @@ func (p *DeploymentServerPlugin) handleDeploymentResource(ctx context.Context, r
 	parts := strings.Split(strings.TrimPrefix(uri, "dokku://deployment/"), "/")
 	deploymentID := parts[0]
 
+	// Validate deployment ID for security
+	if deploymentID == "" || len(deploymentID) > 100 || strings.ContainsAny(deploymentID, "\t\n\r\x00") {
+		return nil, fmt.Errorf("invalid deployment ID format")
+	}
+
 	// Get deployment from tracker
 	deployment, err := p.tracker.GetByID(deploymentID)
 	if err != nil {
-		return nil, fmt.Errorf("deployment not found: %w", err)
+		p.logger.Error("deployment not found", "deployment_id", deploymentID, "error", err)
+		return nil, fmt.Errorf("deployment not found")
 	}
 
-	// Create deployment info
-	deploymentInfo := map[string]interface{}{
-		"id":           deployment.ID(),
-		"app_name":     deployment.AppName(),
-		"git_ref":      deployment.GitRef(),
-		"status":       string(deployment.Status()),
-		"created_at":   deployment.CreatedAt(),
-		"started_at":   deployment.StartedAt(),
-		"completed_at": deployment.CompletedAt(),
-		"error_msg":    deployment.ErrorMsg(),
-		"duration":     deployment.Duration().String(),
+	// Define typed struct for deployment response
+	type deploymentResourceResponse struct {
+		ID           string     `json:"id"`
+		AppName      string     `json:"app_name"`
+		GitRef       string     `json:"git_ref"`
+		Status       string     `json:"status"`
+		CreatedAt    time.Time  `json:"created_at"`
+		StartedAt    *time.Time `json:"started_at,omitempty"`
+		CompletedAt  *time.Time `json:"completed_at,omitempty"`
+		ErrorMsg     string     `json:"error_msg"`
+		Duration     string     `json:"duration"`
+		HasBuildLogs bool       `json:"has_build_logs"`
+		BuildLogsURI string     `json:"build_logs_uri,omitempty"`
 	}
 
-	// Add build logs info
+	// Create typed deployment response
+	response := deploymentResourceResponse{
+		ID:           deployment.ID(),
+		AppName:      deployment.AppName(),
+		GitRef:       deployment.GitRef(),
+		Status:       string(deployment.Status()),
+		CreatedAt:    deployment.CreatedAt(),
+		StartedAt:    deployment.StartedAt(),
+		CompletedAt:  deployment.CompletedAt(),
+		ErrorMsg:     deployment.ErrorMsg(),
+		Duration:     deployment.Duration().String(),
+		HasBuildLogs: deployment.BuildLogs() != "",
+	}
+
 	if deployment.BuildLogs() != "" {
-		deploymentInfo["has_build_logs"] = true
-		deploymentInfo["build_logs_uri"] = fmt.Sprintf("dokku://deployment/%s/logs", deployment.ID())
+		response.BuildLogsURI = fmt.Sprintf("dokku://deployment/%s/logs", deployment.ID())
 	}
 
 	// Serialize to JSON
-	jsonData, err := json.MarshalIndent(deploymentInfo, "", "  ")
+	jsonData, err := json.MarshalIndent(response, "", "  ")
 	if err != nil {
-		return nil, fmt.Errorf("failed to serialize deployment info: %w", err)
+		p.logger.Error("failed to serialize deployment response", "error", err)
+		return nil, fmt.Errorf("failed to serialize deployment info")
 	}
 
 	return []mcp.ResourceContents{

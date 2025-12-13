@@ -216,6 +216,13 @@ func LoadConfig() (*ServerConfig, error) {
 	// Security configuration defaults
 	viper.SetDefault("security.blacklist", config.Security.Blacklist)
 
+	// Logs configuration defaults
+	viper.SetDefault("logs.runtime.default_lines", config.Logs.Runtime.DefaultLines)
+	viper.SetDefault("logs.runtime.max_lines", config.Logs.Runtime.MaxLines)
+	viper.SetDefault("logs.runtime.stream_buffer_size", config.Logs.Runtime.StreamBufferSize)
+	viper.SetDefault("logs.build.max_size_mb", config.Logs.Build.MaxSizeMB)
+	viper.SetDefault("logs.build.retention_minutes", config.Logs.Build.RetentionMinutes)
+
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 			return nil, fmt.Errorf("failed to read configuration file: %w", err)
@@ -272,6 +279,20 @@ func validateConfig(config *ServerConfig) error {
 	}
 	if !validLogFormats[config.LogFormat] {
 		return fmt.Errorf("invalid log format: %s", config.LogFormat)
+	}
+
+	// Validate logs configuration
+	if config.Logs.Runtime.DefaultLines <= 0 || config.Logs.Runtime.DefaultLines > 100000 {
+		return fmt.Errorf("logs.runtime.default_lines must be between 1 and 100000")
+	}
+	if config.Logs.Runtime.MaxLines <= 0 || config.Logs.Runtime.MaxLines > 100000 {
+		return fmt.Errorf("logs.runtime.max_lines must be between 1 and 100000")
+	}
+	if config.Logs.Runtime.StreamBufferSize <= 0 || config.Logs.Runtime.StreamBufferSize > 10000 {
+		return fmt.Errorf("logs.runtime.stream_buffer_size must be between 1 and 10000")
+	}
+	if config.Logs.Build.MaxSizeMB <= 0 || config.Logs.Build.MaxSizeMB > 100 {
+		return fmt.Errorf("logs.build.max_size_mb must be between 1 and 100")
 	}
 
 	return nil

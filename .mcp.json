@@ -17,7 +17,7 @@
         "DOKKU_MCP_PORT": "8080",
         "DOKKU_MCP_SECURITY_BLACKLIST": "destroy,uninstall,remove",
         "DOKKU_MCP_SSH_HOST": "127.0.0.1",
-        "DOKKU_MCP_SSH_KEY_PATH": "/home/user/git/dokku-mcp/.ssh/dokku_mcp_test",
+        "DOKKU_MCP_SSH_KEY_PATH": ".ssh/dokku_mcp_test",
         "DOKKU_MCP_SSH_PORT": "3022",
         "DOKKU_MCP_SSH_USER": "dokku",
         "DOKKU_MCP_TIMEOUT": "30s",

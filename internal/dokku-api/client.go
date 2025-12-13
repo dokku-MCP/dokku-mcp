@@ -194,8 +194,13 @@ func prepareSSHExecCommand(ctx context.Context, sshArgs []string, env []string) 
 
 // buildCommand builds an SSH command for execution
 // This is used by StreamLogs to create a command that can be started and have its stdout piped
-func (c *client) buildCommand(ctx context.Context, args []string) (*exec.Cmd, error) {
+func (c *client) buildCommand(ctx context.Context, args []string) (*exec.Cmd, func(), error) {
 	commandName := "logs"
+
+	// Validate arguments for security
+	if err := c.ValidateCommand(commandName, args); err != nil {
+		return nil, nil, fmt.Errorf("invalid command arguments: %w", err)
+	}
 
 	// Build the Dokku command
 	dokkuCommand := buildDokkuCommand(commandName, args)
@@ -203,21 +208,30 @@ func (c *client) buildCommand(ctx context.Context, args []string) (*exec.Cmd, er
 	// Prepare SSH command
 	sshArgs, env, err := c.sshConnManager.PrepareSSHCommand(dokkuCommand)
 	if err != nil {
-		return nil, fmt.Errorf("failed to prepare SSH command: %w", err)
+		return nil, nil, fmt.Errorf("failed to prepare SSH command: %w", err)
 	}
 
 	// Create command context
 	cmdCtx := ctx
+	var cancelFunc func()
 	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
 		if c.config.CommandTimeout > 0 {
 			var cancel context.CancelFunc
 			cmdCtx, cancel = context.WithTimeout(ctx, c.config.CommandTimeout)
-			defer cancel()
+			cancelFunc = cancel
 		}
 	}
 
-	// Prepare and return the command
-	return prepareSSHExecCommand(cmdCtx, sshArgs, env)
+	// Prepare and return the command with cancel function
+	cmd, err := prepareSSHExecCommand(cmdCtx, sshArgs, env)
+	if err != nil {
+		if cancelFunc != nil {
+			cancelFunc()
+		}
+		return nil, nil, fmt.Errorf("failed to prepare SSH command: %w", err)
+	}
+
+	return cmd, cancelFunc, nil
 }
 
 func (c *client) logCommandExecutionStart(ctx context.Context, commandName string, args []string, dokkuCommand string, sshArgs []string, env []string) {
@@ -530,7 +544,11 @@ func parseLogLine(line string) LogLine {
 		}
 	}
 
-	timestamp, _ := time.Parse(time.RFC3339Nano, parts[0])
+	timestamp, err := time.Parse(time.RFC3339Nano, parts[0])
+	if err != nil {
+		// Fall back to current time if parsing fails
+		timestamp = time.Now()
+	}
 	container := strings.Trim(parts[1], ":")
 
 	return LogLine{
@@ -546,7 +564,8 @@ func (c *client) GetLogs(ctx context.Context, appName string, options LogOptions
 		return "", fmt.Errorf("application name cannot be empty")
 	}
 
-	args := []string{"logs", appName}
+	// Remove duplicate "logs" from args - command name is already "logs"
+	args := []string{appName}
 
 	if options.Lines > 0 {
 		args = append(args, "--num", fmt.Sprintf("%d", options.Lines))
@@ -578,12 +597,17 @@ func (c *client) StreamLogs(ctx context.Context, appName string) (<-chan LogLine
 		defer close(logChan)
 		defer close(errChan)
 
-		args := []string{"logs", appName, "-t"}
+		// Remove duplicate "logs" from args - command name is already "logs"
+		args := []string{appName, "-t"}
 
-		cmd, err := c.buildCommand(ctx, args)
+		cmd, cancelFunc, err := c.buildCommand(ctx, args)
 		if err != nil {
 			errChan <- fmt.Errorf("failed to build command: %w", err)
 			return
+		}
+		// Ensure cleanup of context if we created one
+		if cancelFunc != nil {
+			defer cancelFunc()
 		}
 
 		stdout, err := cmd.StdoutPipe()
@@ -604,7 +628,13 @@ func (c *client) StreamLogs(ctx context.Context, appName string) (<-chan LogLine
 			select {
 			case logChan <- parseLogLine(line):
 			case <-ctx.Done():
-				cmd.Process.Kill()
+				if err := cmd.Process.Kill(); err != nil {
+					c.logger.Error("failed to kill process", "error", err)
+				}
+				// Wait for process to clean up resources
+				if waitErr := cmd.Wait(); waitErr != nil {
+					c.logger.Error("error waiting for process after kill", "error", waitErr)
+				}
 				return
 			}
 		}
@@ -613,7 +643,10 @@ func (c *client) StreamLogs(ctx context.Context, appName string) (<-chan LogLine
 			errChan <- fmt.Errorf("error reading logs: %w", err)
 		}
 
-		cmd.Wait()
+		// Wait for command to complete and check for errors
+		if waitErr := cmd.Wait(); waitErr != nil {
+			errChan <- fmt.Errorf("command failed: %w", waitErr)
+		}
 	}()
 
 	return logChan, errChan, nil

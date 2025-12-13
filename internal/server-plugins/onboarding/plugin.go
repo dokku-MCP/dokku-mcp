@@ -148,7 +148,7 @@ func (p *OnboardingServerPlugin) handleCapabilitiesIndexResource(ctx context.Con
 }
 
 func (p *OnboardingServerPlugin) handleIntentMapResource(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
-	mapping := onbDomain.IntentMap{
+	mapping := map[string]onbDomain.IntentEntry{
 		"deploy":    {Synonyms: []string{"release", "ship", "publish", "roll out", "push code"}, Tool: "deploy_app", Params: []string{"app_name", "repo_url", "git_ref"}},
 		"scale":     {Synonyms: []string{"autoscale", "increase instances", "add nodes", "replicas"}, Tool: "scale_app", Params: []string{"app_name", "process_type", "instances"}},
 		"status":    {Synonyms: []string{"health", "state", "check app", "diagnose"}, Tool: "get_app_status", Params: []string{"app_name"}},

@@ -500,20 +500,36 @@ func (p *AppsServerPlugin) handleRuntimeLogsResource(ctx context.Context, req mc
 		lines = p.logsConfig.Runtime.MaxLines
 	}
 
+	// Validate that the application exists
+	_, validationErr := p.applicationUseCase.GetApplicationByName(ctx, appName)
+	if validationErr != nil {
+		p.logger.Error("application not found for logs request", "app_name", appName, "error", validationErr)
+		return nil, fmt.Errorf("application not found")
+	}
+
+	// Define typed struct for logs response
+	type RuntimeLogsResponse struct {
+		AppName string `json:"app_name"`
+		Lines   int    `json:"lines"`
+		Logs    string `json:"logs"`
+		Note    string `json:"note"`
+	}
+
 	// Get logs from Dokku
 	// Note: This is a simplified implementation - in a real scenario,
 	// we would need to access the Dokku client through the use case
 	// For now, we'll return a placeholder response
-	logsResponse := map[string]interface{}{
-		"app_name": appName,
-		"lines":    lines,
-		"logs":     "Runtime logs would be retrieved from Dokku here",
-		"note":     "This is a placeholder - actual Dokku client integration needed",
+	response := RuntimeLogsResponse{
+		AppName: appName,
+		Lines:   lines,
+		Logs:    "Runtime logs would be retrieved from Dokku here",
+		Note:    "This is a placeholder - actual Dokku client integration needed",
 	}
 
-	jsonData, err := json.MarshalIndent(logsResponse, "", "  ")
+	jsonData, err := json.MarshalIndent(response, "", "  ")
 	if err != nil {
-		return nil, fmt.Errorf("failed to serialize logs response: %w", err)
+		p.logger.Error("failed to serialize logs response", "app_name", appName, "error", err)
+		return nil, fmt.Errorf("failed to serialize logs response")
 	}
 
 	return []mcp.ResourceContents{
@@ -563,19 +579,35 @@ func (p *AppsServerPlugin) handleGetRuntimeLogs(ctx context.Context, req mcp.Cal
 		lines = p.logsConfig.Runtime.MaxLines
 	}
 
+	// Validate that the application exists
+	_, validationErr := p.applicationUseCase.GetApplicationByName(ctx, appName)
+	if validationErr != nil {
+		p.logger.Error("application not found for logs tool", "app_name", appName, "error", validationErr)
+		return mcp.NewToolResultError("Application not found"), nil
+	}
+
+	// Define typed struct for logs response
+	type RuntimeLogsResponse struct {
+		AppName string `json:"app_name"`
+		Lines   int    `json:"lines"`
+		Logs    string `json:"logs"`
+		Note    string `json:"note"`
+	}
+
 	// Get logs from Dokku
 	// Note: This is a simplified implementation - in a real scenario,
 	// we would need to access the Dokku client through the use case
 	// For now, we'll return a placeholder response
-	logsResponse := map[string]interface{}{
-		"app_name": appName,
-		"lines":    lines,
-		"logs":     "Runtime logs would be retrieved from Dokku here",
-		"note":     "This is a placeholder - actual Dokku client integration needed",
+	response := RuntimeLogsResponse{
+		AppName: appName,
+		Lines:   lines,
+		Logs:    "Runtime logs would be retrieved from Dokku here",
+		Note:    "This is a placeholder - actual Dokku client integration needed",
 	}
 
-	jsonData, err := json.MarshalIndent(logsResponse, "", "  ")
+	jsonData, err := json.MarshalIndent(response, "", "  ")
 	if err != nil {
+		p.logger.Error("failed to serialize logs response for tool", "app_name", appName, "error", err)
 		return mcp.NewToolResultError("Failed to serialize logs response"), nil
 	}
 

@@ -5,10 +5,10 @@ import (
 	"time"
 
 	dokkuApi "github.com/dokku-mcp/dokku-mcp/internal/dokku-api"
-	server_plugin_domain "github.com/dokku-mcp/dokku-mcp/internal/server-plugin/domain"
+	serverPluginDomain "github.com/dokku-mcp/dokku-mcp/internal/server-plugin/domain"
 	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/deployment/adapter"
-	deployment_domain "github.com/dokku-mcp/dokku-mcp/internal/server-plugins/deployment/domain"
-	deployment_infrastructure "github.com/dokku-mcp/dokku-mcp/internal/server-plugins/deployment/infrastructure"
+	deploymentDomain "github.com/dokku-mcp/dokku-mcp/internal/server-plugins/deployment/domain"
+	deploymentInfrastructure "github.com/dokku-mcp/dokku-mcp/internal/server-plugins/deployment/infrastructure"
 	"github.com/dokku-mcp/dokku-mcp/internal/shared"
 	"go.uber.org/fx"
 )
@@ -17,28 +17,28 @@ var Module = fx.Module("deployment",
 	fx.Provide(
 		// Deployment repository
 		fx.Annotate(
-			func(logger *slog.Logger) deployment_domain.DeploymentRepository {
-				return deployment_infrastructure.NewDeploymentRepository(logger)
+			func(logger *slog.Logger) deploymentDomain.DeploymentRepository {
+				return deploymentInfrastructure.NewDeploymentRepository(logger)
 			},
 		),
 		// Deployment tracker
 		fx.Annotate(
-			deployment_domain.NewDeploymentTracker,
+			deploymentDomain.NewDeploymentTracker,
 		),
 		// Deployment status checker
 		fx.Annotate(
-			func(client dokkuApi.DokkuClient) deployment_domain.DeploymentStatusChecker {
-				return deployment_infrastructure.NewDeploymentStatusChecker(client)
+			func(client dokkuApi.DokkuClient) deploymentDomain.DeploymentStatusChecker {
+				return deploymentInfrastructure.NewDeploymentStatusChecker(client)
 			},
 		),
 		// Deployment poller
 		fx.Annotate(
 			func(
-				tracker *deployment_domain.DeploymentTracker,
-				statusChecker deployment_domain.DeploymentStatusChecker,
+				tracker *deploymentDomain.DeploymentTracker,
+				statusChecker deploymentDomain.DeploymentStatusChecker,
 				logger *slog.Logger,
-			) *deployment_domain.DeploymentPoller {
-				return deployment_domain.NewDeploymentPoller(
+			) *deploymentDomain.DeploymentPoller {
+				return deploymentDomain.NewDeploymentPoller(
 					tracker,
 					statusChecker,
 					logger,
@@ -49,12 +49,12 @@ var Module = fx.Module("deployment",
 		),
 		// Deployment infrastructure
 		fx.Annotate(
-			deployment_infrastructure.NewDeploymentInfrastructure,
+			deploymentInfrastructure.NewDeploymentInfrastructure,
 		),
 		// Deployment service
 		fx.Annotate(
-			deployment_domain.NewApplicationDeploymentService,
-			fx.As(new(deployment_domain.DeploymentService)),
+			deploymentDomain.NewApplicationDeploymentService,
+			fx.As(new(deploymentDomain.DeploymentService)),
 		),
 		// Deployment adapter
 		fx.Annotate(
@@ -64,7 +64,7 @@ var Module = fx.Module("deployment",
 		// Deployment server plugin
 		fx.Annotate(
 			NewDeploymentServerPlugin,
-			fx.As(new(server_plugin_domain.ServerPlugin)),
+			fx.As(new(serverPluginDomain.ServerPlugin)),
 			fx.ResultTags(`group:"server_plugins"`),
 		),
 	),
