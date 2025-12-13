@@ -77,8 +77,8 @@ type RuntimeLogsConfig struct {
 }
 
 type BuildLogsConfig struct {
-	MaxSizeMB        int `mapstructure:"max_size_mb"`
-	RetentionMinutes int `mapstructure:"retention_minutes"`
+	MaxSizeMB int           `mapstructure:"max_size_mb"`
+	Retention time.Duration `mapstructure:"retention"`
 }
 
 type ServerConfig struct {
@@ -163,8 +163,8 @@ func DefaultConfig() *ServerConfig {
 				StreamBufferSize: 1000,
 			},
 			Build: BuildLogsConfig{
-				MaxSizeMB:        10,
-				RetentionMinutes: 5,
+				MaxSizeMB: 10,
+				Retention: 5 * time.Minute,
 			},
 		},
 	}
@@ -221,7 +221,7 @@ func LoadConfig() (*ServerConfig, error) {
 	viper.SetDefault("logs.runtime.max_lines", config.Logs.Runtime.MaxLines)
 	viper.SetDefault("logs.runtime.stream_buffer_size", config.Logs.Runtime.StreamBufferSize)
 	viper.SetDefault("logs.build.max_size_mb", config.Logs.Build.MaxSizeMB)
-	viper.SetDefault("logs.build.retention_minutes", config.Logs.Build.RetentionMinutes)
+	viper.SetDefault("logs.build.retention", config.Logs.Build.Retention)
 
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
@@ -293,6 +293,9 @@ func validateConfig(config *ServerConfig) error {
 	}
 	if config.Logs.Build.MaxSizeMB <= 0 || config.Logs.Build.MaxSizeMB > 100 {
 		return fmt.Errorf("logs.build.max_size_mb must be between 1 and 100")
+	}
+	if config.Logs.Build.Retention <= 0 {
+		return fmt.Errorf("logs.build.retention must be positive")
 	}
 
 	return nil

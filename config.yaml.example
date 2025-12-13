@@ -79,7 +79,7 @@ logs:
   
   build:
     max_size_mb: 10         # Maximum build log size in memory
-    retention_minutes: 5    # How long to keep completed deployment logs
+    retention: "5m"         # How long to keep completed deployment logs
 
 # Example configurations for different scenarios:
 
