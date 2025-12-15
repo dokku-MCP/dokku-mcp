@@ -1,7 +1,8 @@
 # Build stage
 FROM golang:1.25-alpine AS builder
 
-RUN apk add --no-cache git make ca-certificates tzdata
+RUN apk update && apk upgrade && \
+    apk add --no-cache git make ca-certificates tzdata
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
@@ -11,7 +12,8 @@ RUN make build
 
 # Runtime stage
 FROM alpine:latest
-RUN apk --no-cache add ca-certificates curl openssh-client
+RUN apk update && apk upgrade && \
+    apk --no-cache add ca-certificates curl openssh-client
 
 # Create non-root user
 RUN addgroup -g 1001 -S dokku && \
