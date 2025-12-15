@@ -65,6 +65,22 @@ type ObservabilityConfig struct {
 	TracingEnabled bool `mapstructure:"tracing_enabled"`
 }
 
+type LogsConfig struct {
+	Runtime RuntimeLogsConfig `mapstructure:"runtime"`
+	Build   BuildLogsConfig   `mapstructure:"build"`
+}
+
+type RuntimeLogsConfig struct {
+	DefaultLines     int `mapstructure:"default_lines"`
+	MaxLines         int `mapstructure:"max_lines"`
+	StreamBufferSize int `mapstructure:"stream_buffer_size"`
+}
+
+type BuildLogsConfig struct {
+	MaxSizeMB int           `mapstructure:"max_size_mb"`
+	Retention time.Duration `mapstructure:"retention"`
+}
+
 type ServerConfig struct {
 	Transport          TransportConfig       `mapstructure:"transport"`
 	Host               string                `mapstructure:"host"`
@@ -82,6 +98,7 @@ type ServerConfig struct {
 	PluginDiscovery    PluginDiscoveryConfig `mapstructure:"plugin_discovery"`
 	Security           SecurityConfig        `mapstructure:"security"`
 	MultiTenant        MultiTenantConfig     `mapstructure:"multi_tenant"`
+	Logs               LogsConfig            `mapstructure:"logs"`
 }
 
 func DefaultConfig() *ServerConfig {
@@ -139,6 +156,17 @@ func DefaultConfig() *ServerConfig {
 				TracingEnabled: false,
 			},
 		},
+		Logs: LogsConfig{
+			Runtime: RuntimeLogsConfig{
+				DefaultLines:     100,
+				MaxLines:         1000,
+				StreamBufferSize: 1000,
+			},
+			Build: BuildLogsConfig{
+				MaxSizeMB: 10,
+				Retention: 5 * time.Minute,
+			},
+		},
 	}
 }
 
@@ -187,6 +215,13 @@ func LoadConfig() (*ServerConfig, error) {
 
 	// Security configuration defaults
 	viper.SetDefault("security.blacklist", config.Security.Blacklist)
+
+	// Logs configuration defaults
+	viper.SetDefault("logs.runtime.default_lines", config.Logs.Runtime.DefaultLines)
+	viper.SetDefault("logs.runtime.max_lines", config.Logs.Runtime.MaxLines)
+	viper.SetDefault("logs.runtime.stream_buffer_size", config.Logs.Runtime.StreamBufferSize)
+	viper.SetDefault("logs.build.max_size_mb", config.Logs.Build.MaxSizeMB)
+	viper.SetDefault("logs.build.retention", config.Logs.Build.Retention)
 
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
@@ -244,6 +279,23 @@ func validateConfig(config *ServerConfig) error {
 	}
 	if !validLogFormats[config.LogFormat] {
 		return fmt.Errorf("invalid log format: %s", config.LogFormat)
+	}
+
+	// Validate logs configuration
+	if config.Logs.Runtime.DefaultLines <= 0 || config.Logs.Runtime.DefaultLines > 100000 {
+		return fmt.Errorf("logs.runtime.default_lines must be between 1 and 100000")
+	}
+	if config.Logs.Runtime.MaxLines <= 0 || config.Logs.Runtime.MaxLines > 100000 {
+		return fmt.Errorf("logs.runtime.max_lines must be between 1 and 100000")
+	}
+	if config.Logs.Runtime.StreamBufferSize <= 0 || config.Logs.Runtime.StreamBufferSize > 10000 {
+		return fmt.Errorf("logs.runtime.stream_buffer_size must be between 1 and 10000")
+	}
+	if config.Logs.Build.MaxSizeMB <= 0 || config.Logs.Build.MaxSizeMB > 100 {
+		return fmt.Errorf("logs.build.max_size_mb must be between 1 and 100")
+	}
+	if config.Logs.Build.Retention <= 0 {
+		return fmt.Errorf("logs.build.retention must be positive")
 	}
 
 	return nil

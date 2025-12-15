@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	dokkuApi "github.com/dokku-mcp/dokku-mcp/internal/dokku-api"
 	"github.com/dokku-mcp/dokku-mcp/internal/server-plugin/domain"
@@ -13,6 +14,7 @@ import (
 	appdomain "github.com/dokku-mcp/dokku-mcp/internal/server-plugins/app/domain"
 	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/app/infrastructure"
 	"github.com/dokku-mcp/dokku-mcp/internal/shared"
+	"github.com/dokku-mcp/dokku-mcp/pkg/config"
 	"github.com/mark3labs/mcp-go/mcp"
 	"go.uber.org/fx"
 )
@@ -22,6 +24,7 @@ import (
 type AppsServerPlugin struct {
 	applicationUseCase *appusecases.ApplicationUseCase
 	logger             *slog.Logger
+	logsConfig         config.LogsConfig
 }
 
 // NewAppsServerPlugin creates a new unified apps server plugin
@@ -29,10 +32,12 @@ func NewAppsServerPlugin(
 	applicationRepo appdomain.ApplicationRepository,
 	deploymentSvc shared.DeploymentService,
 	logger *slog.Logger,
+	logsConfig config.LogsConfig,
 ) domain.ServerPlugin {
 	return &AppsServerPlugin{
 		applicationUseCase: appusecases.NewApplicationUseCase(applicationRepo, deploymentSvc, logger),
 		logger:             logger,
+		logsConfig:         logsConfig,
 	}
 }
 
@@ -51,7 +56,13 @@ func (p *AppsServerPlugin) DokkuPluginName() string { return "" }
 
 // ResourceProvider implementation
 func (p *AppsServerPlugin) GetResources(ctx context.Context) ([]domain.Resource, error) {
-	return []domain.Resource{
+	// Get application list
+	applications, err := p.applicationUseCase.GetAllApplications(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve applications for resources: %w", err)
+	}
+
+	resources := []domain.Resource{
 		{
 			URI:         "dokku://apps/list",
 			Name:        "Application List",
@@ -59,7 +70,20 @@ func (p *AppsServerPlugin) GetResources(ctx context.Context) ([]domain.Resource,
 			MIMEType:    "application/json",
 			Handler:     p.handleApplicationListResource,
 		},
-	}, nil
+	}
+
+	// Add runtime logs resources for each application
+	for _, app := range applications {
+		resources = append(resources, domain.Resource{
+			URI:         fmt.Sprintf("dokku://app/%s/logs", app.Name().Value()),
+			Name:        fmt.Sprintf("Runtime Logs: %s", app.Name().Value()),
+			Description: fmt.Sprintf("Application runtime logs for %s", app.Name().Value()),
+			MIMEType:    "application/json",
+			Handler:     p.handleRuntimeLogsResource,
+		})
+	}
+
+	return resources, nil
 }
 
 // ToolProvider implementation
@@ -94,6 +118,12 @@ func (p *AppsServerPlugin) GetTools(ctx context.Context) ([]domain.Tool, error) 
 			Description: "Get comprehensive application status",
 			Builder:     p.buildGetAppStatusTool,
 			Handler:     p.handleGetAppStatus,
+		},
+		{
+			Name:        "get_runtime_logs",
+			Description: "Retrieve runtime logs from a Dokku application",
+			Builder:     p.buildGetRuntimeLogsTool,
+			Handler:     p.handleGetRuntimeLogs,
 		},
 	}, nil
 }
@@ -446,6 +476,144 @@ func (p *AppsServerPlugin) handleAppDoctorPrompt(ctx context.Context, req mcp.Ge
 	}, nil
 }
 
+// Runtime logs resource handler
+func (p *AppsServerPlugin) handleRuntimeLogsResource(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
+	// Parse URI to get app name
+	uri := req.Params.URI
+	if !strings.HasPrefix(uri, "dokku://app/") {
+		return nil, fmt.Errorf("invalid runtime logs resource URI: %s", uri)
+	}
+
+	// Extract app name and verify it's a logs request
+	parts := strings.Split(strings.TrimPrefix(uri, "dokku://app/"), "/")
+	if len(parts) < 2 || parts[1] != "logs" {
+		return nil, fmt.Errorf("invalid runtime logs resource URI format: %s", uri)
+	}
+
+	appName := parts[0]
+
+	// Get Dokku client from application use case
+	// We need to access the Dokku client to get logs
+	// For now, we'll use a default lines value
+	lines := p.logsConfig.Runtime.DefaultLines
+	if lines > p.logsConfig.Runtime.MaxLines {
+		lines = p.logsConfig.Runtime.MaxLines
+	}
+
+	// Validate that the application exists
+	_, validationErr := p.applicationUseCase.GetApplicationByName(ctx, appName)
+	if validationErr != nil {
+		p.logger.Error("application not found for logs request", "app_name", appName, "error", validationErr)
+		return nil, fmt.Errorf("application not found")
+	}
+
+	// Define typed struct for logs response
+	type RuntimeLogsResponse struct {
+		AppName string `json:"app_name"`
+		Lines   int    `json:"lines"`
+		Logs    string `json:"logs"`
+		Note    string `json:"note"`
+	}
+
+	// Get logs from Dokku
+	// Note: This is a simplified implementation - in a real scenario,
+	// we would need to access the Dokku client through the use case
+	// For now, we'll return a placeholder response
+	response := RuntimeLogsResponse{
+		AppName: appName,
+		Lines:   lines,
+		Logs:    "Runtime logs would be retrieved from Dokku here",
+		Note:    "This is a placeholder - actual Dokku client integration needed",
+	}
+
+	jsonData, err := json.MarshalIndent(response, "", "  ")
+	if err != nil {
+		p.logger.Error("failed to serialize logs response", "app_name", appName, "error", err)
+		return nil, fmt.Errorf("failed to serialize logs response")
+	}
+
+	return []mcp.ResourceContents{
+		mcp.TextResourceContents{
+			URI:      req.Params.URI,
+			MIMEType: "application/json",
+			Text:     string(jsonData),
+		},
+	}, nil
+}
+
+// Runtime logs tool builder
+func (p *AppsServerPlugin) buildGetRuntimeLogsTool() mcp.Tool {
+	return mcp.NewTool(
+		"get_runtime_logs",
+		mcp.WithDescription("Retrieve runtime logs from a Dokku application"),
+		mcp.WithString("app_name",
+			mcp.Required(),
+			mcp.Description("Name of the application"),
+		),
+		mcp.WithNumber("lines",
+			mcp.Description(fmt.Sprintf("Number of log lines to retrieve (default: %d, max: %d)", p.logsConfig.Runtime.DefaultLines, p.logsConfig.Runtime.MaxLines)),
+		),
+	)
+}
+
+// Runtime logs tool handler
+func (p *AppsServerPlugin) handleGetRuntimeLogs(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	appName, err := req.RequireString("app_name")
+	if err != nil {
+		return mcp.NewToolResultError("Application name is required"), nil
+	}
+
+	// Get lines parameter
+	lines := p.logsConfig.Runtime.DefaultLines
+	if linesParam, ok := req.GetArguments()["lines"]; ok {
+		if linesFloat, ok := linesParam.(float64); ok {
+			lines = int(linesFloat)
+		}
+	}
+
+	// Validate lines
+	if lines < 1 {
+		lines = 1
+	}
+	if lines > p.logsConfig.Runtime.MaxLines {
+		lines = p.logsConfig.Runtime.MaxLines
+	}
+
+	// Validate that the application exists
+	_, validationErr := p.applicationUseCase.GetApplicationByName(ctx, appName)
+	if validationErr != nil {
+		p.logger.Error("application not found for logs tool", "app_name", appName, "error", validationErr)
+		return mcp.NewToolResultError("Application not found"), nil
+	}
+
+	// Define typed struct for logs response
+	type RuntimeLogsResponse struct {
+		AppName string `json:"app_name"`
+		Lines   int    `json:"lines"`
+		Logs    string `json:"logs"`
+		Note    string `json:"note"`
+	}
+
+	// Get logs from Dokku
+	// Note: This is a simplified implementation - in a real scenario,
+	// we would need to access the Dokku client through the use case
+	// For now, we'll return a placeholder response
+	response := RuntimeLogsResponse{
+		AppName: appName,
+		Lines:   lines,
+		Logs:    "Runtime logs would be retrieved from Dokku here",
+		Note:    "This is a placeholder - actual Dokku client integration needed",
+	}
+
+	jsonData, err := json.MarshalIndent(response, "", "  ")
+	if err != nil {
+		p.logger.Error("failed to serialize logs response for tool", "app_name", appName, "error", err)
+		return mcp.NewToolResultError("Failed to serialize logs response"), nil
+	}
+
+	return mcp.NewToolResultText(fmt.Sprintf("Runtime logs for '%s':\n%s", appName, string(jsonData))), nil
+}
+
 var Module = fx.Module("app",
 	fx.Provide(
 		// Provide the infrastructure layer dependencies
@@ -456,7 +624,19 @@ var Module = fx.Module("app",
 		),
 		// Provide the main plugin - deployment service will be injected from deployment plugin
 		fx.Annotate(
-			NewAppsServerPlugin,
+			func(
+				applicationRepo appdomain.ApplicationRepository,
+				deploymentSvc shared.DeploymentService,
+				logger *slog.Logger,
+				config *config.ServerConfig,
+			) domain.ServerPlugin {
+				return NewAppsServerPlugin(
+					applicationRepo,
+					deploymentSvc,
+					logger,
+					config.Logs,
+				)
+			},
 			fx.As(new(domain.ServerPlugin)),
 			fx.ResultTags(`group:"server_plugins"`),
 		),

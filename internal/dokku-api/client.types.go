@@ -37,6 +37,23 @@ type CommandSpec struct {
 	FilterEmpty  bool   // skip empty lines
 }
 
+// LogOptions configures log retrieval
+// Used for both build and runtime logs
+// For runtime logs, Lines > 0 means get specific number of lines
+// For runtime logs, Tail = true means follow log output (streaming)
+type LogOptions struct {
+	Lines int  // Number of lines to retrieve (0 = all)
+	Tail  bool // Follow log output (use StreamLogs instead)
+}
+
+// LogLine represents a single log line with metadata
+// Used for streaming logs
+type LogLine struct {
+	Timestamp time.Time `json:"timestamp"`
+	Container string    `json:"container"`
+	Message   string    `json:"message"`
+}
+
 type ClientConfig struct {
 	DokkuHost      string        `yaml:"dokku_host"`
 	DokkuPort      int           `yaml:"dokku_port"`
