@@ -207,18 +207,19 @@ jobs:
         run: |
           echo "🔑 Setting up SSH access to local Dokku..."
           mkdir -p ~/.ssh
-          ssh-keygen -t rsa -b 4096 -f ~/.ssh/dokku_ci_key -N "" -C "dokku-mcp-ci"
+          SSH_KEY_PATH="$HOME/.ssh/dokku_ci_key"
+          ssh-keygen -t rsa -b 4096 -f "$SSH_KEY_PATH" -N "" -C "dokku-mcp-ci"
           
-          # Add public key to Dokku
-          sudo dokku ssh-keys:add ci-test < ~/.ssh/dokku_ci_key.pub
+          # Add public key to Dokku (using cat to pipe, more reliable than <)
+          cat "$SSH_KEY_PATH.pub" | sudo dokku ssh-keys:add ci-test
           
           # Configure SSH client
-          cat >> ~/.ssh/config << 'SSH_CONFIG'
+          cat >> ~/.ssh/config << SSH_CONFIG
           Host localhost
             HostName 127.0.0.1
             Port 22
             User dokku
-            IdentityFile ~/.ssh/dokku_ci_key
+            IdentityFile $SSH_KEY_PATH
             IdentitiesOnly yes
             StrictHostKeyChecking no
             UserKnownHostsFile /dev/null
@@ -234,10 +235,11 @@ jobs:
         run: |
           chmod +x build/dokku-mcp-stdio-tool
           BINARY_PATH="$(pwd)/build/dokku-mcp-stdio-tool"
+          SSH_KEY_PATH="$HOME/.ssh/dokku_ci_key"
           
           # Create dokku-mcp config for stdio mode with local Dokku
           mkdir -p "${HOME}/.dokku-mcp"
-          cat > "${HOME}/.dokku-mcp/config.yaml" << 'DOKKU_CONFIG'
+          cat > "${HOME}/.dokku-mcp/config.yaml" << DOKKU_CONFIG
           transport:
             type: "stdio"
           log_level: "debug"
@@ -245,7 +247,7 @@ jobs:
             host: "127.0.0.1"
             port: 22
             user: "dokku"
-            key_path: "~/.ssh/dokku_ci_key"
+            key_path: "${SSH_KEY_PATH}"
           cache_enabled: false
           DOKKU_CONFIG
           
