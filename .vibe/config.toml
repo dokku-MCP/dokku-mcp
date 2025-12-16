@@ -1,0 +1,35 @@
+# Mistral Vibe Configuration for dokku-mcp
+# This TOML file configures Vibe with the dokku-mcp stdio MCP server
+
+# Custom instructions for analyzing this codebase
+instructions = """
+You are analyzing a Go MCP server for Dokku (dokku-mcp).
+Focus on:
+- MCP protocol compliance
+- Go best practices and error handling
+- Security considerations for SSH and command execution
+- Test coverage and quality
+"""
+
+# Tool permissions
+[tools.bash]
+permission = "always"
+default_timeout = 60
+max_output_bytes = 64_000
+
+[tools.write_file]
+permission = "ask"
+backup = true
+
+[tools.read_file]
+permission = "always"
+
+# Enable all dokku_mcp tools that will be available after server registration
+enabled_tools = ["bash", "read_file", "write_file", "grep", "glob", "dokku_mcp_*"]
+
+# Session logging for debugging
+[session_logging]
+enabled = true
+log_dir = "~/.vibe/logs"
+save_all_messages = true
+

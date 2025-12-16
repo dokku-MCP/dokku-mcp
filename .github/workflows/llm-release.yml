@@ -1,0 +1,500 @@
+name: Release with llm e2e report
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., v1.0.0)'
+        required: true
+        type: string
+      run_mistral:
+        description: 'Run Mistral Vibe analysis'
+        required: false
+        type: boolean
+        default: true
+
+env:
+  GO_VERSION: '1.25'
+  MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+
+jobs:
+  prepare-release:
+    name: Prepare Release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Get version
+        id: get_version
+        run: |
+          EVENT_NAME="${{ github.event_name }}"
+          INPUT_VERSION="${{ github.event.inputs.version }}"
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" && -n "$INPUT_VERSION" ]]; then
+            VERSION_VALUE="$INPUT_VERSION"
+          else
+            if [[ ! -f VERSION ]]; then
+              echo "VERSION file not found" >&2
+              exit 1
+            fi
+
+            VERSION_VALUE=$(tr -d ' \n' < VERSION)
+            if [[ -z "$VERSION_VALUE" ]]; then
+              echo "VERSION file is empty" >&2
+              exit 1
+            fi
+          fi
+
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAG_VERSION=${GITHUB_REF#refs/tags/}
+            if [[ ! -f VERSION ]]; then
+              echo "VERSION file not found for tag validation" >&2
+              exit 1
+            fi
+            FILE_VERSION=$(tr -d ' \n' < VERSION)
+            if [[ "$TAG_VERSION" != "$FILE_VERSION" ]]; then
+              echo "Tag version ($TAG_VERSION) does not match VERSION file ($FILE_VERSION)" >&2
+              exit 1
+            fi
+            VERSION_VALUE="$TAG_VERSION"
+          fi
+
+          echo "version=$VERSION_VALUE" >> $GITHUB_OUTPUT
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: prepare-release
+    permissions:
+      contents: write
+    strategy:
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+            archive_suffix: tar.gz
+            artifact_name: dokku-mcp-linux-amd64
+          - os: linux
+            arch: arm64
+            archive_suffix: tar.gz
+            artifact_name: dokku-mcp-linux-arm64
+          - os: darwin
+            arch: amd64
+            archive_suffix: tar.gz
+            artifact_name: dokku-mcp-darwin-amd64
+          - os: darwin
+            arch: arm64
+            archive_suffix: tar.gz
+            artifact_name: dokku-mcp-darwin-arm64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: 0
+        run: |
+          BINARY_NAME="dokku-mcp-${{ matrix.os }}-${{ matrix.arch }}"
+
+          mkdir -p build
+          go build \
+            -ldflags "-X main.Version=${{ needs.prepare-release.outputs.version }} -X main.BuildTime=$(date -u '+%Y-%m-%d_%H:%M:%S') -s -w" \
+            -o "build/${BINARY_NAME}" \
+            cmd/server/main.go
+
+      - name: Create archive
+        id: create_archive
+        run: |
+          cd build
+          BINARY_NAME="dokku-mcp-${{ matrix.os }}-${{ matrix.arch }}"
+
+          # Create archive
+          tar -czf "${BINARY_NAME}.tar.gz" "$BINARY_NAME"
+          ARCHIVE="${BINARY_NAME}.tar.gz"
+
+          echo "archive=$ARCHIVE" >> $GITHUB_OUTPUT
+          echo "binary_name=$BINARY_NAME" >> $GITHUB_OUTPUT
+
+      - name: Prepare built binary for stdio MCP tool testing
+        if: matrix.os == 'linux' && matrix.arch == 'amd64'
+        run: |
+          echo "🧪 Preparing built dokku-mcp binary for stdio MCP tool testing"
+          cd build
+          chmod +x "${{ steps.create_archive.outputs.binary_name }}"
+          
+          # Create a copy for stdio testing
+          cp "${{ steps.create_archive.outputs.binary_name }}" "dokku-mcp-stdio-tool"
+          
+          # Set up the binary path for Mistral Vibe to use
+          echo "DOKKU_MCP_BINARY_PATH=$(pwd)/dokku-mcp-stdio-tool" >> $GITHUB_ENV
+          echo "✅ Binary prepared for stdio MCP tool testing"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: build/${{ steps.create_archive.outputs.archive }}
+          retention-days: 5
+
+      - name: Upload stdio tool for Mistral Vibe
+        if: matrix.os == 'linux' && matrix.arch == 'amd64'
+        uses: actions/upload-artifact@v5
+        with:
+          name: dokku-mcp-stdio-tool
+          path: build/dokku-mcp-stdio-tool
+          retention-days: 1
+
+  mistral-agent-analysis:
+    name: Mistral Vibe Agent Analysis
+    runs-on: ubuntu-22.04
+    needs: [prepare-release, build]
+    outputs:
+      validation_passed: ${{ steps.analysis.outputs.passed }}
+      quality_score: ${{ steps.analysis.outputs.score }}
+      feature_coverage: ${{ steps.analysis.outputs.feature_coverage }}
+      mistral_changelog: ${{ steps.mistral-changelog.outputs.enhanced-changelog }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Download stdio tool artifact
+        uses: actions/download-artifact@v6
+        with:
+          name: dokku-mcp-stdio-tool
+          path: build/
+
+      - name: Install Dokku
+        run: |
+          echo "🐳 Installing Dokku on CI runner..."
+          wget -qO- https://raw.githubusercontent.com/dokku/dokku/v0.34.0/bootstrap.sh | sudo bash
+          sudo dokku plugin:install-dependencies --core
+          sudo dokku events:on || true
+          sudo usermod -aG dokku $USER
+          echo "✅ Dokku installed: $(dokku version)"
+
+      - name: Set up SSH access to Dokku
+        run: |
+          echo "🔑 Setting up SSH access to local Dokku..."
+          mkdir -p ~/.ssh
+          ssh-keygen -t rsa -b 4096 -f ~/.ssh/dokku_ci_key -N "" -C "dokku-mcp-ci"
+          
+          # Add public key to Dokku
+          sudo dokku ssh-keys:add ci-test < ~/.ssh/dokku_ci_key.pub
+          
+          # Configure SSH client
+          cat >> ~/.ssh/config << 'SSH_CONFIG'
+          Host localhost
+            HostName 127.0.0.1
+            Port 22
+            User dokku
+            IdentityFile ~/.ssh/dokku_ci_key
+            IdentitiesOnly yes
+            StrictHostKeyChecking no
+            UserKnownHostsFile /dev/null
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+          
+          # Test SSH connection
+          echo "Testing SSH connection to Dokku..."
+          ssh -o ConnectTimeout=10 dokku@localhost version || echo "SSH test completed"
+          echo "✅ SSH access configured"
+
+      - name: Set up stdio MCP tool with Vibe config
+        run: |
+          chmod +x build/dokku-mcp-stdio-tool
+          BINARY_PATH="$(pwd)/build/dokku-mcp-stdio-tool"
+          
+          # Create dokku-mcp config for stdio mode with local Dokku
+          mkdir -p "${HOME}/.dokku-mcp"
+          cat > "${HOME}/.dokku-mcp/config.yaml" << 'DOKKU_CONFIG'
+          transport:
+            type: "stdio"
+          log_level: "debug"
+          ssh:
+            host: "127.0.0.1"
+            port: 22
+            user: "dokku"
+            key_path: "~/.ssh/dokku_ci_key"
+          cache_enabled: false
+          DOKKU_CONFIG
+          
+          # Set up Vibe home directory with MCP server config
+          VIBE_HOME="${HOME}/.vibe"
+          mkdir -p "$VIBE_HOME"
+          
+          # Copy base config and append MCP server configuration
+          cp .vibe/config.toml "$VIBE_HOME/config.toml"
+          
+          # Append the stdio MCP server configuration with the actual binary path
+          printf '\n[[mcp_servers]]\nname = "dokku_mcp"\ntransport = "stdio"\ncommand = "%s"\nargs = []\nprompt = "Dokku MCP server connected to local Dokku instance for testing"\n' "$BINARY_PATH" >> "$VIBE_HOME/config.toml"
+          
+          echo "VIBE_HOME=$VIBE_HOME" >> $GITHUB_ENV
+          echo "DOKKU_MCP_BINARY_PATH=$BINARY_PATH" >> $GITHUB_ENV
+          echo "✅ Vibe config created with dokku_mcp MCP server"
+          echo "Vibe config contents:"
+          cat "$VIBE_HOME/config.toml"
+
+      - name: Run Mistral Vibe Agent Analysis
+        id: analysis
+        uses: mistralai/mistral-vibe@v1
+        with:
+          prompt: |
+            You have access to the dokku_mcp MCP server connected to a real Dokku instance.
+            
+            Your tasks:
+            1. Discover and list all available MCP tools from the dokku_mcp server
+            2. Test key tools against the live Dokku instance (app management, configuration, etc.)
+            3. Verify error handling and edge cases
+            4. Review the codebase for code quality, security, and Go best practices
+            
+            Report your findings including:
+            - Tool discovery results and functionality validation
+            - Any issues or bugs found during testing
+            - Code quality observations and recommendations
+          install_python: "true"
+        env:
+          MISTRAL_API_KEY: ${{ env.MISTRAL_API_KEY }}
+          VIBE_HOME: ${{ env.VIBE_HOME }}
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")
+          if [[ -n "$PREVIOUS_TAG" ]]; then
+            RANGE="$PREVIOUS_TAG..HEAD"
+          else
+            RANGE="HEAD"
+          fi
+
+          TMP_CHANGELOG=$(mktemp)
+
+          while IFS=$'\t' read -r COMMIT SUBJECT; do
+            if [[ -z "$COMMIT" ]]; then
+              continue
+            fi
+
+            if [[ "$SUBJECT" =~ ^Add\ Dokku\ v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+              continue
+            fi
+
+            echo "- $SUBJECT" >> "$TMP_CHANGELOG"
+
+            BODY=$(git log -1 --pretty=%b "$COMMIT")
+            if [[ -n "$BODY" ]]; then
+              while IFS= read -r LINE; do
+                LINE_TRIMMED=$(echo "$LINE" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+                if [[ -n "$LINE_TRIMMED" ]]; then
+                  LINE_NORMALIZED=$(echo "$LINE_TRIMMED" | sed 's/^- \+/- /')
+                  if [[ "$LINE_NORMALIZED" =~ ^- ]]; then
+                    echo "  $LINE_NORMALIZED" >> "$TMP_CHANGELOG"
+                  else
+                    echo "  - $LINE_NORMALIZED" >> "$TMP_CHANGELOG"
+                  fi
+                fi
+              done <<< "$BODY"
+            fi
+          done < <(git -c color.ui=false log --format='%H%x09%s' $RANGE)
+
+          if [[ ! -s "$TMP_CHANGELOG" ]]; then
+            echo "Initial release" >> "$TMP_CHANGELOG"
+          fi
+
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          cat "$TMP_CHANGELOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Enhance Changelog with Mistral Vibe
+        if: github.event.inputs.run_mistral == 'true'
+        id: mistral-changelog
+        uses: mistralai/mistral-vibe@v1
+        with:
+          prompt: |
+            Analyze the git changes from ${{ github.event.before }} to ${{ github.sha }} and:
+            - Generate an enhanced changelog
+            - Highlight key improvements and breaking changes
+            - Categorize changes by type (features, bug fixes, performance, etc.)
+            - Provide technical insights about the changes
+            - Suggest documentation updates if needed
+          install_python: "true"
+        env:
+          MISTRAL_API_KEY: ${{ env.MISTRAL_API_KEY }}
+
+  release:
+    name: Publish Release
+    runs-on: ubuntu-latest
+    needs: [prepare-release, build, mistral-agent-analysis]
+    if: needs.mistral-agent-analysis.outputs.validation_passed == 'true' || github.event.inputs.run_mistral == 'false'
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v6
+        with:
+          path: release-artifacts
+
+      - name: Build release notes
+        id: release-body
+        run: |
+          body_file=release-body.txt
+          : > "$body_file"
+
+          run_mistral="${{ github.event.inputs.run_mistral }}"
+          quality_score="${{ needs.mistral-agent-analysis.outputs.quality_score }}"
+          feature_coverage="${{ needs.mistral-agent-analysis.outputs.feature_coverage }}"
+          changelog="${{ needs.mistral-agent-analysis.outputs.changelog }}"
+
+          if [[ "$run_mistral" == "true" ]]; then
+            printf '%s\n' \
+              "## 🤖 Mistral Vibe Agent Analysis" \
+              "" \
+              "**Quality Score**: ${quality_score}/100" \
+              "**Feature Coverage**: ${feature_coverage}%" \
+              "**Status**: ✅ Validated" \
+              "" \
+              "---" \
+              "" >> "$body_file"
+          fi
+
+          printf '%s\n' \
+            "## Changes" \
+            "${changelog}" \
+            "" \
+            "## Installation" \
+            "" \
+            "Download the appropriate binary for your platform from the assets below." \
+            "" \
+            "### Linux/macOS" \
+            "```bash" \
+            "# Download and install (replace with actual URL for your architecture)" \
+            "curl -L -o dokku-mcp https://github.com/${{ github.repository }}/releases/download/${{ needs.prepare-release.outputs.version }}/dokku-mcp-linux-amd64" \
+            "chmod +x dokku-mcp" \
+            "sudo mv dokku-mcp /usr/local/bin/" \
+            "```" \
+            "" \
+            "### Verify installation" \
+            "```bash" \
+            "dokku-mcp --version" \
+            "```" \
+            "" \
+            "## Configuration" \
+            "" \
+            "After installing the binary, you need to configure it to connect to your Dokku instance. Configuration can be done using a YAML file or environment variables." \
+            "Check config.yaml.example" \
+            "" \
+            "### Using a Configuration File" \
+            "" \
+            "You can create a configuration file at one of the following locations:" \
+            "- System-wide: `/etc/dokku-mcp/config.yaml`" \
+            "- User-specific: `~/.dokku-mcp/config.yaml`" \
+            "" \
+            "Here is a minimal example to get you started. Create the file and add the following content, adjusting the values for your setup:" \
+            "" \
+            "```yaml" \
+            "# ~/.dokku-mcp/config.yaml" \
+            "ssh:" \
+            "  host: \"your-dokku-host.com\"" \
+            "  user: \"dokku\"" \
+            "  # key_path: \"/path/to/your/ssh/private/key\" # Optional, uses ssh-agent if empty" \
+            "" \
+            "log_level: \"info\"" \
+            "```" \
+            "" \
+            "For a full list of configuration options, see the [config.yaml.example](https://github.com/${{ github.repository }}/blob/${{ needs.prepare-release.outputs.version }}/config.yaml.example) file." \
+            "" \
+            "### Using Environment Variables" \
+            "" \
+            "All configuration options can be set using environment variables with the `DOKKU_MCP_` prefix. For example:" \
+            "" \
+            "```bash" \
+            "export DOKKU_MCP_SSH_HOST=\"your-dokku-host.com\"" \
+            "export DOKKU_MCP_SSH_USER=\"dokku\"" \
+            "export DOKKU_MCP_LOG_LEVEL=\"debug\"" \
+            "" \
+            "dokku-mcp" \
+            "```" \
+            "" >> "$body_file"
+
+          echo "body<<EOF" >> $GITHUB_OUTPUT
+          cat "$body_file"
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ needs.prepare-release.outputs.version }}
+          name: Release ${{ needs.prepare-release.outputs.version }}
+          allowUpdates: true
+          body: ${{ steps.release-body.outputs.body }}
+          artifacts: |
+            release-artifacts/dokku-mcp-linux-amd64/dokku-mcp-linux-amd64.tar.gz
+            release-artifacts/dokku-mcp-linux-arm64/dokku-mcp-linux-arm64.tar.gz
+            release-artifacts/dokku-mcp-darwin-amd64/dokku-mcp-darwin-amd64.tar.gz
+            release-artifacts/dokku-mcp-darwin-arm64/dokku-mcp-darwin-arm64.tar.gz
+          draft: false
+          prerelease: ${{ contains(needs.prepare-release.outputs.version, 'alpha') || contains(needs.prepare-release.outputs.version, 'beta') || contains(needs.prepare-release.outputs.version, 'rc') }}
+          removeArtifacts: false
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  notify-success:
+    name: Notify Success with Mistral Insights
+    runs-on: ubuntu-latest
+    needs: [prepare-release, build, release]
+    if: success()
+
+    steps:
+      - name: Success notification with Mistral insights
+        run: |
+          echo "🎉 Release ${{ needs.prepare-release.outputs.version }} completed successfully!"
+          if [[ "${{ github.event.inputs.run_mistral }}" == "true" ]]; then
+            echo "📊 Mistral Vibe Quality Score: ${{ needs.mistral-agent-analysis.outputs.quality_score }}/100"
+            echo "🔍 Feature Coverage: ${{ needs.mistral-agent-analysis.outputs.feature_coverage }}%"
+            echo "✅ Agent Analysis: Completed"
+          fi
+          echo "📦 Binaries built and published"
+          echo "📚 Changelog generated"
+
+  notify-success-no-mistral:
+    name: Notify Success (Mistral Skipped)
+    runs-on: ubuntu-latest
+    needs: [prepare-release, build, release]
+    if: success() && github.event.inputs.run_mistral == 'false'
+
+    steps:
+      - name: Success notification
+        run: |
+          echo "🎉 Release ${{ needs.prepare-release.outputs.version }} completed successfully!"
+          echo "⚠️  Mistral Vibe analysis was skipped for this release"
+          echo "📦 Binaries built and published"
+          echo "📚 Standard changelog generated"
