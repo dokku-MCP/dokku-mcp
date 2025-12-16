@@ -400,15 +400,20 @@ jobs:
       - name: Read generated changelog
         id: changelog
         run: |
+          # Use a unique delimiter to avoid conflicts with content
+          DELIMITER="CHANGELOG_CONTENT_$(date +%s)"
+          
           if [[ -f "RELEASE_CHANGELOG.md" ]]; then
-            echo "changelog<<EOF" >> $GITHUB_OUTPUT
+            echo "changelog<<${DELIMITER}" >> $GITHUB_OUTPUT
             cat RELEASE_CHANGELOG.md >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
+            echo "" >> $GITHUB_OUTPUT
+            echo "${DELIMITER}" >> $GITHUB_OUTPUT
           else
             echo "⚠️ LLM changelog not generated, using git log fallback"
-            echo "changelog<<EOF" >> $GITHUB_OUTPUT
+            echo "changelog<<${DELIMITER}" >> $GITHUB_OUTPUT
             git log --pretty=format:"- %s" ${{ steps.git-changes.outputs.range }} >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
+            echo "" >> $GITHUB_OUTPUT
+            echo "${DELIMITER}" >> $GITHUB_OUTPUT
           fi
 
       - name: Build release notes
