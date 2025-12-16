@@ -199,6 +199,28 @@ jobs:
           sudo usermod -aG dokku $USER
           echo "✅ Dokku installed: $(dokku version)"
 
+      - name: Start SSH server
+        run: |
+          echo "🔐 Starting SSH server..."
+          # Ensure sshd is installed and running
+          sudo apt-get update
+          sudo apt-get install -y openssh-server
+          
+          # Configure sshd to allow connections
+          sudo sed -i 's/#PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
+          sudo sed -i 's/#PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
+          sudo sed -i 's/#PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+          
+          # Start SSH service
+          sudo systemctl enable ssh
+          sudo systemctl start ssh
+          sudo systemctl status ssh || true
+          
+          # Verify sshd is listening
+          sleep 2
+          sudo ss -tlnp | grep :22 || echo "Warning: sshd may not be listening"
+          echo "✅ SSH server started"
+
       - name: Set up SSH access to Dokku
         run: |
           echo "🔑 Setting up SSH access to local Dokku..."
@@ -209,22 +231,31 @@ jobs:
           # Add public key to Dokku (using cat to pipe, more reliable than <)
           cat "$SSH_KEY_PATH.pub" | sudo dokku ssh-keys:add ci-test
           
-          # Configure SSH client
-          cat >> ~/.ssh/config << SSH_CONFIG
-          Host localhost
+          # Verify the key was added
+          sudo dokku ssh-keys:list || true
+          
+          # Configure SSH client with proper settings
+          cat >> ~/.ssh/config << 'SSH_CONFIG'
+          Host localhost 127.0.0.1
             HostName 127.0.0.1
             Port 22
             User dokku
-            IdentityFile $SSH_KEY_PATH
+            IdentityFile ~/.ssh/dokku_ci_key
             IdentitiesOnly yes
             StrictHostKeyChecking no
             UserKnownHostsFile /dev/null
+            LogLevel DEBUG
           SSH_CONFIG
           chmod 600 ~/.ssh/config
           
-          # Test SSH connection
+          # Test SSH connection with verbose output
           echo "Testing SSH connection to Dokku..."
-          ssh -o ConnectTimeout=10 dokku@localhost version || echo "SSH test completed"
+          ssh -v -o ConnectTimeout=10 dokku@127.0.0.1 version 2>&1 || echo "SSH test completed (may have warnings)"
+          
+          # Also test without -t flag (non-interactive)
+          echo "Testing non-interactive SSH..."
+          ssh -o ConnectTimeout=10 -o BatchMode=yes dokku@127.0.0.1 version || echo "Non-interactive test completed"
+          
           echo "✅ SSH access configured"
 
       - name: Set up stdio MCP tool with Vibe config
@@ -234,18 +265,22 @@ jobs:
           SSH_KEY_PATH="$HOME/.ssh/dokku_ci_key"
           
           # Create dokku-mcp config for stdio mode with local Dokku
+          # Note: Using printf to properly expand variables
           mkdir -p "${HOME}/.dokku-mcp"
-          cat > "${HOME}/.dokku-mcp/config.yaml" << DOKKU_CONFIG
-          transport:
+          printf 'transport:
             type: "stdio"
           log_level: "debug"
           ssh:
             host: "127.0.0.1"
             port: 22
             user: "dokku"
-            key_path: "${SSH_KEY_PATH}"
+            key_path: "%s"
+            timeout: 30
           cache_enabled: false
-          DOKKU_CONFIG
+          ' "$SSH_KEY_PATH" > "${HOME}/.dokku-mcp/config.yaml"
+          
+          echo "dokku-mcp config:"
+          cat "${HOME}/.dokku-mcp/config.yaml"
           
           # Set up Vibe home directory with MCP server config
           VIBE_HOME="${HOME}/.vibe"
@@ -277,12 +312,24 @@ jobs:
             3. Verify error handling and edge cases
             4. Review the codebase for code quality, security, and Go best practices
             
-            Report your findings including:
-            - Tool discovery results and functionality validation
-            - Any issues or bugs found during testing
-            - Code quality observations and recommendations
+            Write your findings to a file called LLM_ANALYSIS_REPORT.md with:
+            - Summary of MCP tools discovered
+            - Test results for each tool tested
+            - Any issues or bugs found
+            - Code quality observations
+            - Recommendations for improvements
+            
+            Use markdown formatting with clear sections.
         env:
           VIBE_HOME: ${{ env.VIBE_HOME }}
+
+      - name: Upload analysis report
+        uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: llm-analysis-report
+          path: LLM_ANALYSIS_REPORT.md
+          if-no-files-found: ignore
 
   release:
     name: Publish Release
@@ -303,8 +350,15 @@ jobs:
         with:
           path: release-artifacts
 
-      - name: Generate changelog
-        id: changelog
+      - name: Download LLM analysis report
+        uses: actions/download-artifact@v6
+        continue-on-error: true
+        with:
+          name: llm-analysis-report
+          path: llm-report/
+
+      - name: Get raw git changes
+        id: git-changes
         run: |
           PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")
           if [[ -n "$PREVIOUS_TAG" ]]; then
@@ -312,17 +366,48 @@ jobs:
           else
             RANGE="HEAD"
           fi
-
-          TMP_CHANGELOG=$(mktemp)
-          git log --oneline $RANGE | head -50 > "$TMP_CHANGELOG"
-
-          if [[ ! -s "$TMP_CHANGELOG" ]]; then
-            echo "Initial release" > "$TMP_CHANGELOG"
-          fi
-
-          echo "changelog<<EOF" >> $GITHUB_OUTPUT
-          cat "$TMP_CHANGELOG" >> $GITHUB_OUTPUT
+          
+          echo "range=$RANGE" >> $GITHUB_OUTPUT
+          echo "previous_tag=$PREVIOUS_TAG" >> $GITHUB_OUTPUT
+          
+          # Get detailed commit info for LLM
+          git log --pretty=format:"- %s%n%b" $RANGE > /tmp/raw_commits.txt
+          
+          echo "raw_commits<<EOF" >> $GITHUB_OUTPUT
+          cat /tmp/raw_commits.txt >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Generate changelog with LLM
+        uses: mistralai/mistral-vibe@main
+        with:
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          prompt: |
+            Generate a professional changelog for release ${{ needs.prepare-release.outputs.version }}.
+            
+            Read the git commits using: git log --pretty=format:"- %s%n%b" ${{ steps.git-changes.outputs.range }}
+            
+            Then write the changelog to a file called RELEASE_CHANGELOG.md with:
+            - Group changes by category (Features, Bug Fixes, CI/CD, Documentation, etc.)
+            - Write clear, user-friendly descriptions  
+            - Highlight breaking changes if any
+            - Keep technical details but make them readable
+            - Start with the most important changes first
+            
+            Write ONLY the changelog content to the file, no extra commentary.
+
+      - name: Read generated changelog
+        id: changelog
+        run: |
+          if [[ -f "RELEASE_CHANGELOG.md" ]]; then
+            echo "changelog<<EOF" >> $GITHUB_OUTPUT
+            cat RELEASE_CHANGELOG.md >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ LLM changelog not generated, using git log fallback"
+            echo "changelog<<EOF" >> $GITHUB_OUTPUT
+            git log --pretty=format:"- %s" ${{ steps.git-changes.outputs.range }} >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          fi
 
       - name: Build release notes
         id: release-body
@@ -333,11 +418,21 @@ jobs:
           mistral_result="${{ needs.mistral-agent-analysis.result }}"
           changelog="${{ steps.changelog.outputs.changelog }}"
 
-          if [[ "$mistral_result" == "success" ]]; then
+          # Include LLM Analysis Report if available
+          if [[ -f "llm-report/LLM_ANALYSIS_REPORT.md" ]]; then
             printf '%s\n' \
-              "## 🤖 Mistral Vibe Agent Analysis" \
+              "## 🤖 LLM E2E Testing Report" \
+              "" >> "$body_file"
+            cat "llm-report/LLM_ANALYSIS_REPORT.md" >> "$body_file"
+            printf '%s\n' \
               "" \
-              "**Status**: ✅ Completed" \
+              "---" \
+              "" >> "$body_file"
+          elif [[ "$mistral_result" == "success" ]]; then
+            printf '%s\n' \
+              "## 🤖 LLM Analysis" \
+              "" \
+              "**Status**: ✅ Completed (report not captured)" \
               "" \
               "---" \
               "" >> "$body_file"
@@ -345,6 +440,7 @@ jobs:
 
           printf '%s\n' \
             "## Changes" \
+            "" \
             "${changelog}" \
             "" \
             "## Installation" \
@@ -406,6 +502,12 @@ jobs:
           cat "$body_file"
           echo "EOF" >> $GITHUB_OUTPUT
 
+      - name: Prepare LLM report for release
+        run: |
+          if [[ -f "llm-report/LLM_ANALYSIS_REPORT.md" ]]; then
+            cp llm-report/LLM_ANALYSIS_REPORT.md release-artifacts/
+          fi
+
       - name: Create Release
         uses: ncipollo/release-action@v1
         with:
@@ -418,6 +520,7 @@ jobs:
             release-artifacts/dokku-mcp-linux-arm64/dokku-mcp-linux-arm64.tar.gz
             release-artifacts/dokku-mcp-darwin-amd64/dokku-mcp-darwin-amd64.tar.gz
             release-artifacts/dokku-mcp-darwin-arm64/dokku-mcp-darwin-arm64.tar.gz
+            release-artifacts/LLM_ANALYSIS_REPORT.md
           draft: false
           prerelease: ${{ contains(needs.prepare-release.outputs.version, 'alpha') || contains(needs.prepare-release.outputs.version, 'beta') || contains(needs.prepare-release.outputs.version, 'rc') }}
           removeArtifacts: false
