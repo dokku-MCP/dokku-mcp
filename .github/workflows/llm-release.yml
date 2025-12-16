@@ -267,7 +267,7 @@ jobs:
 
       - name: Run Mistral Vibe Agent Analysis
         id: analysis
-        uses: mistralai/mistral-vibe@v1
+        uses: mistralai/mistral-vibe@main
         with:
           prompt: |
             You have access to the dokku_mcp MCP server connected to a real Dokku instance.
@@ -337,7 +337,7 @@ jobs:
       - name: Enhance Changelog with Mistral Vibe
         if: github.event.inputs.run_mistral == 'true'
         id: mistral-changelog
-        uses: mistralai/mistral-vibe@v1
+        uses: mistralai/mistral-vibe@main
         with:
           prompt: |
             Analyze the git changes from ${{ github.event.before }} to ${{ github.sha }} and:
