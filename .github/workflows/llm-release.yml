@@ -185,7 +185,7 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Download stdio tool artifact
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: dokku-mcp-stdio-tool
           path: build/
@@ -346,12 +346,12 @@ jobs:
           fetch-depth: 0
 
       - name: Download build artifacts
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           path: release-artifacts
 
       - name: Download LLM analysis report
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         continue-on-error: true
         with:
           name: llm-analysis-report
