@@ -142,12 +142,13 @@ func (m *SSHConnectionManager) GetConnectionInfo() ConnectionInfo {
 
 // SSHConfigBuilder provides a fluent interface for building SSH configurations
 type SSHConfigBuilder struct {
-	host    string
-	port    int
-	user    string
-	keyPath string
-	timeout time.Duration
-	logger  *slog.Logger
+	host       string
+	port       int
+	user       string
+	keyPath    string
+	timeout    time.Duration
+	disablePTY bool
+	logger     *slog.Logger
 }
 
 // NewSSHConfigBuilder creates a new SSH configuration builder
@@ -189,18 +190,25 @@ func (b *SSHConfigBuilder) WithTimeout(timeout time.Duration) *SSHConfigBuilder 
 	return b
 }
 
+// WithDisablePTY sets whether to disable PTY allocation
+func (b *SSHConfigBuilder) WithDisablePTY(disable bool) *SSHConfigBuilder {
+	b.disablePTY = disable
+	return b
+}
+
 // FromServerConfig populates the builder from server configuration
 func (b *SSHConfigBuilder) FromServerConfig(cfg *config.ServerConfig) *SSHConfigBuilder {
 	return b.WithHost(cfg.SSH.Host).
 		WithPort(cfg.SSH.Port).
 		WithUser(cfg.SSH.User).
 		WithKeyPath(cfg.SSH.KeyPath).
-		WithTimeout(cfg.Timeout)
+		WithTimeout(cfg.Timeout).
+		WithDisablePTY(cfg.SSH.DisablePTY)
 }
 
 // Build creates the SSH configuration
 func (b *SSHConfigBuilder) Build() (*SSHConfig, error) {
-	return NewSSHConfig(b.host, b.port, b.user, b.keyPath, b.timeout)
+	return NewSSHConfigFromServerConfig(b.host, b.port, b.user, b.keyPath, b.timeout, b.disablePTY)
 }
 
 // BuildConnectionManager creates a complete SSH connection manager

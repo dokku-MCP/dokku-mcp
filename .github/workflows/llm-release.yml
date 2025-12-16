@@ -316,25 +316,17 @@ jobs:
             3. Verify error handling and edge cases
             4. Review the codebase for code quality, security, and Go best practices
             
-            IMPORTANT: To save your report, you MUST use the bash tool to write the file.
-            Do NOT use write_file - it does not persist to disk.
+            IMPORTANT: You MUST save your report to LLM_ANALYSIS_REPORT.md using the write_file tool.
             
-            Use this exact bash command pattern to create the report:
-            ```
-            cat > LLM_ANALYSIS_REPORT.md << 'REPORT_EOF'
-            # LLM Analysis Report
-            ... your content here ...
-            REPORT_EOF
-            ```
-            
-            Your report should include:
+            The report should include:
             - Summary of MCP tools discovered
-            - Test results for each tool tested  
+            - Test results for each tool tested
             - Any issues or bugs found
             - Code quality observations
             - Recommendations for improvements
             
-            Use markdown formatting with clear sections.
+            Use markdown formatting with clear sections. Start with a header like:
+            # LLM Analysis Report - dokku-mcp
         env:
           VIBE_HOME: ${{ env.VIBE_HOME }}
 
@@ -451,26 +443,20 @@ jobs:
           prompt: |
             Generate a professional changelog for release ${{ needs.prepare-release.outputs.version }}.
             
-            Read the git commits using: git log --pretty=format:"- %s%n%b" ${{ steps.git-changes.outputs.range }}
+            First, read the git commits using: git log --pretty=format:"- %s%n%b" ${{ steps.git-changes.outputs.range }}
             
-            IMPORTANT: To save the changelog, you MUST use the bash tool to write the file.
-            Do NOT use write_file - it does not persist to disk.
+            IMPORTANT: You MUST save the changelog to RELEASE_CHANGELOG.md using the write_file tool.
             
-            Use this exact bash command pattern:
-            ```
-            cat > RELEASE_CHANGELOG.md << 'CHANGELOG_EOF'
-            ... your changelog content here ...
-            CHANGELOG_EOF
-            ```
-            
-            Your changelog should:
+            The changelog should:
             - Group changes by category (Features, Bug Fixes, CI/CD, Documentation, etc.)
             - Write clear, user-friendly descriptions  
             - Highlight breaking changes if any
             - Keep technical details but make them readable
             - Start with the most important changes first
+            - Use markdown formatting with clear sections
             
-            Write ONLY the changelog content, no extra commentary.
+            Write ONLY the changelog content to the file, no extra commentary. Start with a header like:
+            # Changelog - ${{ needs.prepare-release.outputs.version }}
 
       - name: Read generated changelog
         id: changelog
@@ -502,93 +488,86 @@ jobs:
 
           # Include LLM Analysis Report if available
           if [[ -f "llm-report/LLM_ANALYSIS_REPORT.md" ]]; then
-            printf '%s\n' \
-              "## 🤖 LLM E2E Testing Report" \
-              "" >> "$body_file"
+            echo "## 🤖 LLM E2E Testing Report" >> "$body_file"
+            echo "" >> "$body_file"
             cat "llm-report/LLM_ANALYSIS_REPORT.md" >> "$body_file"
-            printf '%s\n' \
-              "" \
-              "---" \
-              "" >> "$body_file"
+            echo "" >> "$body_file"
+            echo "---" >> "$body_file"
+            echo "" >> "$body_file"
           elif [[ "$mistral_result" == "success" ]]; then
-            printf '%s\n' \
-              "## 🤖 LLM Analysis" \
-              "" \
-              "**Status**: ✅ Completed (report not captured)" \
-              "" \
-              "---" \
-              "" >> "$body_file"
+            echo "## 🤖 LLM Analysis" >> "$body_file"
+            echo "" >> "$body_file"
+            echo "**Status**: ✅ Completed (report not captured)" >> "$body_file"
+            echo "" >> "$body_file"
+            echo "---" >> "$body_file"
+            echo "" >> "$body_file"
           fi
 
           # Write the main release body content
-          cat >> "$body_file" << 'RELEASE_BODY'
-          ## Changes
-
-          RELEASE_BODY
+          echo "## Changes" >> "$body_file"
+          echo "" >> "$body_file"
           
-          # Add changelog (variable expansion needed)
+          # Add changelog
           echo "${changelog}" >> "$body_file"
           echo "" >> "$body_file"
           
-          # Add installation section (with variable expansion for version)
-          cat >> "$body_file" << INSTALL_SECTION
-          ## Installation
-
-          Download the appropriate binary for your platform from the assets below.
-
-          ### Linux/macOS
-          \`\`\`bash
-          # Download and install (replace with actual URL for your architecture)
-          curl -L -o dokku-mcp https://github.com/${{ github.repository }}/releases/download/${{ needs.prepare-release.outputs.version }}/dokku-mcp-linux-amd64
-          chmod +x dokku-mcp
-          sudo mv dokku-mcp /usr/local/bin/
-          \`\`\`
-
-          ### Verify installation
-          \`\`\`bash
-          dokku-mcp --version
-          \`\`\`
-
-          ## Configuration
-
-          After installing the binary, you need to configure it to connect to your Dokku instance. Configuration can be done using a YAML file or environment variables.
-          Check [config.yaml.example](https://github.com/${{ github.repository }}/blob/${{ needs.prepare-release.outputs.version }}/config.yaml.example)
-
-          ### Using a Configuration File
-
-          You can create a configuration file at one of the following locations:
-          - System-wide: \`/etc/dokku-mcp/config.yaml\`
-          - User-specific: \`~/.dokku-mcp/config.yaml\`
-
-          Here is a minimal example to get you started. Create the file and add the following content, adjusting the values for your setup:
-
-          \`\`\`yaml
-          # ~/.dokku-mcp/config.yaml
-          ssh:
-            host: "your-dokku-host.com"
-            user: "dokku"
-            # key_path: "/path/to/your/ssh/private/key" # Optional, uses ssh-agent if empty
-
-          log_level: "info"
-          \`\`\`
-
-          For a full list of configuration options, see the [config.yaml.example](https://github.com/${{ github.repository }}/blob/${{ needs.prepare-release.outputs.version }}/config.yaml.example) file.
-
-          ### Using Environment Variables
-
-          All configuration options can be set using environment variables with the \`DOKKU_MCP_\` prefix. For example:
-
-          \`\`\`bash
-          export DOKKU_MCP_SSH_HOST="your-dokku-host.com"
-          export DOKKU_MCP_SSH_USER="dokku"
-          export DOKKU_MCP_LOG_LEVEL="debug"
-
-          dokku-mcp
-          \`\`\`
-          INSTALL_SECTION
+          # Add installation section using echo commands for reliability
+          VERSION="${{ needs.prepare-release.outputs.version }}"
+          REPO="${{ github.repository }}"
           
-          # Remove leading whitespace from heredoc
-          sed -i 's/^          //' "$body_file"
+          echo "## Installation" >> "$body_file"
+          echo "" >> "$body_file"
+          echo "Download the appropriate binary for your platform from the assets below." >> "$body_file"
+          echo "" >> "$body_file"
+          echo "### Linux/macOS" >> "$body_file"
+          echo '```bash' >> "$body_file"
+          echo "# Download and install (replace with actual URL for your architecture)" >> "$body_file"
+          echo "curl -L -o dokku-mcp https://github.com/${REPO}/releases/download/${VERSION}/dokku-mcp-linux-amd64" >> "$body_file"
+          echo "chmod +x dokku-mcp" >> "$body_file"
+          echo "sudo mv dokku-mcp /usr/local/bin/" >> "$body_file"
+          echo '```' >> "$body_file"
+          echo "" >> "$body_file"
+          echo "### Verify installation" >> "$body_file"
+          echo '```bash' >> "$body_file"
+          echo "dokku-mcp --version" >> "$body_file"
+          echo '```' >> "$body_file"
+          echo "" >> "$body_file"
+          echo "## Configuration" >> "$body_file"
+          echo "" >> "$body_file"
+          echo "After installing the binary, you need to configure it to connect to your Dokku instance. Configuration can be done using a YAML file or environment variables." >> "$body_file"
+          echo "Check [config.yaml.example](https://github.com/${REPO}/blob/${VERSION}/config.yaml.example)" >> "$body_file"
+          echo "" >> "$body_file"
+          echo "### Using a Configuration File" >> "$body_file"
+          echo "" >> "$body_file"
+          echo "You can create a configuration file at one of the following locations:" >> "$body_file"
+          echo "- System-wide: \`/etc/dokku-mcp/config.yaml\`" >> "$body_file"
+          echo "- User-specific: \`~/.dokku-mcp/config.yaml\`" >> "$body_file"
+          echo "" >> "$body_file"
+          echo "Here is a minimal example to get you started. Create the file and add the following content, adjusting the values for your setup:" >> "$body_file"
+          echo "" >> "$body_file"
+          echo '```yaml' >> "$body_file"
+          echo "# ~/.dokku-mcp/config.yaml" >> "$body_file"
+          echo "ssh:" >> "$body_file"
+          echo '  host: "your-dokku-host.com"' >> "$body_file"
+          echo '  user: "dokku"' >> "$body_file"
+          echo '  # key_path: "/path/to/your/ssh/private/key" # Optional, uses ssh-agent if empty' >> "$body_file"
+          echo "" >> "$body_file"
+          echo 'log_level: "info"' >> "$body_file"
+          echo '```' >> "$body_file"
+          echo "" >> "$body_file"
+          echo "For a full list of configuration options, see the [config.yaml.example](https://github.com/${REPO}/blob/${VERSION}/config.yaml.example) file." >> "$body_file"
+          echo "" >> "$body_file"
+          echo "### Using Environment Variables" >> "$body_file"
+          echo "" >> "$body_file"
+          echo "All configuration options can be set using environment variables with the \`DOKKU_MCP_\` prefix. For example:" >> "$body_file"
+          echo "" >> "$body_file"
+          echo '```bash' >> "$body_file"
+          echo 'export DOKKU_MCP_SSH_HOST="your-dokku-host.com"' >> "$body_file"
+          echo 'export DOKKU_MCP_SSH_USER="dokku"' >> "$body_file"
+          echo 'export DOKKU_MCP_LOG_LEVEL="debug"' >> "$body_file"
+          echo "" >> "$body_file"
+          echo "dokku-mcp" >> "$body_file"
+          echo '```' >> "$body_file"
 
           # Use unique delimiter and proper output redirection
           BODY_DELIMITER="RELEASE_BODY_$(date +%s)"
