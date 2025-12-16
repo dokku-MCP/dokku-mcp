@@ -188,7 +188,7 @@ jobs:
           echo "binary_name=$BINARY_NAME" >> $GITHUB_OUTPUT
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.artifact_name }}
           path: build/${{ steps.create_archive.outputs.archive }}

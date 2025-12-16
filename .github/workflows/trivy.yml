@@ -43,7 +43,7 @@ jobs:
           category: 'trivy-fs-scan'
           
       - name: Upload Trivy results as artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         if: always()
         with:
           name: trivy-results
@@ -85,7 +85,7 @@ jobs:
           category: 'trivy-container-scan'
           
       - name: Upload Trivy container results as artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         if: always()
         with:
           name: trivy-container-results
