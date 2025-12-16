@@ -375,9 +375,12 @@ jobs:
           # Get detailed commit info for LLM
           git log --pretty=format:"- %s%n%b" $RANGE > /tmp/raw_commits.txt
           
-          echo "raw_commits<<EOF" >> $GITHUB_OUTPUT
+          # Use unique delimiter for multiline output
+          COMMITS_DELIMITER="RAW_COMMITS_$(date +%s)"
+          echo "raw_commits<<${COMMITS_DELIMITER}" >> $GITHUB_OUTPUT
           cat /tmp/raw_commits.txt >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "${COMMITS_DELIMITER}" >> $GITHUB_OUTPUT
 
       - name: Generate changelog with LLM
         uses: mistralai/mistral-vibe@main
@@ -505,9 +508,12 @@ jobs:
             "```" \
             "" >> "$body_file"
 
-          echo "body<<EOF" >> $GITHUB_OUTPUT
-          cat "$body_file"
-          echo "EOF" >> $GITHUB_OUTPUT
+          # Use unique delimiter and proper output redirection
+          BODY_DELIMITER="RELEASE_BODY_$(date +%s)"
+          echo "body<<${BODY_DELIMITER}" >> $GITHUB_OUTPUT
+          cat "$body_file" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "${BODY_DELIMITER}" >> $GITHUB_OUTPUT
 
       - name: Prepare LLM report for release
         run: |
