@@ -24,7 +24,7 @@ jobs:
 
       - name: Restore Go tools cache
         id: cache-tools
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/go/bin
           key: ${{ runner.os }}-go-bin-${{ env.GO_VERSION }}-${{ hashFiles('Makefile') }}
@@ -47,7 +47,7 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
 
       - name: Cache Go modules
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cache/go-build
@@ -91,7 +91,7 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
 
       - name: Cache Go modules
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cache/go-build
@@ -105,7 +105,7 @@ jobs:
 
       - name: Restore Go tools cache
         id: cache-tools
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/go/bin
           key: ${{ runner.os }}-go-bin-${{ env.GO_VERSION }}-${{ hashFiles('Makefile') }}
@@ -167,7 +167,7 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
 
       - name: Cache Go modules
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cache/go-build
@@ -181,7 +181,7 @@ jobs:
 
       - name: Restore Go tools cache
         id: cache-tools-tests
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/go/bin
           key: ${{ runner.os }}-go-bin-${{ env.GO_VERSION }}-${{ hashFiles('Makefile') }}
