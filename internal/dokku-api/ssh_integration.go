@@ -33,6 +33,7 @@ func NewSSHConnectionManagerFromServerConfig(cfg *config.ServerConfig, logger *s
 		cfg.SSH.User,
 		cfg.SSH.KeyPath,
 		cfg.Timeout,
+		cfg.SSH.DisablePTY,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create SSH configuration: %w", err)

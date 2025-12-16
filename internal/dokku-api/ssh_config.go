@@ -11,12 +11,13 @@ import (
 
 // SSHConfig represents a validated and secure SSH configuration for Dokku
 type SSHConfig struct {
-	host     string
-	port     int
-	user     string
-	keyPath  string
-	timeout  time.Duration
-	verified bool
+	host       string
+	port       int
+	user       string
+	keyPath    string
+	timeout    time.Duration
+	verified   bool
+	disablePTY bool // Disable PTY allocation for non-interactive use (CI environments)
 }
 
 var (
@@ -58,8 +59,13 @@ func NewDefaultSSHConfig() *SSHConfig {
 }
 
 // NewSSHConfigFromServerConfig creates an SSHConfig from ServerConfig parameters
-func NewSSHConfigFromServerConfig(dokkuHost string, dokkuPort int, dokkuUser string, sshKeyPath string, timeout time.Duration) (*SSHConfig, error) {
-	return NewSSHConfig(dokkuHost, dokkuPort, dokkuUser, sshKeyPath, timeout)
+func NewSSHConfigFromServerConfig(dokkuHost string, dokkuPort int, dokkuUser string, sshKeyPath string, timeout time.Duration, disablePTY bool) (*SSHConfig, error) {
+	config, err := NewSSHConfig(dokkuHost, dokkuPort, dokkuUser, sshKeyPath, timeout)
+	if err != nil {
+		return nil, err
+	}
+	config.disablePTY = disablePTY
+	return config, nil
 }
 
 // MustNewSSHConfig creates an SSH configuration, panicking on error
@@ -108,13 +114,21 @@ func (s *SSHConfig) ConnectionString() string {
 
 // BaseSSHArgs returns the base SSH command arguments
 func (s *SSHConfig) BaseSSHArgs() []string {
-	return []string{
-		"-t", // Request pseudo-terminal - REQUIRED by Dokku docs
+	args := []string{}
+
+	// Request pseudo-terminal unless disabled (disabled is useful for CI/non-interactive use)
+	if !s.disablePTY {
+		args = append(args, "-t")
+	}
+
+	args = append(args,
 		"-o", "LogLevel=QUIET",
 		"-o", "StrictHostKeyChecking=no",
 		"-o", fmt.Sprintf("ConnectTimeout=%d", int(s.timeout.Seconds())),
 		"-p", fmt.Sprintf("%d", s.port),
-	}
+	)
+
+	return args
 }
 
 // SSHCommand returns the complete SSH command
@@ -160,7 +174,30 @@ func (s *SSHConfig) WithKeyPath(keyPath string) (*SSHConfig, error) {
 
 // WithTimeout returns a new configuration with a different timeout
 func (s *SSHConfig) WithTimeout(timeout time.Duration) (*SSHConfig, error) {
-	return NewSSHConfig(s.host, s.port, s.user, s.keyPath, timeout)
+	config, err := NewSSHConfig(s.host, s.port, s.user, s.keyPath, timeout)
+	if err != nil {
+		return nil, err
+	}
+	config.disablePTY = s.disablePTY
+	return config, nil
+}
+
+// WithDisablePTY returns a new configuration with PTY allocation disabled/enabled
+func (s *SSHConfig) WithDisablePTY(disable bool) *SSHConfig {
+	return &SSHConfig{
+		host:       s.host,
+		port:       s.port,
+		user:       s.user,
+		keyPath:    s.keyPath,
+		timeout:    s.timeout,
+		verified:   s.verified,
+		disablePTY: disable,
+	}
+}
+
+// DisablePTY returns whether PTY allocation is disabled
+func (s *SSHConfig) DisablePTY() bool {
+	return s.disablePTY
 }
 
 // IsLocalhost checks if the host is localhost
@@ -214,12 +251,13 @@ func (s *SSHConfig) Validate() error {
 func (s *SSHConfig) MarkAsVerified() *SSHConfig {
 	// Returns a new instance with verified=true (immutability)
 	return &SSHConfig{
-		host:     s.host,
-		port:     s.port,
-		user:     s.user,
-		keyPath:  s.keyPath,
-		timeout:  s.timeout,
-		verified: true,
+		host:       s.host,
+		port:       s.port,
+		user:       s.user,
+		keyPath:    s.keyPath,
+		timeout:    s.timeout,
+		verified:   true,
+		disablePTY: s.disablePTY,
 	}
 }
 

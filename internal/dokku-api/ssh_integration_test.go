@@ -34,6 +34,7 @@ var _ = Describe("SSH Integration", func() {
 					"testuser",
 					"/path/to/key",
 					45*time.Second,
+					false, // disablePTY
 				)
 
 				Expect(err).NotTo(HaveOccurred())
@@ -51,6 +52,7 @@ var _ = Describe("SSH Integration", func() {
 					"testuser",
 					"",
 					30*time.Second,
+					false, // disablePTY
 				)
 
 				Expect(err).To(HaveOccurred())
@@ -59,7 +61,7 @@ var _ = Describe("SSH Integration", func() {
 		})
 
 		Describe("BaseSSHArgs", func() {
-			It("should return correct base SSH arguments", func() {
+			It("should return correct base SSH arguments with PTY enabled (default)", func() {
 				config := dokkuApi.MustNewSSHConfig("dokku.com", 2222, "testuser", "", 30*time.Second)
 				args := config.BaseSSHArgs()
 
@@ -71,11 +73,21 @@ var _ = Describe("SSH Integration", func() {
 				Expect(args).To(ContainElement("2222"))
 			})
 
-			It("should have -t flag as first argument for PTY", func() {
+			It("should have -t flag as first argument for PTY when enabled", func() {
 				config := dokkuApi.MustNewSSHConfig("dokku.com", 22, "dokku", "", 30*time.Second)
 				args := config.BaseSSHArgs()
 
 				Expect(args[0]).To(Equal("-t"), "First argument should be -t for PTY allocation as required by Dokku")
+			})
+
+			It("should NOT include -t flag when PTY is disabled", func() {
+				config := dokkuApi.MustNewSSHConfig("dokku.com", 22, "dokku", "", 30*time.Second)
+				configNoPTY := config.WithDisablePTY(true)
+				args := configNoPTY.BaseSSHArgs()
+
+				Expect(args).NotTo(ContainElement("-t"), "Should not have -t flag when PTY is disabled")
+				Expect(args).To(ContainElement("-o"))
+				Expect(args).To(ContainElement("LogLevel=QUIET"))
 			})
 		})
 	})
@@ -109,6 +121,27 @@ var _ = Describe("SSH Integration", func() {
 				Expect(manager.Config().Host()).To(Equal("dokku.dokku.com"))
 				Expect(manager.Config().User()).To(Equal("dokku"))
 				Expect(manager.Config().KeyPath()).To(Equal("/path/to/key"))
+			})
+
+			It("should pass DisablePTY from server config", func() {
+				serverConfig := &config.ServerConfig{
+					SSH: config.SSHConfig{
+						Host:       "dokku.dokku.com",
+						Port:       22,
+						User:       "dokku",
+						KeyPath:    "/path/to/key",
+						DisablePTY: true,
+					},
+					Timeout: 60 * time.Second,
+				}
+
+				manager, err := dokkuApi.NewSSHConnectionManagerFromServerConfig(serverConfig, logger)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(manager.Config().DisablePTY()).To(BeTrue())
+				// Verify -t flag is not in args when DisablePTY is true
+				args := manager.Config().BaseSSHArgs()
+				Expect(args).NotTo(ContainElement("-t"))
 			})
 		})
 

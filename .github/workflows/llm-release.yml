@@ -266,6 +266,7 @@ jobs:
           
           # Create dokku-mcp config for stdio mode with local Dokku
           # Note: Using printf to properly expand variables
+          # disable_pty is critical for CI environments where no TTY is available
           mkdir -p "${HOME}/.dokku-mcp"
           printf 'transport:
             type: "stdio"
@@ -276,6 +277,7 @@ jobs:
             user: "dokku"
             key_path: "%s"
             timeout: 30
+            disable_pty: true
           cache_enabled: false
           ' "$SSH_KEY_PATH" > "${HOME}/.dokku-mcp/config.yaml"
           

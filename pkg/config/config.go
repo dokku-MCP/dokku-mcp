@@ -25,10 +25,11 @@ type CORSConfig struct {
 }
 
 type SSHConfig struct {
-	Host    string `mapstructure:"host"`
-	Port    int    `mapstructure:"port"`
-	User    string `mapstructure:"user"`
-	KeyPath string `mapstructure:"key_path"`
+	Host       string `mapstructure:"host"`
+	Port       int    `mapstructure:"port"`
+	User       string `mapstructure:"user"`
+	KeyPath    string `mapstructure:"key_path"`
+	DisablePTY bool   `mapstructure:"disable_pty"` // Disable PTY allocation for non-interactive use (CI environments)
 }
 
 type PluginDiscoveryConfig struct {
@@ -208,6 +209,7 @@ func LoadConfig() (*ServerConfig, error) {
 	viper.SetDefault("ssh.port", config.SSH.Port)
 	viper.SetDefault("ssh.user", config.SSH.User)
 	viper.SetDefault("ssh.key_path", config.SSH.KeyPath)
+	viper.SetDefault("ssh.disable_pty", config.SSH.DisablePTY)
 
 	// Plugin discovery configuration defaults
 	viper.SetDefault("plugin_discovery.sync_interval", config.PluginDiscovery.SyncInterval)

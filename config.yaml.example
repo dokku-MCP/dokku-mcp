@@ -37,7 +37,8 @@ ssh:
   host: "localhost"
   port: 3022
   user: "dokku"
-  key_path: ""    # Optional - leave empty for automatic authentication fallback
+  key_path: ""        # Optional - leave empty for automatic authentication fallback
+  disable_pty: false  # Disable PTY allocation (set to true for CI/non-interactive environments)
 
 # SSH Authentication Priority (automatic fallback):
 # 1. ssh-agent (if available and has keys loaded)
@@ -130,4 +131,12 @@ logs:
 #   port: 22
 #   user: "dokku"
 #   key_path: ""
-# timeout: "60s" 
+# timeout: "60s"
+
+# Example 6: CI/CD environment (non-interactive, no TTY)
+# ssh:
+#   host: "127.0.0.1"
+#   port: 22
+#   user: "dokku"
+#   key_path: "/path/to/ci_key"
+#   disable_pty: true   # Required for CI environments without TTY
