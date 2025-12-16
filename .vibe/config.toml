@@ -26,10 +26,3 @@ permission = "always"
 
 # Enable all dokku_mcp tools that will be available after server registration
 enabled_tools = ["bash", "read_file", "write_file", "grep", "glob", "dokku_mcp_*"]
-
-# Session logging for debugging
-[session_logging]
-enabled = true
-log_dir = "~/.vibe/logs"
-save_all_messages = true
-
