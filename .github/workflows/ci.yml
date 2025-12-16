@@ -104,10 +104,15 @@ jobs:
         run: go mod download
 
       - name: Restore Go tools cache
+        id: cache-tools
         uses: actions/cache@v4
         with:
           path: ~/go/bin
           key: ${{ runner.os }}-go-bin-${{ env.GO_VERSION }}-${{ hashFiles('Makefile') }}
+
+      - name: Install development tools
+        if: steps.cache-tools.outputs.cache-hit != 'true'
+        run: make install-tools
 
       - name: Run format check
         if: matrix.check == 'format'
@@ -175,10 +180,15 @@ jobs:
         run: go mod download
 
       - name: Restore Go tools cache
+        id: cache-tools-tests
         uses: actions/cache@v4
         with:
           path: ~/go/bin
           key: ${{ runner.os }}-go-bin-${{ env.GO_VERSION }}-${{ hashFiles('Makefile') }}
+
+      - name: Install development tools
+        if: steps.cache-tools-tests.outputs.cache-hit != 'true'
+        run: make install-tools
 
       - name: Run tests
         if: matrix.test-type == 'standard'
