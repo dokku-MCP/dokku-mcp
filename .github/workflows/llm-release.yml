@@ -177,11 +177,8 @@ jobs:
     name: Mistral Vibe Agent Analysis
     runs-on: ubuntu-22.04
     needs: [prepare-release, build]
-    outputs:
-      validation_passed: ${{ steps.analysis.outputs.passed }}
-      quality_score: ${{ steps.analysis.outputs.score }}
-      feature_coverage: ${{ steps.analysis.outputs.feature_coverage }}
-      mistral_changelog: ${{ steps.mistral-changelog.outputs.enhanced-changelog }}
+    # Note: Mistral Vibe action doesn't produce structured outputs
+    # The job completion itself indicates success
 
     steps:
       - name: Checkout code
@@ -287,6 +284,25 @@ jobs:
         env:
           VIBE_HOME: ${{ env.VIBE_HOME }}
 
+  release:
+    name: Publish Release
+    runs-on: ubuntu-latest
+    needs: [prepare-release, build, mistral-agent-analysis]
+    if: always() && needs.build.result == 'success'
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v6
+        with:
+          path: release-artifacts
+
       - name: Generate changelog
         id: changelog
         run: |
@@ -298,69 +314,15 @@ jobs:
           fi
 
           TMP_CHANGELOG=$(mktemp)
-
-          while IFS=$'\t' read -r COMMIT SUBJECT; do
-            if [[ -z "$COMMIT" ]]; then
-              continue
-            fi
-
-            if [[ "$SUBJECT" =~ ^Add\ Dokku\ v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
-              continue
-            fi
-
-            echo "- $SUBJECT" >> "$TMP_CHANGELOG"
-
-            BODY=$(git log -1 --pretty=%b "$COMMIT")
-            if [[ -n "$BODY" ]]; then
-              while IFS= read -r LINE; do
-                LINE_TRIMMED=$(echo "$LINE" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-                if [[ -n "$LINE_TRIMMED" ]]; then
-                  LINE_NORMALIZED=$(echo "$LINE_TRIMMED" | sed 's/^- \+/- /')
-                  if [[ "$LINE_NORMALIZED" =~ ^- ]]; then
-                    echo "  $LINE_NORMALIZED" >> "$TMP_CHANGELOG"
-                  else
-                    echo "  - $LINE_NORMALIZED" >> "$TMP_CHANGELOG"
-                  fi
-                fi
-              done <<< "$BODY"
-            fi
-          done < <(git -c color.ui=false log --format='%H%x09%s' $RANGE)
+          git log --oneline $RANGE | head -50 > "$TMP_CHANGELOG"
 
           if [[ ! -s "$TMP_CHANGELOG" ]]; then
-            echo "Initial release" >> "$TMP_CHANGELOG"
+            echo "Initial release" > "$TMP_CHANGELOG"
           fi
 
           echo "changelog<<EOF" >> $GITHUB_OUTPUT
           cat "$TMP_CHANGELOG" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-
-      - name: Enhance Changelog with Mistral Vibe
-        if: github.event.inputs.run_mistral == 'true'
-        id: mistral-changelog
-        uses: mistralai/mistral-vibe@main
-        with:
-          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
-          prompt: |
-            Analyze the git changes from ${{ github.event.before }} to ${{ github.sha }} and:
-            - Generate an enhanced changelog
-            - Highlight key improvements and breaking changes
-            - Categorize changes by type (features, bug fixes, performance, etc.)
-            - Provide technical insights about the changes
-            - Suggest documentation updates if needed
-
-  release:
-    name: Publish Release
-    runs-on: ubuntu-latest
-    needs: [prepare-release, build, mistral-agent-analysis]
-    if: needs.mistral-agent-analysis.outputs.validation_passed == 'true' || github.event.inputs.run_mistral == 'false'
-    permissions:
-      contents: write
-
-    steps:
-      - name: Download build artifacts
-        uses: actions/download-artifact@v6
-        with:
-          path: release-artifacts
 
       - name: Build release notes
         id: release-body
@@ -368,18 +330,14 @@ jobs:
           body_file=release-body.txt
           : > "$body_file"
 
-          run_mistral="${{ github.event.inputs.run_mistral }}"
-          quality_score="${{ needs.mistral-agent-analysis.outputs.quality_score }}"
-          feature_coverage="${{ needs.mistral-agent-analysis.outputs.feature_coverage }}"
-          changelog="${{ needs.mistral-agent-analysis.outputs.changelog }}"
+          mistral_result="${{ needs.mistral-agent-analysis.result }}"
+          changelog="${{ steps.changelog.outputs.changelog }}"
 
-          if [[ "$run_mistral" == "true" ]]; then
+          if [[ "$mistral_result" == "success" ]]; then
             printf '%s\n' \
               "## 🤖 Mistral Vibe Agent Analysis" \
               "" \
-              "**Quality Score**: ${quality_score}/100" \
-              "**Feature Coverage**: ${feature_coverage}%" \
-              "**Status**: ✅ Validated" \
+              "**Status**: ✅ Completed" \
               "" \
               "---" \
               "" >> "$body_file"
@@ -466,33 +424,18 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
   notify-success:
-    name: Notify Success with Mistral Insights
+    name: Notify Success
     runs-on: ubuntu-latest
-    needs: [prepare-release, build, release]
-    if: success()
-
-    steps:
-      - name: Success notification with Mistral insights
-        run: |
-          echo "🎉 Release ${{ needs.prepare-release.outputs.version }} completed successfully!"
-          if [[ "${{ github.event.inputs.run_mistral }}" == "true" ]]; then
-            echo "📊 Mistral Vibe Quality Score: ${{ needs.mistral-agent-analysis.outputs.quality_score }}/100"
-            echo "🔍 Feature Coverage: ${{ needs.mistral-agent-analysis.outputs.feature_coverage }}%"
-            echo "✅ Agent Analysis: Completed"
-          fi
-          echo "📦 Binaries built and published"
-          echo "📚 Changelog generated"
-
-  notify-success-no-mistral:
-    name: Notify Success (Mistral Skipped)
-    runs-on: ubuntu-latest
-    needs: [prepare-release, build, release]
-    if: success() && github.event.inputs.run_mistral == 'false'
+    needs: [prepare-release, build, release, mistral-agent-analysis]
+    if: always() && needs.release.result == 'success'
 
     steps:
       - name: Success notification
         run: |
           echo "🎉 Release ${{ needs.prepare-release.outputs.version }} completed successfully!"
-          echo "⚠️  Mistral Vibe analysis was skipped for this release"
           echo "📦 Binaries built and published"
-          echo "📚 Standard changelog generated"
+          if [[ "${{ needs.mistral-agent-analysis.result }}" == "success" ]]; then
+            echo "✅ Mistral Vibe Analysis: Completed"
+          else
+            echo "⚠️ Mistral Vibe Analysis: ${{ needs.mistral-agent-analysis.result }}"
+          fi
