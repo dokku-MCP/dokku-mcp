@@ -38,7 +38,7 @@ func (p *DeploymentServerPlugin) Description() string {
 	return "Dokku application deployment tracking and management"
 }
 
-func (p *DeploymentServerPlugin) Version() string { return "0.1.0" }
+func (p *DeploymentServerPlugin) Version() string { return "0.3.0" }
 
 // No specific Dokku plugin dependency
 func (p *DeploymentServerPlugin) DokkuPluginName() string { return "" }

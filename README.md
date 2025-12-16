@@ -2,7 +2,7 @@
 
 **Model Context Protocol (MCP)** server for **Dokku**, written in Go.
 
-Version: v0.2.2
+Version: v0.3.0
 
 This server exposes Dokku's management capabilities through the standardized Model Context Protocol (MCP), allowing Large Language Models (LLMs) to interact with and manage a Dokku instance.
 
@@ -115,12 +115,12 @@ Download the latest release for your platform:
 
 ```bash
 # Linux (amd64 / arm64 / arm)
-curl -L -o dokku-mcp https://github.com/dokku-mcp/dokku-mcp/releases/download/v0.2.0/dokku-mcp-linux-amd64
+curl -L -o dokku-mcp https://github.com/dokku-mcp/dokku-mcp/releases/download/v0.3.0/dokku-mcp-linux-amd64
 chmod +x dokku-mcp
 sudo mv dokku-mcp /usr/local/bin/
 
 # macOS (amd64 / arm64)  
-curl -L -o dokku-mcp https://github.com/dokku-mcp/dokku-mcp/releases/download/v0.2.0/dokku-mcp-darwin-amd64
+curl -L -o dokku-mcp https://github.com/dokku-mcp/dokku-mcp/releases/download/v0.3.0/dokku-mcp-darwin-amd64
 chmod +x dokku-mcp
 sudo mv dokku-mcp /usr/local/bin/
 ```
