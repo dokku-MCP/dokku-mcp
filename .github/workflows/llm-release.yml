@@ -265,21 +265,23 @@ jobs:
           SSH_KEY_PATH="$HOME/.ssh/dokku_ci_key"
           
           # Create dokku-mcp config for stdio mode with local Dokku
-          # Note: Using printf to properly expand variables
           # disable_pty is critical for CI environments where no TTY is available
           mkdir -p "${HOME}/.dokku-mcp"
-          printf 'transport:
+          cat > "${HOME}/.dokku-mcp/config.yaml" << DOKKU_CONFIG
+          transport:
             type: "stdio"
           log_level: "debug"
           ssh:
             host: "127.0.0.1"
             port: 22
             user: "dokku"
-            key_path: "%s"
+            key_path: "${SSH_KEY_PATH}"
             timeout: 30
             disable_pty: true
           cache_enabled: false
-          ' "$SSH_KEY_PATH" > "${HOME}/.dokku-mcp/config.yaml"
+          DOKKU_CONFIG
+          # Remove leading whitespace from each line (caused by YAML indentation)
+          sed -i 's/^          //' "${HOME}/.dokku-mcp/config.yaml"
           
           echo "dokku-mcp config:"
           cat "${HOME}/.dokku-mcp/config.yaml"
@@ -325,13 +327,62 @@ jobs:
         env:
           VIBE_HOME: ${{ env.VIBE_HOME }}
 
+      - name: Find and prepare LLM analysis report
+        if: always()
+        run: |
+          echo "🔍 Searching for LLM analysis report..."
+          
+          # Search for the file in various locations
+          FOUND_FILE=""
+          for path in \
+            "LLM_ANALYSIS_REPORT.md" \
+            "./LLM_ANALYSIS_REPORT.md" \
+            "$HOME/LLM_ANALYSIS_REPORT.md" \
+            "${{ github.workspace }}/LLM_ANALYSIS_REPORT.md" \
+            "/home/runner/work/dokku-mcp/dokku-mcp/LLM_ANALYSIS_REPORT.md"; do
+            if [[ -f "$path" ]]; then
+              echo "✅ Found report at: $path"
+              FOUND_FILE="$path"
+              break
+            fi
+          done
+          
+          # Also search recursively in workspace
+          if [[ -z "$FOUND_FILE" ]]; then
+            echo "Searching recursively in workspace..."
+            FOUND_FILE=$(find "${{ github.workspace }}" -name "LLM_ANALYSIS_REPORT.md" -type f 2>/dev/null | head -1)
+            if [[ -n "$FOUND_FILE" ]]; then
+              echo "✅ Found report at: $FOUND_FILE"
+            fi
+          fi
+          
+          if [[ -n "$FOUND_FILE" ]]; then
+            cp "$FOUND_FILE" ./LLM_ANALYSIS_REPORT.md
+            echo "📄 Report content preview:"
+            head -50 ./LLM_ANALYSIS_REPORT.md
+          else
+            echo "⚠️ LLM analysis report not found in any expected location"
+            echo "Creating placeholder report..."
+            cat > ./LLM_ANALYSIS_REPORT.md << 'PLACEHOLDER'
+          # LLM Analysis Report
+
+          **Status**: Analysis completed but report not captured.
+
+          The Mistral Vibe agent analysis was executed but the output report could not be retrieved.
+          Please check the workflow logs for the analysis details.
+          PLACEHOLDER
+            sed -i 's/^          //' ./LLM_ANALYSIS_REPORT.md
+          fi
+          
+          ls -la ./LLM_ANALYSIS_REPORT.md || true
+
       - name: Upload analysis report
         uses: actions/upload-artifact@v6
         if: always()
         with:
           name: llm-analysis-report
           path: LLM_ANALYSIS_REPORT.md
-          if-no-files-found: ignore
+          if-no-files-found: warn
 
   release:
     name: Publish Release
@@ -448,65 +499,75 @@ jobs:
               "" >> "$body_file"
           fi
 
-          printf '%s\n' \
-            "## Changes" \
-            "" \
-            "${changelog}" \
-            "" \
-            "## Installation" \
-            "" \
-            "Download the appropriate binary for your platform from the assets below." \
-            "" \
-            "### Linux/macOS" \
-            "```bash" \
-            "# Download and install (replace with actual URL for your architecture)" \
-            "curl -L -o dokku-mcp https://github.com/${{ github.repository }}/releases/download/${{ needs.prepare-release.outputs.version }}/dokku-mcp-linux-amd64" \
-            "chmod +x dokku-mcp" \
-            "sudo mv dokku-mcp /usr/local/bin/" \
-            "```" \
-            "" \
-            "### Verify installation" \
-            "```bash" \
-            "dokku-mcp --version" \
-            "```" \
-            "" \
-            "## Configuration" \
-            "" \
-            "After installing the binary, you need to configure it to connect to your Dokku instance. Configuration can be done using a YAML file or environment variables." \
-            "Check config.yaml.example" \
-            "" \
-            "### Using a Configuration File" \
-            "" \
-            "You can create a configuration file at one of the following locations:" \
-            "- System-wide: `/etc/dokku-mcp/config.yaml`" \
-            "- User-specific: `~/.dokku-mcp/config.yaml`" \
-            "" \
-            "Here is a minimal example to get you started. Create the file and add the following content, adjusting the values for your setup:" \
-            "" \
-            "```yaml" \
-            "# ~/.dokku-mcp/config.yaml" \
-            "ssh:" \
-            "  host: \"your-dokku-host.com\"" \
-            "  user: \"dokku\"" \
-            "  # key_path: \"/path/to/your/ssh/private/key\" # Optional, uses ssh-agent if empty" \
-            "" \
-            "log_level: \"info\"" \
-            "```" \
-            "" \
-            "For a full list of configuration options, see the [config.yaml.example](https://github.com/${{ github.repository }}/blob/${{ needs.prepare-release.outputs.version }}/config.yaml.example) file." \
-            "" \
-            "### Using Environment Variables" \
-            "" \
-            "All configuration options can be set using environment variables with the `DOKKU_MCP_` prefix. For example:" \
-            "" \
-            "```bash" \
-            "export DOKKU_MCP_SSH_HOST=\"your-dokku-host.com\"" \
-            "export DOKKU_MCP_SSH_USER=\"dokku\"" \
-            "export DOKKU_MCP_LOG_LEVEL=\"debug\"" \
-            "" \
-            "dokku-mcp" \
-            "```" \
-            "" >> "$body_file"
+          # Write the main release body content
+          cat >> "$body_file" << 'RELEASE_BODY'
+          ## Changes
+
+          RELEASE_BODY
+          
+          # Add changelog (variable expansion needed)
+          echo "${changelog}" >> "$body_file"
+          echo "" >> "$body_file"
+          
+          # Add installation section (with variable expansion for version)
+          cat >> "$body_file" << INSTALL_SECTION
+          ## Installation
+
+          Download the appropriate binary for your platform from the assets below.
+
+          ### Linux/macOS
+          \`\`\`bash
+          # Download and install (replace with actual URL for your architecture)
+          curl -L -o dokku-mcp https://github.com/${{ github.repository }}/releases/download/${{ needs.prepare-release.outputs.version }}/dokku-mcp-linux-amd64
+          chmod +x dokku-mcp
+          sudo mv dokku-mcp /usr/local/bin/
+          \`\`\`
+
+          ### Verify installation
+          \`\`\`bash
+          dokku-mcp --version
+          \`\`\`
+
+          ## Configuration
+
+          After installing the binary, you need to configure it to connect to your Dokku instance. Configuration can be done using a YAML file or environment variables.
+          Check [config.yaml.example](https://github.com/${{ github.repository }}/blob/${{ needs.prepare-release.outputs.version }}/config.yaml.example)
+
+          ### Using a Configuration File
+
+          You can create a configuration file at one of the following locations:
+          - System-wide: \`/etc/dokku-mcp/config.yaml\`
+          - User-specific: \`~/.dokku-mcp/config.yaml\`
+
+          Here is a minimal example to get you started. Create the file and add the following content, adjusting the values for your setup:
+
+          \`\`\`yaml
+          # ~/.dokku-mcp/config.yaml
+          ssh:
+            host: "your-dokku-host.com"
+            user: "dokku"
+            # key_path: "/path/to/your/ssh/private/key" # Optional, uses ssh-agent if empty
+
+          log_level: "info"
+          \`\`\`
+
+          For a full list of configuration options, see the [config.yaml.example](https://github.com/${{ github.repository }}/blob/${{ needs.prepare-release.outputs.version }}/config.yaml.example) file.
+
+          ### Using Environment Variables
+
+          All configuration options can be set using environment variables with the \`DOKKU_MCP_\` prefix. For example:
+
+          \`\`\`bash
+          export DOKKU_MCP_SSH_HOST="your-dokku-host.com"
+          export DOKKU_MCP_SSH_USER="dokku"
+          export DOKKU_MCP_LOG_LEVEL="debug"
+
+          dokku-mcp
+          \`\`\`
+          INSTALL_SECTION
+          
+          # Remove leading whitespace from heredoc
+          sed -i 's/^          //' "$body_file"
 
           # Use unique delimiter and proper output redirection
           BODY_DELIMITER="RELEASE_BODY_$(date +%s)"
