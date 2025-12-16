@@ -61,6 +61,7 @@ type ClientConfig struct {
 	DokkuPath      string        `yaml:"dokku_path"`
 	SSHKeyPath     string        `yaml:"ssh_key_path"`
 	CommandTimeout time.Duration `yaml:"command_timeout"`
+	DisablePTY     bool          `yaml:"disable_pty"`
 	Cache          *CacheConfig  `yaml:"cache"`
 }
 

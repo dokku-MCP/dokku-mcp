@@ -20,6 +20,7 @@ func NewDokkuClientFromConfig(cfg *config.ServerConfig, logger *slog.Logger) Dok
 		DokkuPath:      cfg.DokkuPath,
 		SSHKeyPath:     sshKeyPath,
 		CommandTimeout: cfg.Timeout,
+		DisablePTY:     cfg.SSH.DisablePTY,
 		Cache:          createCacheConfig(cfg),
 	}
 

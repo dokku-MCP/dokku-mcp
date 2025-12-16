@@ -316,9 +316,20 @@ jobs:
             3. Verify error handling and edge cases
             4. Review the codebase for code quality, security, and Go best practices
             
-            Write your findings to a file called LLM_ANALYSIS_REPORT.md with:
+            IMPORTANT: To save your report, you MUST use the bash tool to write the file.
+            Do NOT use write_file - it does not persist to disk.
+            
+            Use this exact bash command pattern to create the report:
+            ```
+            cat > LLM_ANALYSIS_REPORT.md << 'REPORT_EOF'
+            # LLM Analysis Report
+            ... your content here ...
+            REPORT_EOF
+            ```
+            
+            Your report should include:
             - Summary of MCP tools discovered
-            - Test results for each tool tested
+            - Test results for each tool tested  
             - Any issues or bugs found
             - Code quality observations
             - Recommendations for improvements
@@ -442,14 +453,24 @@ jobs:
             
             Read the git commits using: git log --pretty=format:"- %s%n%b" ${{ steps.git-changes.outputs.range }}
             
-            Then write the changelog to a file called RELEASE_CHANGELOG.md with:
+            IMPORTANT: To save the changelog, you MUST use the bash tool to write the file.
+            Do NOT use write_file - it does not persist to disk.
+            
+            Use this exact bash command pattern:
+            ```
+            cat > RELEASE_CHANGELOG.md << 'CHANGELOG_EOF'
+            ... your changelog content here ...
+            CHANGELOG_EOF
+            ```
+            
+            Your changelog should:
             - Group changes by category (Features, Bug Fixes, CI/CD, Documentation, etc.)
             - Write clear, user-friendly descriptions  
             - Highlight breaking changes if any
             - Keep technical details but make them readable
             - Start with the most important changes first
             
-            Write ONLY the changelog content to the file, no extra commentary.
+            Write ONLY the changelog content, no extra commentary.
 
       - name: Read generated changelog
         id: changelog

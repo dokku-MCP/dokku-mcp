@@ -69,12 +69,13 @@ func NewDokkuClient(config *ClientConfig, logger *slog.Logger) DokkuClient {
 	}
 
 	// Create SSH configuration from client config
-	sshConfig, err := NewSSHConfig(
+	sshConfig, err := NewSSHConfigFromServerConfig(
 		config.DokkuHost,
 		config.DokkuPort,
 		config.DokkuUser,
 		config.SSHKeyPath,
 		config.CommandTimeout,
+		config.DisablePTY,
 	)
 	if err != nil {
 		logger.Error("Failed to create SSH configuration", "error", err)
