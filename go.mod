@@ -5,7 +5,7 @@ go 1.25.4
 require (
 	github.com/mark3labs/mcp-go v0.43.2
 	github.com/onsi/ginkgo/v2 v2.27.3
-	github.com/onsi/gomega v1.38.3
+	github.com/onsi/gomega v1.39.0
 	github.com/spf13/viper v1.21.0
 	go.uber.org/fx v1.24.0
 )
