@@ -159,7 +159,7 @@ jobs:
           echo "✅ Binary prepared for stdio MCP tool testing"
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact_name }}
           path: build/${{ steps.create_archive.outputs.archive }}
@@ -167,7 +167,7 @@ jobs:
 
       - name: Upload stdio tool for Mistral Vibe
         if: matrix.os == 'linux' && matrix.arch == 'amd64'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: dokku-mcp-stdio-tool
           path: build/dokku-mcp-stdio-tool
@@ -380,7 +380,7 @@ jobs:
           ls -la ./LLM_ANALYSIS_REPORT.md || true
 
       - name: Upload analysis report
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: llm-analysis-report
