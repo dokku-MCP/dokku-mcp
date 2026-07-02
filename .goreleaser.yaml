@@ -131,15 +131,18 @@ release:
 # this manifest instead of guessing installation metadata from the README.
 # Requires GoReleaser >= 2.13 and `id-token: write` in the workflow (OIDC).
 mcp:
-  name: io.github.dokku-mcp/dokku-mcp
+  # The namespace must match the GitHub owner exactly, including case: the OIDC
+  # token grants publishing to io.github.dokku-MCP/* (the org is "dokku-MCP"),
+  # so a lowercase name is rejected with 403.
+  name: io.github.dokku-MCP/dokku-mcp
   title: "Dokku MCP Server"
   # The official MCP Registry caps description at 100 characters.
   description: "MCP server for Dokku: let LLMs create, deploy, scale, configure and inspect Dokku apps."
-  homepage: "https://github.com/dokku-mcp/dokku-mcp"
+  homepage: "https://github.com/dokku-MCP/dokku-mcp"
   auth:
     type: github-oidc
   repository:
-    url: "https://github.com/dokku-mcp/dokku-mcp"
+    url: "https://github.com/dokku-MCP/dokku-mcp"
     source: github
     id: "1004593421"
   packages:
