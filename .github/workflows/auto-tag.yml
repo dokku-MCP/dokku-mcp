@@ -5,6 +5,7 @@ on:
     workflows:
       - CI
       - Dokku Compatibility Tests
+      - Trivy Vulnerability Scan
     types:
       - completed
 
@@ -13,16 +14,20 @@ permissions:
 
 jobs:
   create-tag:
+    # Only consider successful runs on main. Any required workflow that fails
+    # produces a non-success run whose trigger is filtered out here, and the
+    # gate step below re-checks every required workflow, so a failure blocks
+    # the tag regardless of which workflow finished last.
     if: >
-      github.event.workflow.name == 'Dokku Compatibility Tests' &&
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_branch == 'main'
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
       actions: write
     steps:
-      - name: Ensure CI workflow succeeded
+      - name: Gate on all required workflows succeeding for this commit
+        id: gate
         uses: actions/github-script@v8
         with:
           script: |
@@ -30,48 +35,47 @@ jobs:
             const repo = context.repo.repo;
             const sha = context.payload.workflow_run.head_sha;
 
-            const { data } = await github.rest.actions.listWorkflowRuns({
-              owner,
-              repo,
-              workflow_id: 'ci.yml',
-              head_sha: sha,
-              per_page: 5,
-            });
+            // Every workflow here must have a completed, successful run for this
+            // exact commit before a release tag is cut. Trivy is included so a
+            // failing security scan blocks the release. Because this job runs on
+            // each of these workflows' completion, the last one to go green is
+            // the one that finds everything ready and proceeds; the others exit
+            // early without tagging.
+            const required = ['ci.yml', 'compatibility.yml', 'trivy.yml'];
 
-            const run = data.workflow_runs.find(r => r.head_sha === sha);
-            if (!run) {
-              core.setFailed(`CI workflow has not produced a run for ${sha}`);
-              return;
+            for (const workflow_id of required) {
+              const { data } = await github.rest.actions.listWorkflowRuns({
+                owner,
+                repo,
+                workflow_id,
+                head_sha: sha,
+                per_page: 5,
+              });
+
+              const run = data.workflow_runs.find(r => r.head_sha === sha);
+              if (!run || run.status !== 'completed' || run.conclusion !== 'success') {
+                const state = run ? `${run.status}/${run.conclusion}` : 'no run yet';
+                core.notice(`Not ready: ${workflow_id} is ${state} for ${sha}. Skipping tag.`);
+                core.setOutput('ready', 'false');
+                return;
+              }
             }
 
-            if (run.conclusion !== 'success') {
-              core.setFailed(`CI workflow conclusion is ${run.conclusion}`);
-            }
+            core.setOutput('ready', 'true');
 
       - name: Checkout repository
+        if: steps.gate.outputs.ready == 'true'
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Verify VERSION was updated
+      - name: Determine whether VERSION needs a tag
+        if: steps.gate.outputs.ready == 'true'
         id: version_change
         run: |
           HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
           git fetch --no-tags origin
           git checkout "$HEAD_SHA"
-
-          PARENT_SHA=$(git rev-list --parents -n 1 "$HEAD_SHA" | cut -d' ' -f2)
-          if [[ -z "$PARENT_SHA" ]]; then
-            CHANGED_FILES=$(git show --pretty='' --name-only "$HEAD_SHA")
-          else
-            CHANGED_FILES=$(git diff --name-only "$PARENT_SHA" "$HEAD_SHA")
-          fi
-
-          if ! echo "$CHANGED_FILES" | grep -qx 'VERSION'; then
-            echo "VERSION not modified in the latest commit. Skipping."
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
 
           VERSION=$(tr -d ' \n' < VERSION)
           if [[ -z "$VERSION" ]]; then
@@ -79,11 +83,22 @@ jobs:
             exit 1
           fi
 
+          # Tag whenever the current VERSION has no tag yet, rather than keying
+          # off which commit touched VERSION. This keeps releases working when
+          # fix commits land on top of the version bump before CI goes green,
+          # and stays idempotent: once the tag exists, later runs no-op.
+          git fetch --tags origin
+          if git rev-parse --verify --quiet "refs/tags/$VERSION" >/dev/null; then
+            echo "Tag $VERSION already exists. Nothing to release."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "changed=true" >> "$GITHUB_OUTPUT"
 
       - name: Create and push tag
-        if: steps.version_change.outputs.changed == 'true'
+        if: steps.gate.outputs.ready == 'true' && steps.version_change.outputs.changed == 'true'
         run: |
           VERSION="${{ steps.version_change.outputs.version }}"
           if git rev-parse --verify --quiet "$VERSION" >/dev/null; then
@@ -95,7 +110,7 @@ jobs:
           git push origin "$VERSION"
 
       - name: Trigger release workflow
-        if: steps.version_change.outputs.changed == 'true'
+        if: steps.gate.outputs.ready == 'true' && steps.version_change.outputs.changed == 'true'
         uses: actions/github-script@v8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -112,4 +127,3 @@ jobs:
                 version
               }
             });
-
