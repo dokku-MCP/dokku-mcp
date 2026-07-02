@@ -182,15 +182,17 @@ dlv test ./internal/server-plugins/app/application
 
 ### Release Preparation
 
-The `Makefile` contains helpers for the release process.
+Releases are built and published by [GoReleaser](https://goreleaser.com/) (see `.goreleaser.yaml`): binaries and archives for every supported platform, checksums, changelog, and publication of the server manifest to the official MCP Registry.
+
+The flow is fully automated: update the `VERSION` file, merge to `main`, and once CI and the Dokku compatibility tests pass, the `auto-tag` workflow tags the commit and triggers the release.
 
 ```bash
-# Update version in the source code
+# Update the VERSION file
 make bump-version VERSION=v1.2.0
 
-# Generate a changelog from git history
-make changelog
+# Validate the GoReleaser configuration
+make release-check
 
-# Create multi-platform builds
-make build-all
+# Build a full release locally in dist/ (nothing is published)
+make release-snapshot
 ```

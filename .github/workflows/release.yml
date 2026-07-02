@@ -7,282 +7,75 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to release (e.g., v1.0.0)'
+        description: 'Tag to release (e.g., v1.0.0). The tag must already exist.'
         required: true
         type: string
+
+permissions:
+  contents: write
+  # Required by GoReleaser to publish the MCP server manifest to the
+  # official MCP Registry via GitHub OIDC (see mcp section in .goreleaser.yaml).
+  id-token: write
 
 env:
   GO_VERSION: '1.25'
 
 jobs:
-  prepare-release:
-    name: Prepare Release
+  goreleaser:
+    name: Build & Publish Release
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.get_version.outputs.version }}
-      changelog: ${{ steps.changelog.outputs.changelog }}
-    
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          # On workflow_dispatch (triggered by auto-tag.yml), check out the tag
+          # so GoReleaser releases the tagged commit.
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || '' }}
 
-      - name: Get version
+      - name: Get version and validate tag matches VERSION file
         id: get_version
         run: |
-          EVENT_NAME="${{ github.event_name }}"
-          INPUT_VERSION="${{ github.event.inputs.version }}"
-
-          if [[ "$EVENT_NAME" == "workflow_dispatch" && -n "$INPUT_VERSION" ]]; then
-            VERSION_VALUE="$INPUT_VERSION"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TAG="${{ github.event.inputs.version }}"
           else
-            if [[ ! -f VERSION ]]; then
-              echo "VERSION file not found" >&2
-              exit 1
-            fi
-
-            VERSION_VALUE=$(tr -d ' \n' < VERSION)
-            if [[ -z "$VERSION_VALUE" ]]; then
-              echo "VERSION file is empty" >&2
-              exit 1
-            fi
+            TAG="${GITHUB_REF#refs/tags/}"
           fi
 
-          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            TAG_VERSION=${GITHUB_REF#refs/tags/}
-            if [[ ! -f VERSION ]]; then
-              echo "VERSION file not found for tag validation" >&2
-              exit 1
-            fi
-            FILE_VERSION=$(tr -d ' \n' < VERSION)
-            if [[ "$TAG_VERSION" != "$FILE_VERSION" ]]; then
-              echo "Tag version ($TAG_VERSION) does not match VERSION file ($FILE_VERSION)" >&2
-              exit 1
-            fi
-            VERSION_VALUE="$TAG_VERSION"
+          if [[ ! -f VERSION ]]; then
+            echo "VERSION file not found" >&2
+            exit 1
           fi
 
-          echo "version=$VERSION_VALUE" >> $GITHUB_OUTPUT
-
-      - name: Generate changelog
-        id: changelog
-        run: |
-          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")
-          if [[ -n "$PREVIOUS_TAG" ]]; then
-            RANGE="$PREVIOUS_TAG..HEAD"
-          else
-            RANGE="HEAD"
+          FILE_VERSION=$(tr -d ' \n' < VERSION)
+          if [[ "$TAG" != "$FILE_VERSION" ]]; then
+            echo "Tag ($TAG) does not match VERSION file ($FILE_VERSION)" >&2
+            exit 1
           fi
 
-          TMP_CHANGELOG=$(mktemp)
-
-          while IFS=$'\t' read -r COMMIT SUBJECT; do
-            if [[ -z "$COMMIT" ]]; then
-              continue
-            fi
-
-            if [[ "$SUBJECT" =~ ^Add\ Dokku\ v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
-              continue
-            fi
-
-            echo "- $SUBJECT" >> "$TMP_CHANGELOG"
-
-            BODY=$(git log -1 --pretty=%b "$COMMIT")
-            if [[ -n "$BODY" ]]; then
-              while IFS= read -r LINE; do
-                LINE_TRIMMED=$(echo "$LINE" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-                if [[ -n "$LINE_TRIMMED" ]]; then
-                  LINE_NORMALIZED=$(echo "$LINE_TRIMMED" | sed 's/^- \+/- /')
-                  if [[ "$LINE_NORMALIZED" =~ ^- ]]; then
-                    echo "  $LINE_NORMALIZED" >> "$TMP_CHANGELOG"
-                  else
-                    echo "  - $LINE_NORMALIZED" >> "$TMP_CHANGELOG"
-                  fi
-                fi
-              done <<< "$BODY"
-            fi
-          done < <(git -c color.ui=false log --format='%H%x09%s' $RANGE)
-
-          if [[ ! -s "$TMP_CHANGELOG" ]]; then
-            echo "Initial release" >> "$TMP_CHANGELOG"
-          fi
-
-          echo "changelog<<EOF" >> $GITHUB_OUTPUT
-          cat "$TMP_CHANGELOG" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    needs: prepare-release
-    permissions:
-      contents: write
-    strategy:
-      matrix:
-        include:
-          - os: linux
-            arch: amd64
-            archive_suffix: tar.gz
-            artifact_name: dokku-mcp-linux-amd64
-          - os: linux
-            arch: arm64
-            archive_suffix: tar.gz
-            artifact_name: dokku-mcp-linux-arm64
-          - os: darwin
-            arch: amd64
-            archive_suffix: tar.gz
-            artifact_name: dokku-mcp-darwin-amd64
-          - os: darwin
-            arch: arm64
-            archive_suffix: tar.gz
-            artifact_name: dokku-mcp-darwin-arm64
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
+          echo "version=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
 
-      - name: Cache Go modules
-        uses: actions/cache@v5
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
         with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
-
-      - name: Download dependencies
-        run: go mod download
-
-      - name: Build binary
+          distribution: goreleaser
+          # MCP Registry publication requires GoReleaser >= 2.13
+          version: '~> v2'
+          args: release --clean
         env:
-          GOOS: ${{ matrix.os }}
-          GOARCH: ${{ matrix.arch }}
-          CGO_ENABLED: 0
-        run: |
-          BINARY_NAME="dokku-mcp-${{ matrix.os }}-${{ matrix.arch }}"
-
-          mkdir -p build
-          go build \
-            -ldflags "-X main.Version=${{ needs.prepare-release.outputs.version }} -X main.BuildTime=$(date -u '+%Y-%m-%d_%H:%M:%S') -s -w" \
-            -o "build/${BINARY_NAME}" \
-            cmd/server/main.go
-
-      - name: Create archive
-        id: create_archive
-        run: |
-          cd build
-          BINARY_NAME="dokku-mcp-${{ matrix.os }}-${{ matrix.arch }}"
-
-          # Create archive
-          tar -czf "${BINARY_NAME}.tar.gz" "$BINARY_NAME"
-          ARCHIVE="${BINARY_NAME}.tar.gz"
-
-          echo "archive=$ARCHIVE" >> $GITHUB_OUTPUT
-          echo "binary_name=$BINARY_NAME" >> $GITHUB_OUTPUT
-
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v6
-        with:
-          name: ${{ matrix.artifact_name }}
-          path: build/${{ steps.create_archive.outputs.archive }}
-          retention-days: 5
-
-  release:
-    name: Publish Release
-    runs-on: ubuntu-latest
-    needs: [prepare-release, build]
-    permissions:
-      contents: write
-    steps:
-      - name: Download build artifacts
-        uses: actions/download-artifact@v7
-        with:
-          path: release-artifacts
-
-      - name: Create Release
-        uses: ncipollo/release-action@v1
-        with:
-          tag: ${{ needs.prepare-release.outputs.version }}
-          name: Release ${{ needs.prepare-release.outputs.version }}
-          allowUpdates: true
-          body: |
-            ## Changes
-            ${{ needs.prepare-release.outputs.changelog }}
-            
-            ## Installation
-            
-            Download the appropriate binary for your platform from the assets below.
-            
-            ### Linux/macOS
-            ```bash
-            # Download and install (replace with actual URL for your architecture)
-            curl -L -o dokku-mcp https://github.com/${{ github.repository }}/releases/download/${{ needs.prepare-release.outputs.version }}/dokku-mcp-linux-amd64
-            chmod +x dokku-mcp
-            sudo mv dokku-mcp /usr/local/bin/
-            ```
-            
-            ### Verify installation
-            ```bash
-            dokku-mcp --version
-            ```
-
-            ## Configuration
-
-            After installing the binary, you need to configure it to connect to your Dokku instance. Configuration can be done using a YAML file or environment variables.
-            Check config.yaml.example
-
-            ### Using a Configuration File
-
-            You can create a configuration file at one of the following locations:
-            - System-wide: `/etc/dokku-mcp/config.yaml`
-            - User-specific: `~/.dokku-mcp/config.yaml`
-
-            Here is a minimal example to get you started. Create the file and add the following content, adjusting the values for your setup:
-
-            ```yaml
-            # ~/.dokku-mcp/config.yaml
-            ssh:
-              host: "your-dokku-host.com"
-              user: "dokku"
-              # key_path: "/path/to/your/ssh/private/key" # Optional, uses ssh-agent if empty
-            
-            log_level: "info"
-            ```
-
-            For a full list of configuration options, see the [config.yaml.example](https://github.com/${{ github.repository }}/blob/${{ needs.prepare-release.outputs.version }}/config.yaml.example) file.
-
-            ### Using Environment Variables
-
-            All configuration options can be set using environment variables with the `DOKKU_MCP_` prefix. For example:
-
-            ```bash
-            export DOKKU_MCP_SSH_HOST="your-dokku-host.com"
-            export DOKKU_MCP_SSH_USER="dokku"
-            export DOKKU_MCP_LOG_LEVEL="debug"
-            
-            dokku-mcp
-            ```
-          artifacts: |
-            release-artifacts/dokku-mcp-linux-amd64/dokku-mcp-linux-amd64.tar.gz
-            release-artifacts/dokku-mcp-linux-arm64/dokku-mcp-linux-arm64.tar.gz
-            release-artifacts/dokku-mcp-darwin-amd64/dokku-mcp-darwin-amd64.tar.gz
-            release-artifacts/dokku-mcp-darwin-arm64/dokku-mcp-darwin-arm64.tar.gz
-          draft: false
-          prerelease: ${{ contains(needs.prepare-release.outputs.version, 'alpha') || contains(needs.prepare-release.outputs.version, 'beta') || contains(needs.prepare-release.outputs.version, 'rc') }}
-          removeArtifacts: false
-          token: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   update-docs:
     name: Update Documentation
     runs-on: ubuntu-latest
-    needs: [prepare-release, release]
+    needs: goreleaser
     permissions:
       contents: write
     steps:
@@ -293,11 +86,10 @@ jobs:
 
       - name: Update version in docs and plugins
         run: |
-          VERSION="${{ needs.prepare-release.outputs.version }}"
+          VERSION="${{ needs.goreleaser.outputs.version }}"
           PLUGIN_VERSION=$(echo "$VERSION" | sed 's/^v//')
 
           sed -i "s/Version: v.*/Version: $VERSION/g" README.md || true
-          sed -i "s|releases/download/v[^/]\+/|releases/download/$VERSION/|g" README.md || true
 
           find internal/server-plugins -name "*.go" -type f -exec sed -i "s/Version() string { return \"[^\"]*\"/Version() string { return \"$PLUGIN_VERSION\"/g" {} \;
 
@@ -306,17 +98,5 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add README.md internal/server-plugins/
-          git diff --staged --quiet || git commit -m "docs: update version to ${{ needs.prepare-release.outputs.version }}"
+          git diff --staged --quiet || git commit -m "docs: update version to ${{ needs.goreleaser.outputs.version }}"
           git push
-
-  notify-success:
-    name: Notify Success
-    runs-on: ubuntu-latest
-    needs: [prepare-release, build, release, update-docs]
-    if: success()
-    steps:
-      - name: Success notification
-        run: |
-          echo "🎉 Release ${{ needs.prepare-release.outputs.version }} completed successfully!"
-          echo "📦 Binaries built and published"
-          echo "📚 Changelog generated"

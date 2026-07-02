@@ -114,16 +114,18 @@ Need help with the dokku-mcp project? Goose AI is available to assist you! Simpl
 Download the latest release for your platform:
 
 ```bash
-# Linux (amd64 / arm64 / arm)
-curl -L -o dokku-mcp https://github.com/dokku-mcp/dokku-mcp/releases/download/v0.3.0/dokku-mcp-linux-amd64
+# Linux (amd64; also available: arm64, arm)
+curl -L -o dokku-mcp https://github.com/dokku-mcp/dokku-mcp/releases/latest/download/dokku-mcp-linux-amd64
 chmod +x dokku-mcp
 sudo mv dokku-mcp /usr/local/bin/
 
-# macOS (amd64 / arm64)  
-curl -L -o dokku-mcp https://github.com/dokku-mcp/dokku-mcp/releases/download/v0.3.0/dokku-mcp-darwin-amd64
+# macOS (amd64; also available: arm64)
+curl -L -o dokku-mcp https://github.com/dokku-mcp/dokku-mcp/releases/latest/download/dokku-mcp-darwin-amd64
 chmod +x dokku-mcp
 sudo mv dokku-mcp /usr/local/bin/
 ```
+
+Compressed archives (`dokku-mcp-<os>-<arch>.tar.gz`) are also published with each release.
 
 ### Verify Installation
 

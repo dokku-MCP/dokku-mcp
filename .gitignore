@@ -122,6 +122,9 @@ docker-data/
 .env.dokku-local
 **/*dokku_mcp_test*
 
+# Act testing secrets
+.secrets
+
 dokku-mcp
 dokku-mcp-server
 

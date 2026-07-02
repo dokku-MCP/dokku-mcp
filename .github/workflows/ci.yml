@@ -62,14 +62,20 @@ jobs:
       - name: Build server
         run: make build
 
-      - name: Build all platforms
-        run: make build-all
+      # Cross-compiles the exact release matrix defined in .goreleaser.yaml,
+      # so CI catches any platform-specific build breakage before a release.
+      - name: Build all release platforms
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: '~> v2'
+          args: build --snapshot --clean
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v6
         with:
           name: binaries
-          path: build/
+          path: dist/
 
   # Quality checks running in parallel
   quality-checks:

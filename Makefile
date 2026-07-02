@@ -94,13 +94,21 @@ build-docker:
 	@printf "$(GREEN)📦 Building MCP server docker container...$(NC)\n"
 	docker build -t dokku-mcp .
 
-build-all:	generate ## Build for all platforms
-	@printf "$(GREEN)📦 Multi-platform build...$(NC)\n"
-	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 $(ENTRYPOINT)
-	GOOS=linux GOARCH=arm64 go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 $(ENTRYPOINT)
-	GOOS=linux GOARCH=arm go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm $(ENTRYPOINT)
-	GOOS=darwin GOARCH=amd64 go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 $(ENTRYPOINT)
-	GOOS=darwin GOARCH=arm64 go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 $(ENTRYPOINT)
+release-check: ## Validate the GoReleaser configuration
+	@command -v goreleaser >/dev/null 2>&1 || { \
+		printf "$(RED)❌ goreleaser not installed$(NC)\n"; \
+		printf "$(YELLOW)📦 Install: https://goreleaser.com/install/$(NC)\n"; \
+		exit 1; \
+	}
+	goreleaser check
+
+release-snapshot: ## Build a full release locally (dist/) without publishing
+	@command -v goreleaser >/dev/null 2>&1 || { \
+		printf "$(RED)❌ goreleaser not installed$(NC)\n"; \
+		printf "$(YELLOW)📦 Install: https://goreleaser.com/install/$(NC)\n"; \
+		exit 1; \
+	}
+	goreleaser release --snapshot --clean
 
 # Testing Commands
 test: $(GINKGO_BINARY)
@@ -174,18 +182,19 @@ docs: ## Generate documentation - not human friendly, for llm use
 	@printf "$(YELLOW)📖 Documentation available at http://localhost:6060$(NC)\n"
 	@godoc -http=:6060
 
-bump-version: ## Update version
+bump-version: ## Update the VERSION file (usage: make bump-version VERSION=v0.4.0)
+	@case "$(VERSION)" in \
+		v[0-9]*) ;; \
+		*) printf "$(RED)❌ Provide an explicit version: make bump-version VERSION=v0.4.0$(NC)\n"; exit 1 ;; \
+	esac
 	@printf "$(GREEN)🔖 Version: $(VERSION)$(NC)\n"
-	@sed -i 's/Version = ".*"/Version = "$(VERSION)"/' internal/version/version.go
-	echo "Think about plugins version too"
-
-changelog: ## Generate changelog
-	@printf "$(GREEN)📝 Generating changelog...$(NC)\n"
-	git log --oneline --decorate --graph > CHANGELOG.md
+	@echo "$(VERSION)" > VERSION
+	@printf "$(YELLOW)💡 Commit and push to main: once CI and compatibility pass, auto-tag triggers the GoReleaser release.$(NC)\n"
 
 clean: ## Clean generated files
 	@printf "$(GREEN)🧹 Cleaning...$(NC)\n"
 	rm -rf $(BUILD_DIR)/
+	rm -rf dist/
 	rm -rf tmp/
 	rm -f coverage.out coverage.html
 	rm -f cpu.prof mem.prof
@@ -247,14 +256,15 @@ dokku-clean: ## Clean local Dokku data and containers
 
 .PHONY: \
 all help \
-build build-all build-docker \
+build build-docker \
+release-check release-snapshot \
 start start-docker inspect \
 dev setup-dev setup-dokku install-tools \
 check lint staticcheck fmt vet cyclo dupl type \
 test test-race test-integration-local test-integration-ci \
 dep-graph-dot dep-graph \
 docs security _check-security _check-type-safety _check-security-detailed \
-bump-version changelog generate clean \
+bump-version generate clean \
 dokku-start dokku-stop dokku-status dokku-logs dokku-shell dokku-clean
 
 _check-type-safety:

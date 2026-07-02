@@ -1,0 +1,150 @@
+version: 2
+
+project_name: dokku-mcp
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - id: dokku-mcp
+    main: ./cmd/server
+    binary: dokku-mcp
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+      - arm
+    # ARMv6 binaries also run on ARMv7 (Raspberry Pi and similar boards).
+    goarm:
+      - "6"
+    ignore:
+      - goos: darwin
+        goarch: arm
+    ldflags:
+      - -s -w
+      - -X main.Version={{ .Tag }}
+      - -X main.BuildTime={{ .Date }}
+
+archives:
+  # Compressed archives, keeping the historical asset naming
+  # (dokku-mcp-<os>-<arch>.tar.gz). The binary inside is named `dokku-mcp`.
+  - id: tarballs
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
+  # Bare binaries under the same naming (dokku-mcp-<os>-<arch>): MCP
+  # registries (LobeHub, official MCP registry via the mcpb package below)
+  # validate installation by downloading these URLs directly.
+  - id: binaries
+    formats: [binary]
+    name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  use: git
+  filters:
+    exclude:
+      - '^Add Dokku v[0-9]'
+  groups:
+    - title: Features
+      regexp: '^feat(\(.*\))?!?:'
+      order: 0
+    - title: Bug Fixes
+      regexp: '^fix(\(.*\))?!?:'
+      order: 1
+    - title: Documentation
+      regexp: '^docs(\(.*\))?:'
+      order: 2
+    - title: CI/CD
+      regexp: '^ci(\(.*\))?:'
+      order: 3
+    - title: Other
+      order: 999
+
+release:
+  name_template: "Release {{ .Tag }}"
+  prerelease: auto
+  footer: |
+    ## Installation
+
+    ### Linux/macOS
+
+    ```bash
+    # Pick the asset for your platform (linux/darwin, amd64/arm64)
+    curl -L -o dokku-mcp https://github.com/{{ .Env.GITHUB_REPOSITORY }}/releases/download/{{ .Tag }}/dokku-mcp-linux-amd64
+    chmod +x dokku-mcp
+    sudo mv dokku-mcp /usr/local/bin/
+    ```
+
+    ### Verify installation
+
+    ```bash
+    dokku-mcp --version
+    ```
+
+    ## Configuration
+
+    After installing the binary, configure it to connect to your Dokku instance
+    using a YAML file or environment variables.
+
+    ### Using a Configuration File
+
+    Create a configuration file at one of the following locations:
+    - System-wide: `/etc/dokku-mcp/config.yaml`
+    - User-specific: `~/.dokku-mcp/config.yaml`
+
+    Minimal example:
+
+    ```yaml
+    # ~/.dokku-mcp/config.yaml
+    ssh:
+      host: "your-dokku-host.com"
+      user: "dokku"
+      # key_path: "/path/to/your/ssh/private/key" # Optional, uses ssh-agent if empty
+
+    log_level: "info"
+    ```
+
+    For the full list of options, see [config.yaml.example](https://github.com/{{ .Env.GITHUB_REPOSITORY }}/blob/{{ .Tag }}/config.yaml.example).
+
+    ### Using Environment Variables
+
+    All options can be set with the `DOKKU_MCP_` prefix:
+
+    ```bash
+    export DOKKU_MCP_SSH_HOST="your-dokku-host.com"
+    export DOKKU_MCP_SSH_USER="dokku"
+    export DOKKU_MCP_LOG_LEVEL="debug"
+
+    dokku-mcp
+    ```
+
+# Publish the server manifest (server.json) to the official MCP Registry
+# (registry.modelcontextprotocol.io). Aggregators such as LobeHub consume
+# this manifest instead of guessing installation metadata from the README.
+# Requires GoReleaser >= 2.13 and `id-token: write` in the workflow (OIDC).
+mcp:
+  name: io.github.dokku-mcp/dokku-mcp
+  title: "Dokku MCP Server"
+  description: "MCP server for Dokku written in Go. Lets LLMs and agents manage a Dokku instance: create, deploy, scale and configure apps, inspect status and logs."
+  homepage: "https://github.com/dokku-mcp/dokku-mcp"
+  auth:
+    type: github-oidc
+  repository:
+    url: "https://github.com/dokku-mcp/dokku-mcp"
+    source: github
+    id: "1004593421"
+  packages:
+    - registry_type: mcpb
+      identifier: "https://github.com/dokku-mcp/dokku-mcp/releases/download/{{ .Tag }}/dokku-mcp-linux-amd64"
+      transport:
+        type: stdio
+  # Skip registry publication on prereleases (alpha/beta/rc tags).
+  disable: auto

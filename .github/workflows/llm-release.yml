@@ -1,194 +1,78 @@
-name: Release with llm e2e report
+name: LLM E2E Analysis
 
+# Post-release analysis: runs a Mistral Vibe agent against the released
+# binary connected to a real Dokku instance, then attaches the resulting
+# report to the GitHub release created by the Release workflow (GoReleaser).
+#
+# Triggered via workflow_run (not `on: release`) because releases created
+# with GITHUB_TOKEN do not fire release events.
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_run:
+    workflows:
+      - Release
+    types:
+      - completed
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to release (e.g., v1.0.0)'
+        description: 'Release tag to analyze and attach the report to (e.g., v1.0.0)'
         required: true
         type: string
-      run_mistral:
-        description: 'Run Mistral Vibe analysis'
-        required: false
-        type: boolean
-        default: true
 
 env:
   GO_VERSION: '1.25'
 
 jobs:
-  prepare-release:
-    name: Prepare Release
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.get_version.outputs.version }}
+  analysis:
+    name: Mistral Vibe Agent Analysis
+    runs-on: ubuntu-22.04
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.event.workflow_run.head_sha }}
 
-      - name: Get version
+      - name: Resolve release tag
         id: get_version
         run: |
-          EVENT_NAME="${{ github.event_name }}"
-          INPUT_VERSION="${{ github.event.inputs.version }}"
-
-          if [[ "$EVENT_NAME" == "workflow_dispatch" && -n "$INPUT_VERSION" ]]; then
-            VERSION_VALUE="$INPUT_VERSION"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TAG="${{ github.event.inputs.version }}"
           else
             if [[ ! -f VERSION ]]; then
               echo "VERSION file not found" >&2
               exit 1
             fi
-
-            VERSION_VALUE=$(tr -d ' \n' < VERSION)
-            if [[ -z "$VERSION_VALUE" ]]; then
-              echo "VERSION file is empty" >&2
-              exit 1
-            fi
+            TAG=$(tr -d ' \n' < VERSION)
           fi
 
-          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            TAG_VERSION=${GITHUB_REF#refs/tags/}
-            if [[ ! -f VERSION ]]; then
-              echo "VERSION file not found for tag validation" >&2
-              exit 1
-            fi
-            FILE_VERSION=$(tr -d ' \n' < VERSION)
-            if [[ "$TAG_VERSION" != "$FILE_VERSION" ]]; then
-              echo "Tag version ($TAG_VERSION) does not match VERSION file ($FILE_VERSION)" >&2
-              exit 1
-            fi
-            VERSION_VALUE="$TAG_VERSION"
+          if [[ -z "$TAG" ]]; then
+            echo "Could not resolve release tag" >&2
+            exit 1
           fi
 
-          echo "version=$VERSION_VALUE" >> $GITHUB_OUTPUT
-
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    needs: prepare-release
-    permissions:
-      contents: write
-    strategy:
-      matrix:
-        include:
-          - os: linux
-            arch: amd64
-            archive_suffix: tar.gz
-            artifact_name: dokku-mcp-linux-amd64
-          - os: linux
-            arch: arm64
-            archive_suffix: tar.gz
-            artifact_name: dokku-mcp-linux-arm64
-          - os: darwin
-            arch: amd64
-            archive_suffix: tar.gz
-            artifact_name: dokku-mcp-darwin-amd64
-          - os: darwin
-            arch: arm64
-            archive_suffix: tar.gz
-            artifact_name: dokku-mcp-darwin-arm64
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
+          echo "version=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
 
-      - name: Cache Go modules
-        uses: actions/cache@v5
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
-
-      - name: Download dependencies
-        run: go mod download
-
-      - name: Build binary
+      - name: Build stdio MCP tool
         env:
-          GOOS: ${{ matrix.os }}
-          GOARCH: ${{ matrix.arch }}
           CGO_ENABLED: 0
         run: |
-          BINARY_NAME="dokku-mcp-${{ matrix.os }}-${{ matrix.arch }}"
-
           mkdir -p build
           go build \
-            -ldflags "-X main.Version=${{ needs.prepare-release.outputs.version }} -X main.BuildTime=$(date -u '+%Y-%m-%d_%H:%M:%S') -s -w" \
-            -o "build/${BINARY_NAME}" \
+            -ldflags "-X main.Version=${{ steps.get_version.outputs.version }} -X main.BuildTime=$(date -u '+%Y-%m-%d_%H:%M:%S') -s -w" \
+            -o build/dokku-mcp-stdio-tool \
             cmd/server/main.go
-
-      - name: Create archive
-        id: create_archive
-        run: |
-          cd build
-          BINARY_NAME="dokku-mcp-${{ matrix.os }}-${{ matrix.arch }}"
-
-          # Create archive
-          tar -czf "${BINARY_NAME}.tar.gz" "$BINARY_NAME"
-          ARCHIVE="${BINARY_NAME}.tar.gz"
-
-          echo "archive=$ARCHIVE" >> $GITHUB_OUTPUT
-          echo "binary_name=$BINARY_NAME" >> $GITHUB_OUTPUT
-
-      - name: Prepare built binary for stdio MCP tool testing
-        if: matrix.os == 'linux' && matrix.arch == 'amd64'
-        run: |
-          echo "🧪 Preparing built dokku-mcp binary for stdio MCP tool testing"
-          cd build
-          chmod +x "${{ steps.create_archive.outputs.binary_name }}"
-          
-          # Create a copy for stdio testing
-          cp "${{ steps.create_archive.outputs.binary_name }}" "dokku-mcp-stdio-tool"
-          
-          # Set up the binary path for Mistral Vibe to use
-          echo "DOKKU_MCP_BINARY_PATH=$(pwd)/dokku-mcp-stdio-tool" >> $GITHUB_ENV
-          echo "✅ Binary prepared for stdio MCP tool testing"
-
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v6
-        with:
-          name: ${{ matrix.artifact_name }}
-          path: build/${{ steps.create_archive.outputs.archive }}
-          retention-days: 5
-
-      - name: Upload stdio tool for Mistral Vibe
-        if: matrix.os == 'linux' && matrix.arch == 'amd64'
-        uses: actions/upload-artifact@v6
-        with:
-          name: dokku-mcp-stdio-tool
-          path: build/dokku-mcp-stdio-tool
-          retention-days: 1
-
-  mistral-agent-analysis:
-    name: Mistral Vibe Agent Analysis
-    runs-on: ubuntu-22.04
-    needs: [prepare-release, build]
-    # Note: Mistral Vibe action doesn't produce structured outputs
-    # The job completion itself indicates success
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
-
-      - name: Download stdio tool artifact
-        uses: actions/download-artifact@v7
-        with:
-          name: dokku-mcp-stdio-tool
-          path: build/
 
       - name: Install Dokku
         run: |
@@ -205,17 +89,17 @@ jobs:
           # Ensure sshd is installed and running
           sudo apt-get update
           sudo apt-get install -y openssh-server
-          
+
           # Configure sshd to allow connections
           sudo sed -i 's/#PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
           sudo sed -i 's/#PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
           sudo sed -i 's/#PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
-          
+
           # Start SSH service
           sudo systemctl enable ssh
           sudo systemctl start ssh
           sudo systemctl status ssh || true
-          
+
           # Verify sshd is listening
           sleep 2
           sudo ss -tlnp | grep :22 || echo "Warning: sshd may not be listening"
@@ -227,13 +111,13 @@ jobs:
           mkdir -p ~/.ssh
           SSH_KEY_PATH="$HOME/.ssh/dokku_ci_key"
           ssh-keygen -t rsa -b 4096 -f "$SSH_KEY_PATH" -N "" -C "dokku-mcp-ci"
-          
+
           # Add public key to Dokku (using cat to pipe, more reliable than <)
           cat "$SSH_KEY_PATH.pub" | sudo dokku ssh-keys:add ci-test
-          
+
           # Verify the key was added
           sudo dokku ssh-keys:list || true
-          
+
           # Configure SSH client with proper settings
           cat >> ~/.ssh/config << 'SSH_CONFIG'
           Host localhost 127.0.0.1
@@ -247,15 +131,15 @@ jobs:
             LogLevel DEBUG
           SSH_CONFIG
           chmod 600 ~/.ssh/config
-          
+
           # Test SSH connection with verbose output
           echo "Testing SSH connection to Dokku..."
           ssh -v -o ConnectTimeout=10 dokku@127.0.0.1 version 2>&1 || echo "SSH test completed (may have warnings)"
-          
+
           # Also test without -t flag (non-interactive)
           echo "Testing non-interactive SSH..."
           ssh -o ConnectTimeout=10 -o BatchMode=yes dokku@127.0.0.1 version || echo "Non-interactive test completed"
-          
+
           echo "✅ SSH access configured"
 
       - name: Set up stdio MCP tool with Vibe config
@@ -263,7 +147,7 @@ jobs:
           chmod +x build/dokku-mcp-stdio-tool
           BINARY_PATH="$(pwd)/build/dokku-mcp-stdio-tool"
           SSH_KEY_PATH="$HOME/.ssh/dokku_ci_key"
-          
+
           # Create dokku-mcp config for stdio mode with local Dokku
           # disable_pty is critical for CI environments where no TTY is available
           mkdir -p "${HOME}/.dokku-mcp"
@@ -282,20 +166,20 @@ jobs:
           DOKKU_CONFIG
           # Remove leading whitespace from each line (caused by YAML indentation)
           sed -i 's/^          //' "${HOME}/.dokku-mcp/config.yaml"
-          
+
           echo "dokku-mcp config:"
           cat "${HOME}/.dokku-mcp/config.yaml"
-          
+
           # Set up Vibe home directory with MCP server config
           VIBE_HOME="${HOME}/.vibe"
           mkdir -p "$VIBE_HOME"
-          
+
           # Copy base config and append MCP server configuration
           cp .vibe/config.toml "$VIBE_HOME/config.toml"
-          
+
           # Append the stdio MCP server configuration with the actual binary path
           printf '\n[[mcp_servers]]\nname = "dokku_mcp"\ntransport = "stdio"\ncommand = "%s"\nargs = []\nprompt = "Dokku MCP server connected to local Dokku instance for testing"\n' "$BINARY_PATH" >> "$VIBE_HOME/config.toml"
-          
+
           echo "VIBE_HOME=$VIBE_HOME" >> $GITHUB_ENV
           echo "DOKKU_MCP_BINARY_PATH=$BINARY_PATH" >> $GITHUB_ENV
           echo "✅ Vibe config created with dokku_mcp MCP server"
@@ -309,22 +193,22 @@ jobs:
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
           prompt: |
             You have access to the dokku_mcp MCP server connected to a real Dokku instance.
-            
+
             Your tasks:
             1. Discover and list all available MCP tools from the dokku_mcp server
             2. Test key tools against the live Dokku instance (app management, configuration, etc.)
             3. Verify error handling and edge cases
             4. Review the codebase for code quality, security, and Go best practices
-            
+
             IMPORTANT: You MUST save your report to LLM_ANALYSIS_REPORT.md using the write_file tool.
-            
+
             The report should include:
             - Summary of MCP tools discovered
             - Test results for each tool tested
             - Any issues or bugs found
             - Code quality observations
             - Recommendations for improvements
-            
+
             Use markdown formatting with clear sections. Start with a header like:
             # LLM Analysis Report - dokku-mcp
         env:
@@ -334,7 +218,7 @@ jobs:
         if: always()
         run: |
           echo "🔍 Searching for LLM analysis report..."
-          
+
           # Search for the file in various locations
           FOUND_FILE=""
           for path in \
@@ -349,7 +233,7 @@ jobs:
               break
             fi
           done
-          
+
           # Also search recursively in workspace
           if [[ -z "$FOUND_FILE" ]]; then
             echo "Searching recursively in workspace..."
@@ -358,7 +242,7 @@ jobs:
               echo "✅ Found report at: $FOUND_FILE"
             fi
           fi
-          
+
           if [[ -n "$FOUND_FILE" ]]; then
             cp "$FOUND_FILE" ./LLM_ANALYSIS_REPORT.md
             echo "📄 Report content preview:"
@@ -376,10 +260,10 @@ jobs:
           PLACEHOLDER
             sed -i 's/^          //' ./LLM_ANALYSIS_REPORT.md
           fi
-          
+
           ls -la ./LLM_ANALYSIS_REPORT.md || true
 
-      - name: Upload analysis report
+      - name: Upload analysis report artifact
         uses: actions/upload-artifact@v6
         if: always()
         with:
@@ -387,232 +271,15 @@ jobs:
           path: LLM_ANALYSIS_REPORT.md
           if-no-files-found: warn
 
-  release:
-    name: Publish Release
-    runs-on: ubuntu-latest
-    needs: [prepare-release, build, mistral-agent-analysis]
-    if: always() && needs.build.result == 'success'
-    permissions:
-      contents: write
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - name: Download build artifacts
-        uses: actions/download-artifact@v7
-        with:
-          path: release-artifacts
-
-      - name: Download LLM analysis report
-        uses: actions/download-artifact@v7
-        continue-on-error: true
-        with:
-          name: llm-analysis-report
-          path: llm-report/
-
-      - name: Get raw git changes
-        id: git-changes
+      - name: Attach report to release
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")
-          if [[ -n "$PREVIOUS_TAG" ]]; then
-            RANGE="$PREVIOUS_TAG..HEAD"
+          TAG="${{ steps.get_version.outputs.version }}"
+          if [[ -f LLM_ANALYSIS_REPORT.md ]]; then
+            gh release upload "$TAG" LLM_ANALYSIS_REPORT.md --clobber
+            echo "✅ Report attached to release $TAG"
           else
-            RANGE="HEAD"
-          fi
-          
-          echo "range=$RANGE" >> $GITHUB_OUTPUT
-          echo "previous_tag=$PREVIOUS_TAG" >> $GITHUB_OUTPUT
-          
-          # Get detailed commit info for LLM
-          git log --pretty=format:"- %s%n%b" $RANGE > /tmp/raw_commits.txt
-          
-          # Use unique delimiter for multiline output
-          COMMITS_DELIMITER="RAW_COMMITS_$(date +%s)"
-          echo "raw_commits<<${COMMITS_DELIMITER}" >> $GITHUB_OUTPUT
-          cat /tmp/raw_commits.txt >> $GITHUB_OUTPUT
-          echo "" >> $GITHUB_OUTPUT
-          echo "${COMMITS_DELIMITER}" >> $GITHUB_OUTPUT
-
-      - name: Generate changelog with LLM
-        uses: mistralai/mistral-vibe@main
-        with:
-          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
-          prompt: |
-            Generate a professional changelog for release ${{ needs.prepare-release.outputs.version }}.
-            
-            First, read the git commits using: git log --pretty=format:"- %s%n%b" ${{ steps.git-changes.outputs.range }}
-            
-            IMPORTANT: You MUST save the changelog to RELEASE_CHANGELOG.md using the write_file tool.
-            
-            The changelog should:
-            - Group changes by category (Features, Bug Fixes, CI/CD, Documentation, etc.)
-            - Write clear, user-friendly descriptions  
-            - Highlight breaking changes if any
-            - Keep technical details but make them readable
-            - Start with the most important changes first
-            - Use markdown formatting with clear sections
-            
-            Write ONLY the changelog content to the file, no extra commentary. Start with a header like:
-            # Changelog - ${{ needs.prepare-release.outputs.version }}
-
-      - name: Read generated changelog
-        id: changelog
-        run: |
-          # Use a unique delimiter to avoid conflicts with content
-          DELIMITER="CHANGELOG_CONTENT_$(date +%s)"
-          
-          if [[ -f "RELEASE_CHANGELOG.md" ]]; then
-            echo "changelog<<${DELIMITER}" >> $GITHUB_OUTPUT
-            cat RELEASE_CHANGELOG.md >> $GITHUB_OUTPUT
-            echo "" >> $GITHUB_OUTPUT
-            echo "${DELIMITER}" >> $GITHUB_OUTPUT
-          else
-            echo "⚠️ LLM changelog not generated, using git log fallback"
-            echo "changelog<<${DELIMITER}" >> $GITHUB_OUTPUT
-            git log --pretty=format:"- %s" ${{ steps.git-changes.outputs.range }} >> $GITHUB_OUTPUT
-            echo "" >> $GITHUB_OUTPUT
-            echo "${DELIMITER}" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Build release notes
-        id: release-body
-        run: |
-          body_file=release-body.txt
-          : > "$body_file"
-
-          mistral_result="${{ needs.mistral-agent-analysis.result }}"
-          changelog="${{ steps.changelog.outputs.changelog }}"
-
-          # Include LLM Analysis Report if available
-          if [[ -f "llm-report/LLM_ANALYSIS_REPORT.md" ]]; then
-            echo "## 🤖 LLM E2E Testing Report" >> "$body_file"
-            echo "" >> "$body_file"
-            cat "llm-report/LLM_ANALYSIS_REPORT.md" >> "$body_file"
-            echo "" >> "$body_file"
-            echo "---" >> "$body_file"
-            echo "" >> "$body_file"
-          elif [[ "$mistral_result" == "success" ]]; then
-            echo "## 🤖 LLM Analysis" >> "$body_file"
-            echo "" >> "$body_file"
-            echo "**Status**: ✅ Completed (report not captured)" >> "$body_file"
-            echo "" >> "$body_file"
-            echo "---" >> "$body_file"
-            echo "" >> "$body_file"
-          fi
-
-          # Write the main release body content
-          echo "## Changes" >> "$body_file"
-          echo "" >> "$body_file"
-          
-          # Add changelog
-          echo "${changelog}" >> "$body_file"
-          echo "" >> "$body_file"
-          
-          # Add installation section using echo commands for reliability
-          VERSION="${{ needs.prepare-release.outputs.version }}"
-          REPO="${{ github.repository }}"
-          
-          echo "## Installation" >> "$body_file"
-          echo "" >> "$body_file"
-          echo "Download the appropriate binary for your platform from the assets below." >> "$body_file"
-          echo "" >> "$body_file"
-          echo "### Linux/macOS" >> "$body_file"
-          echo '```bash' >> "$body_file"
-          echo "# Download and install (replace with actual URL for your architecture)" >> "$body_file"
-          echo "curl -L -o dokku-mcp https://github.com/${REPO}/releases/download/${VERSION}/dokku-mcp-linux-amd64" >> "$body_file"
-          echo "chmod +x dokku-mcp" >> "$body_file"
-          echo "sudo mv dokku-mcp /usr/local/bin/" >> "$body_file"
-          echo '```' >> "$body_file"
-          echo "" >> "$body_file"
-          echo "### Verify installation" >> "$body_file"
-          echo '```bash' >> "$body_file"
-          echo "dokku-mcp --version" >> "$body_file"
-          echo '```' >> "$body_file"
-          echo "" >> "$body_file"
-          echo "## Configuration" >> "$body_file"
-          echo "" >> "$body_file"
-          echo "After installing the binary, you need to configure it to connect to your Dokku instance. Configuration can be done using a YAML file or environment variables." >> "$body_file"
-          echo "Check [config.yaml.example](https://github.com/${REPO}/blob/${VERSION}/config.yaml.example)" >> "$body_file"
-          echo "" >> "$body_file"
-          echo "### Using a Configuration File" >> "$body_file"
-          echo "" >> "$body_file"
-          echo "You can create a configuration file at one of the following locations:" >> "$body_file"
-          echo "- System-wide: \`/etc/dokku-mcp/config.yaml\`" >> "$body_file"
-          echo "- User-specific: \`~/.dokku-mcp/config.yaml\`" >> "$body_file"
-          echo "" >> "$body_file"
-          echo "Here is a minimal example to get you started. Create the file and add the following content, adjusting the values for your setup:" >> "$body_file"
-          echo "" >> "$body_file"
-          echo '```yaml' >> "$body_file"
-          echo "# ~/.dokku-mcp/config.yaml" >> "$body_file"
-          echo "ssh:" >> "$body_file"
-          echo '  host: "your-dokku-host.com"' >> "$body_file"
-          echo '  user: "dokku"' >> "$body_file"
-          echo '  # key_path: "/path/to/your/ssh/private/key" # Optional, uses ssh-agent if empty' >> "$body_file"
-          echo "" >> "$body_file"
-          echo 'log_level: "info"' >> "$body_file"
-          echo '```' >> "$body_file"
-          echo "" >> "$body_file"
-          echo "For a full list of configuration options, see the [config.yaml.example](https://github.com/${REPO}/blob/${VERSION}/config.yaml.example) file." >> "$body_file"
-          echo "" >> "$body_file"
-          echo "### Using Environment Variables" >> "$body_file"
-          echo "" >> "$body_file"
-          echo "All configuration options can be set using environment variables with the \`DOKKU_MCP_\` prefix. For example:" >> "$body_file"
-          echo "" >> "$body_file"
-          echo '```bash' >> "$body_file"
-          echo 'export DOKKU_MCP_SSH_HOST="your-dokku-host.com"' >> "$body_file"
-          echo 'export DOKKU_MCP_SSH_USER="dokku"' >> "$body_file"
-          echo 'export DOKKU_MCP_LOG_LEVEL="debug"' >> "$body_file"
-          echo "" >> "$body_file"
-          echo "dokku-mcp" >> "$body_file"
-          echo '```' >> "$body_file"
-
-          # Use unique delimiter and proper output redirection
-          BODY_DELIMITER="RELEASE_BODY_$(date +%s)"
-          echo "body<<${BODY_DELIMITER}" >> $GITHUB_OUTPUT
-          cat "$body_file" >> $GITHUB_OUTPUT
-          echo "" >> $GITHUB_OUTPUT
-          echo "${BODY_DELIMITER}" >> $GITHUB_OUTPUT
-
-      - name: Prepare LLM report for release
-        run: |
-          if [[ -f "llm-report/LLM_ANALYSIS_REPORT.md" ]]; then
-            cp llm-report/LLM_ANALYSIS_REPORT.md release-artifacts/
-          fi
-
-      - name: Create Release
-        uses: ncipollo/release-action@v1
-        with:
-          tag: ${{ needs.prepare-release.outputs.version }}
-          name: Release ${{ needs.prepare-release.outputs.version }}
-          allowUpdates: true
-          body: ${{ steps.release-body.outputs.body }}
-          artifacts: |
-            release-artifacts/dokku-mcp-linux-amd64/dokku-mcp-linux-amd64.tar.gz
-            release-artifacts/dokku-mcp-linux-arm64/dokku-mcp-linux-arm64.tar.gz
-            release-artifacts/dokku-mcp-darwin-amd64/dokku-mcp-darwin-amd64.tar.gz
-            release-artifacts/dokku-mcp-darwin-arm64/dokku-mcp-darwin-arm64.tar.gz
-            release-artifacts/LLM_ANALYSIS_REPORT.md
-          draft: false
-          prerelease: ${{ contains(needs.prepare-release.outputs.version, 'alpha') || contains(needs.prepare-release.outputs.version, 'beta') || contains(needs.prepare-release.outputs.version, 'rc') }}
-          removeArtifacts: false
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-  notify-success:
-    name: Notify Success
-    runs-on: ubuntu-latest
-    needs: [prepare-release, build, release, mistral-agent-analysis]
-    if: always() && needs.release.result == 'success'
-
-    steps:
-      - name: Success notification
-        run: |
-          echo "🎉 Release ${{ needs.prepare-release.outputs.version }} completed successfully!"
-          echo "📦 Binaries built and published"
-          if [[ "${{ needs.mistral-agent-analysis.result }}" == "success" ]]; then
-            echo "✅ Mistral Vibe Analysis: Completed"
-          else
-            echo "⚠️ Mistral Vibe Analysis: ${{ needs.mistral-agent-analysis.result }}"
+            echo "⚠️ No report to attach"
           fi
