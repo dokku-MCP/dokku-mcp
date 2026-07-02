@@ -133,7 +133,8 @@ release:
 mcp:
   name: io.github.dokku-mcp/dokku-mcp
   title: "Dokku MCP Server"
-  description: "MCP server for Dokku written in Go. Lets LLMs and agents manage a Dokku instance: create, deploy, scale and configure apps, inspect status and logs."
+  # The official MCP Registry caps description at 100 characters.
+  description: "MCP server for Dokku: let LLMs create, deploy, scale, configure and inspect Dokku apps."
   homepage: "https://github.com/dokku-mcp/dokku-mcp"
   auth:
     type: github-oidc
