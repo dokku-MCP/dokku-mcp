@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/dokku-mcp/dokku-mcp/pkg/config"
@@ -39,7 +40,7 @@ func CORSMiddleware(cfg *config.CORSConfig) func(http.Handler) http.Handler {
 
 			// Set Access-Control-Max-Age
 			if cfg.MaxAge > 0 {
-				w.Header().Set("Access-Control-Max-Age", string(rune(cfg.MaxAge)))
+				w.Header().Set("Access-Control-Max-Age", strconv.Itoa(cfg.MaxAge))
 			}
 
 			// Handle preflight requests

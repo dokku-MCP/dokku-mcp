@@ -153,6 +153,7 @@ func (s *SSHAuthService) isSshAgentAvailable() bool {
 		return false
 	}
 
+	// #nosec G703 -- authSock is the operator's own SSH_AUTH_SOCK, the standard ssh-agent discovery path, not attacker-controlled input.
 	if _, err := os.Stat(authSock); os.IsNotExist(err) {
 		s.logger.Debug("Socket ssh-agent does not exist",
 			"socket_path", authSock)
