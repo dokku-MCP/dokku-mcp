@@ -40,9 +40,9 @@ func NewCommandCacheManager(config *CacheConfig, logger *slog.Logger) *CommandCa
 }
 
 // Get retrieves a cached result if available and not expired
-func (cm *CommandCacheManager) Get(command string, args []string) ([]byte, error, bool) {
+func (cm *CommandCacheManager) Get(command string, args []string) ([]byte, bool) {
 	if cm == nil {
-		return nil, nil, false
+		return nil, false
 	}
 
 	key := cm.generateCacheKey(command, args)
@@ -52,12 +52,12 @@ func (cm *CommandCacheManager) Get(command string, args []string) ([]byte, error
 
 	entry, exists := cm.cache.entries[key]
 	if !exists {
-		return nil, nil, false
+		return nil, false
 	}
 
 	// Check if expired
 	if time.Now().After(entry.expiresAt) {
-		return nil, nil, false
+		return nil, false
 	}
 
 	cm.logger.Debug("Cache hit",
@@ -65,11 +65,11 @@ func (cm *CommandCacheManager) Get(command string, args []string) ([]byte, error
 		"args", args,
 		"key", key)
 
-	return entry.result, entry.error, true
+	return entry.result, true
 }
 
-// Set stores a command result in the cache with appropriate TTL
-func (cm *CommandCacheManager) Set(command string, args []string, result []byte, err error) {
+// Set stores a successful command result in the cache with appropriate TTL
+func (cm *CommandCacheManager) Set(command string, args []string, result []byte) {
 	if cm == nil {
 		return
 	}
@@ -82,7 +82,6 @@ func (cm *CommandCacheManager) Set(command string, args []string, result []byte,
 
 	cm.cache.entries[key] = &cacheEntry{
 		result:    result,
-		error:     err,
 		expiresAt: time.Now().Add(ttl),
 	}
 

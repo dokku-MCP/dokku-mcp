@@ -26,6 +26,7 @@ func NewDokkuClientFromConfig(cfg *config.ServerConfig, logger *slog.Logger) Dok
 
 	client := NewDokkuClient(dokkuConfig, logger)
 	client.SetBlacklist(cfg.Security.Blacklist)
+	client.SetAllowlist(cfg.Security.Allowlist)
 
 	if cfg.CacheEnabled {
 		logger.Info("Command-level caching enabled",

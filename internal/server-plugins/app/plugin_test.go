@@ -1,0 +1,230 @@
+package app
+
+import (
+	"encoding/base64"
+	"errors"
+	"io"
+	"log/slog"
+	"slices"
+	"strings"
+	"testing"
+
+	dokkuApi "github.com/dokku-mcp/dokku-mcp/internal/dokku-api"
+	"github.com/dokku-mcp/dokku-mcp/internal/dokku-api/dokkutest"
+	"github.com/dokku-mcp/dokku-mcp/internal/server-plugin/domain"
+	"github.com/dokku-mcp/dokku-mcp/internal/server-plugin/plugintest"
+	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/app/infrastructure"
+	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/deployment"
+	deploymentAdapter "github.com/dokku-mcp/dokku-mcp/internal/server-plugins/deployment/adapter"
+	deploymentDomain "github.com/dokku-mcp/dokku-mcp/internal/server-plugins/deployment/domain"
+	deploymentInfra "github.com/dokku-mcp/dokku-mcp/internal/server-plugins/deployment/infrastructure"
+	"github.com/dokku-mcp/dokku-mcp/pkg/config"
+)
+
+type fixture struct {
+	client      *dokkutest.FakeClient
+	apps        domain.ToolProvider
+	deployments domain.ToolProvider
+}
+
+// newFixture wires the apps and deployment plugins to a fake Dokku that
+// knows a single deployed application, "myapp".
+func newFixture(t *testing.T) *fixture {
+	t.Helper()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	client := dokkutest.NewFakeClient().
+		On("apps:exists", func(args []string) ([]byte, error) {
+			if args[0] == "myapp" {
+				return nil, nil
+			}
+			return nil, &dokkuApi.NotFoundError{Command: "apps:exists", Err: dokkuApi.ErrAppNotFound}
+		}).
+		Respond("ps:report", "Deployed: true\nRunning: true\nPs scale: web=1\n").
+		Respond("config:show", "=====> myapp env vars\nEXISTING:  keep me\n").
+		Respond("logs", "2026-10-08T00:00:00 app[web.1]: hello\n")
+
+	tracker := deploymentDomain.NewDeploymentTracker()
+	deploymentSvc := deploymentAdapter.NewDeploymentServiceAdapter(
+		deploymentDomain.NewApplicationDeploymentService(
+			deploymentInfra.NewDeploymentRepository(logger),
+			deploymentInfra.NewDeploymentInfrastructure(client, logger, tracker, nil),
+			tracker,
+			logger,
+		),
+	)
+
+	logsConfig := config.LogsConfig{Runtime: config.RuntimeLogsConfig{DefaultLines: 100, MaxLines: 1000}}
+	apps := NewAppsServerPlugin(infrastructure.NewDokkuApplicationRepository(client, logger), deploymentSvc, logger, logsConfig)
+
+	return &fixture{
+		client:      client,
+		apps:        apps.(domain.ToolProvider),
+		deployments: deployment.NewDeploymentServerPlugin(tracker, logger).(domain.ToolProvider),
+	}
+}
+
+func TestToolsAreAnnotated(t *testing.T) {
+	f := newFixture(t)
+	plugintest.RequireAnnotated(t, f.apps)
+	plugintest.RequireAnnotated(t, f.deployments)
+}
+
+func TestConfigureAppEncodesValues(t *testing.T) {
+	f := newFixture(t)
+
+	value := `postgres://u:p@db:5432/app?sslmode=require&x=$(rm -rf /) "quoted" spaced value`
+	result := plugintest.CallTool(t, f.apps, "configure_app", map[string]any{
+		"app_name": "myapp",
+		"config":   map[string]any{"DATABASE_URL": value, "A_FLAG": ""},
+	})
+	plugintest.RequireSuccess(t, result)
+
+	calls := f.client.CallsTo("config:set")
+	if len(calls) != 1 {
+		t.Fatalf("expected one config:set call, got %v", calls)
+	}
+	want := []string{
+		"--encoded", "myapp",
+		"A_FLAG=",
+		"DATABASE_URL=" + base64.StdEncoding.EncodeToString([]byte(value)),
+	}
+	if !slices.Equal(calls[0].Args, want) {
+		t.Fatalf("config:set args = %v, want %v", calls[0].Args, want)
+	}
+}
+
+func TestConfigureAppWithoutRestart(t *testing.T) {
+	f := newFixture(t)
+
+	result := plugintest.CallTool(t, f.apps, "configure_app", map[string]any{
+		"app_name": "myapp",
+		"config":   map[string]any{"KEY": "v"},
+		"restart":  false,
+	})
+	plugintest.RequireSuccess(t, result)
+
+	calls := f.client.CallsTo("config:set")
+	if len(calls) != 1 || !slices.Contains(calls[0].Args, "--no-restart") {
+		t.Fatalf("expected config:set with --no-restart, got %v", calls)
+	}
+}
+
+func TestConfigureAppRejectsInvalidKey(t *testing.T) {
+	f := newFixture(t)
+
+	result := plugintest.CallTool(t, f.apps, "configure_app", map[string]any{
+		"app_name": "myapp",
+		"config":   map[string]any{"BAD KEY": "v"},
+	})
+	plugintest.RequireError(t, result, "BAD KEY")
+	if calls := f.client.CallsTo("config:set"); len(calls) != 0 {
+		t.Fatalf("expected no config:set call, got %v", calls)
+	}
+}
+
+func TestConfigureAppUnknownApp(t *testing.T) {
+	f := newFixture(t)
+
+	result := plugintest.CallTool(t, f.apps, "configure_app", map[string]any{
+		"app_name": "ghost",
+		"config":   map[string]any{"KEY": "v"},
+	})
+	plugintest.RequireError(t, result, "not found")
+}
+
+func TestScaleAppDoesNotRewriteConfig(t *testing.T) {
+	f := newFixture(t)
+
+	result := plugintest.CallTool(t, f.apps, "scale_app", map[string]any{
+		"app_name":     "myapp",
+		"process_type": "web",
+		"instances":    3,
+	})
+	plugintest.RequireSuccess(t, result)
+
+	if calls := f.client.CallsTo("ps:scale"); len(calls) != 1 || calls[0].String() != "ps:scale myapp web=3" {
+		t.Fatalf("unexpected ps:scale calls: %v", calls)
+	}
+	if calls := f.client.CallsTo("config:set"); len(calls) != 0 {
+		t.Fatalf("scaling must not rewrite config, got %v", calls)
+	}
+}
+
+func TestDeployAppReturnsTrackableDeployment(t *testing.T) {
+	f := newFixture(t)
+
+	result := plugintest.CallTool(t, f.apps, "deploy_app", map[string]any{
+		"app_name": "myapp",
+		"repo_url": "https://github.com/dokku/smoke-test-app.git",
+		"git_ref":  "v1.0.0",
+	})
+	started := plugintest.Structured[DeployStarted](t, result)
+	if started.DeploymentID == "" {
+		t.Fatalf("deploy_app must return a deployment_id, got %+v", started)
+	}
+
+	sync := f.client.CallsTo("git:sync")
+	if len(sync) != 1 || sync[0].String() != "git:sync myapp https://github.com/dokku/smoke-test-app.git v1.0.0" {
+		t.Fatalf("unexpected git:sync calls: %v", sync)
+	}
+
+	status := plugintest.Structured[deployment.DeploymentView](t, plugintest.CallTool(t, f.deployments, "get_deployment_status", map[string]any{
+		"deployment_id": started.DeploymentID,
+	}))
+	if status.ID != started.DeploymentID || status.AppName != "myapp" || status.GitRef != "v1.0.0" {
+		t.Fatalf("unexpected deployment status: %+v", status)
+	}
+
+	list := plugintest.Structured[deployment.DeploymentList](t, plugintest.CallTool(t, f.deployments, "list_deployments", map[string]any{
+		"app_name": "myapp",
+	}))
+	if len(list.Deployments) != 1 || list.Deployments[0].ID != started.DeploymentID {
+		t.Fatalf("unexpected deployment list: %+v", list)
+	}
+}
+
+func TestDeployAppGitSyncFailure(t *testing.T) {
+	f := newFixture(t)
+	f.client.Fail("git:sync", errors.New("repository not found"))
+
+	result := plugintest.CallTool(t, f.apps, "deploy_app", map[string]any{
+		"app_name": "myapp",
+		"repo_url": "https://github.com/dokku/missing.git",
+	})
+	plugintest.RequireError(t, result, "repository not found")
+}
+
+func TestGetDeploymentStatusUnknownID(t *testing.T) {
+	f := newFixture(t)
+	result := plugintest.CallTool(t, f.deployments, "get_deployment_status", map[string]any{"deployment_id": "nope"})
+	plugintest.RequireError(t, result, "not found")
+}
+
+func TestGetRuntimeLogsRequestsLineCount(t *testing.T) {
+	f := newFixture(t)
+
+	result := plugintest.CallTool(t, f.apps, "get_runtime_logs", map[string]any{
+		"app_name": "myapp",
+		"lines":    50,
+	})
+	plugintest.RequireSuccess(t, result)
+	if !strings.Contains(plugintest.Text(result), "hello") {
+		t.Fatalf("expected log output, got %s", plugintest.Text(result))
+	}
+
+	calls := f.client.CallsTo("logs")
+	if len(calls) != 1 || slices.Contains(calls[0].Args, "--tail") || slices.Contains(calls[0].Args, "-t") {
+		t.Fatalf("logs must not follow the stream, got %v", calls)
+	}
+}
+
+func TestCreateAppRejectsInvalidName(t *testing.T) {
+	f := newFixture(t)
+	result := plugintest.CallTool(t, f.apps, "create_app", map[string]any{"app_name": "Bad_Name!"})
+	if !result.IsError {
+		t.Fatalf("expected an error for an invalid name")
+	}
+	if calls := f.client.CallsTo("apps:create"); len(calls) != 0 {
+		t.Fatalf("expected no apps:create call, got %v", calls)
+	}
+}

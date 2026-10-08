@@ -1,6 +1,7 @@
 package app
 
 import (
+	"maps"
 	"time"
 )
 
@@ -161,3 +162,27 @@ func (e *BuildpackChangedEvent) OccurredAt() time.Time { return e.occurredAt }
 func (e *BuildpackChangedEvent) EventType() string     { return "application.buildpack.changed" }
 func (e *BuildpackChangedEvent) AggregateID() string   { return e.aggregateID }
 func (e *BuildpackChangedEvent) Buildpack() string     { return e.buildpack }
+
+// ConfigurationChangedEvent records environment variables set on an
+// application that still have to be applied to Dokku.
+type ConfigurationChangedEvent struct {
+	aggregateID string
+	vars        map[string]string
+	restart     bool
+	occurredAt  time.Time
+}
+
+func NewConfigurationChangedEvent(aggregateID string, vars map[string]string, restart bool, occurredAt time.Time) *ConfigurationChangedEvent {
+	return &ConfigurationChangedEvent{
+		aggregateID: aggregateID,
+		vars:        maps.Clone(vars),
+		restart:     restart,
+		occurredAt:  occurredAt,
+	}
+}
+
+func (e *ConfigurationChangedEvent) OccurredAt() time.Time   { return e.occurredAt }
+func (e *ConfigurationChangedEvent) EventType() string       { return "application.configuration.changed" }
+func (e *ConfigurationChangedEvent) AggregateID() string     { return e.aggregateID }
+func (e *ConfigurationChangedEvent) Vars() map[string]string { return maps.Clone(e.vars) }
+func (e *ConfigurationChangedEvent) Restart() bool           { return e.restart }

@@ -19,9 +19,8 @@ func DefaultCacheConfig() *CacheConfig {
 		DefaultTTL: 5 * time.Minute,
 		Policies: map[string]time.Duration{
 			// Fast-changing data - short cache
-			"logs":        30 * time.Second,
-			"ps:scale":    1 * time.Minute,
-			"apps:exists": 2 * time.Minute,
+			"ps:report":   30 * time.Second,
+			"apps:exists": 1 * time.Minute,
 
 			// Semi-stable data - medium cache
 			"config:show":    5 * time.Minute,
@@ -46,7 +45,6 @@ func (c *CacheConfig) GetTTLForCommand(command string) time.Duration {
 // cacheEntry stores cached command results with TTL (internal to cache manager)
 type cacheEntry struct {
 	result    []byte
-	error     error
 	expiresAt time.Time
 }
 

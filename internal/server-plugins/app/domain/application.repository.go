@@ -11,6 +11,8 @@ type ApplicationRepository interface {
 	GetByState(ctx context.Context, state *ApplicationState) ([]*Application, error)
 	Delete(ctx context.Context, name *ApplicationName) error
 	Exists(ctx context.Context, name *ApplicationName) (bool, error)
+	// GetLogs returns the last lines of the application's runtime logs.
+	GetLogs(ctx context.Context, name *ApplicationName, lines int) (string, error)
 	List(ctx context.Context, offset, limit int) ([]*Application, int, error)
 	GetByDomain(ctx context.Context, domain string) ([]*Application, error)
 	GetRunningApplications(ctx context.Context) ([]*Application, error)

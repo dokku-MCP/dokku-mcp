@@ -39,6 +39,10 @@ type PluginDiscoveryConfig struct {
 
 type SecurityConfig struct {
 	Blacklist []string `mapstructure:"blacklist"`
+	// Allowlist, when non-empty, restricts execution to matching commands.
+	// Patterns are exact names ("apps:list"), prefixes ending in ':' or '*'
+	// ("postgres:", "apps:*"), or "*".
+	Allowlist []string `mapstructure:"allowlist"`
 }
 
 type MultiTenantConfig struct {
@@ -139,6 +143,7 @@ func DefaultConfig() *ServerConfig {
 		},
 		Security: SecurityConfig{
 			Blacklist: []string{},
+			Allowlist: []string{},
 		},
 		MultiTenant: MultiTenantConfig{
 			Enabled: false,
@@ -217,6 +222,7 @@ func LoadConfig() (*ServerConfig, error) {
 
 	// Security configuration defaults
 	viper.SetDefault("security.blacklist", config.Security.Blacklist)
+	viper.SetDefault("security.allowlist", config.Security.Allowlist)
 
 	// Logs configuration defaults
 	viper.SetDefault("logs.runtime.default_lines", config.Logs.Runtime.DefaultLines)

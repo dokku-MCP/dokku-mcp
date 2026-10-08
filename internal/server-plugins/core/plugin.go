@@ -159,6 +159,7 @@ func (p *CoreServerPlugin) GetTools(ctx context.Context) ([]serverDomain.Tool, e
 func (p *CoreServerPlugin) buildGetServerLogsTool() mcp.Tool {
 	return mcp.NewTool(
 		"get_server_logs",
+		mcp.WithTitleAnnotation("Get MCP server logs"),
 		mcp.WithDescription("Get recent dokku-mcp server logs"),
 		mcp.WithNumber("last",
 			mcp.Description("Number of last lines to return (default 200)"),
@@ -169,6 +170,9 @@ func (p *CoreServerPlugin) buildGetServerLogsTool() mcp.Tool {
 		mcp.WithString("contains",
 			mcp.Description("Optional substring filter"),
 		),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithOpenWorldHintAnnotation(false),
 	)
 }
 

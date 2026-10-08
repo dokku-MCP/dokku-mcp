@@ -90,7 +90,11 @@ func (p *DomainServerPlugin) handleDomainsReportResource(ctx context.Context, re
 func (p *DomainServerPlugin) buildListGlobalDomainsTool() mcp.Tool {
 	return mcp.NewTool(
 		"list_global_domains",
+		mcp.WithTitleAnnotation("List global domains"),
 		mcp.WithDescription("List all global domains configured in Dokku"),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithOpenWorldHintAnnotation(false),
 	)
 }
 
@@ -114,11 +118,16 @@ func (p *DomainServerPlugin) handleListGlobalDomains(ctx context.Context, req mc
 func (p *DomainServerPlugin) buildAddGlobalDomainTool() mcp.Tool {
 	return mcp.NewTool(
 		"add_global_domain",
+		mcp.WithTitleAnnotation("Add global domain"),
 		mcp.WithDescription("Add a global domain to Dokku"),
 		mcp.WithString("domain_name",
 			mcp.Required(),
 			mcp.Description("The domain name to add"),
 		),
+		mcp.WithReadOnlyHintAnnotation(false),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithIdempotentHintAnnotation(true),
+		mcp.WithOpenWorldHintAnnotation(false),
 	)
 }
 

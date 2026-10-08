@@ -94,8 +94,9 @@ type DeployApplicationCommand struct {
 	RunImage   string
 }
 
-// DeployApplication orchestrates application deployment
-func (uc *ApplicationUseCase) DeployApplication(ctx context.Context, cmd DeployApplicationCommand) error {
+// DeployApplication orchestrates application deployment. The build runs
+// asynchronously; the returned result identifies the tracked deployment.
+func (uc *ApplicationUseCase) DeployApplication(ctx context.Context, cmd DeployApplicationCommand) (*shared.DeploymentResult, error) {
 	uc.logger.Info("Deploying application",
 		"app_name", cmd.Name,
 		"repo_url", cmd.RepoURL,
@@ -104,12 +105,12 @@ func (uc *ApplicationUseCase) DeployApplication(ctx context.Context, cmd DeployA
 	// Get application
 	appName, err := domain.NewApplicationName(cmd.Name)
 	if err != nil {
-		return fmt.Errorf("invalid application name: %w", err)
+		return nil, fmt.Errorf("invalid application name: %w", err)
 	}
 
 	app, err := uc.applicationRepo.GetByName(ctx, appName)
 	if err != nil {
-		return fmt.Errorf("application not found: %w", err)
+		return nil, fmt.Errorf("application not found: %w", err)
 	}
 
 	// Create Git reference for validation
@@ -118,7 +119,7 @@ func (uc *ApplicationUseCase) DeployApplication(ctx context.Context, cmd DeployA
 		var err error
 		gitRef, err = shared.NewGitRef(cmd.GitRef)
 		if err != nil {
-			return fmt.Errorf("invalid Git reference: %w", err)
+			return nil, fmt.Errorf("invalid Git reference: %w", err)
 		}
 	}
 
@@ -129,7 +130,7 @@ func (uc *ApplicationUseCase) DeployApplication(ctx context.Context, cmd DeployA
 		for _, validationError := range validationResult.Errors {
 			errorMessages = append(errorMessages, validationError.Message)
 		}
-		return fmt.Errorf("deployment validation failed: %v", errorMessages)
+		return nil, fmt.Errorf("deployment validation failed: %v", errorMessages)
 	}
 
 	// Log warnings if any
@@ -146,13 +147,13 @@ func (uc *ApplicationUseCase) DeployApplication(ctx context.Context, cmd DeployA
 	if cmd.BuildImage != "" {
 		buildImage, err = shared.NewDockerImage(cmd.BuildImage)
 		if err != nil {
-			return fmt.Errorf("invalid build image: %w", err)
+			return nil, fmt.Errorf("invalid build image: %w", err)
 		}
 	}
 	if cmd.RunImage != "" {
 		runImage, err = shared.NewDockerImage(cmd.RunImage)
 		if err != nil {
-			return fmt.Errorf("invalid run image: %w", err)
+			return nil, fmt.Errorf("invalid run image: %w", err)
 		}
 	}
 
@@ -175,7 +176,7 @@ func (uc *ApplicationUseCase) DeployApplication(ctx context.Context, cmd DeployA
 		if saveErr := uc.applicationRepo.Save(ctx, app); saveErr != nil {
 			uc.logger.Error("failed to save app state after deployment failure", "error", saveErr)
 		}
-		return fmt.Errorf("deployment failed: %w", err)
+		return nil, fmt.Errorf("deployment failed: %w", err)
 	}
 
 	// Update domain entity
@@ -183,7 +184,7 @@ func (uc *ApplicationUseCase) DeployApplication(ctx context.Context, cmd DeployA
 		BuildImage: buildImage,
 		RunImage:   runImage,
 	}); err != nil {
-		return fmt.Errorf("failed to update application state: %w", err)
+		return nil, fmt.Errorf("failed to update application state: %w", err)
 	}
 
 	// Save changes
@@ -192,10 +193,10 @@ func (uc *ApplicationUseCase) DeployApplication(ctx context.Context, cmd DeployA
 			"error", err)
 	}
 
-	uc.logger.Info("Deployment completed successfully",
+	uc.logger.Info("Deployment started",
 		"app_name", cmd.Name,
 		"deployment_id", deploymentResult.ID)
-	return nil
+	return deploymentResult, nil
 }
 
 // ScaleApplicationCommand represents the data for scaling an application
@@ -271,6 +272,8 @@ func (uc *ApplicationUseCase) ScaleApplication(ctx context.Context, cmd ScaleApp
 type SetConfigCommand struct {
 	Name   string
 	Config map[string]string
+	// Restart restarts the application so that it picks up the new values.
+	Restart bool
 }
 
 // SetApplicationConfig orchestrates application configuration
@@ -290,11 +293,8 @@ func (uc *ApplicationUseCase) SetApplicationConfig(ctx context.Context, cmd SetC
 		return fmt.Errorf("application not found: %w", err)
 	}
 
-	// Apply configuration
-	for key, value := range cmd.Config {
-		if err := app.SetEnvironmentVariable(key, value); err != nil {
-			return fmt.Errorf("unable to set variable %s: %w", key, err)
-		}
+	if err := app.Configure(cmd.Config, cmd.Restart); err != nil {
+		return err
 	}
 
 	// Save changes
@@ -339,4 +339,20 @@ func (uc *ApplicationUseCase) GetApplicationByName(ctx context.Context, name str
 	uc.logger.Debug("Application retrieved successfully",
 		"app_name", name)
 	return app, nil
+}
+
+// GetApplicationLogs returns the last lines of an application's runtime logs.
+func (uc *ApplicationUseCase) GetApplicationLogs(ctx context.Context, name string, lines int) (string, error) {
+	appName, err := domain.NewApplicationName(name)
+	if err != nil {
+		return "", fmt.Errorf("invalid application name: %w", err)
+	}
+	exists, err := uc.applicationRepo.Exists(ctx, appName)
+	if err != nil {
+		return "", err
+	}
+	if !exists {
+		return "", domain.ErrApplicationNotFound
+	}
+	return uc.applicationRepo.GetLogs(ctx, appName, lines)
 }

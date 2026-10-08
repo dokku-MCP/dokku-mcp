@@ -7,6 +7,11 @@ type CommandExecutor interface {
 	ExecuteCommand(ctx context.Context, command string, args []string) ([]byte, error)
 }
 
+// StdinExecutor runs commands that read their payload from stdin.
+type StdinExecutor interface {
+	ExecuteCommandWithStdin(ctx context.Context, command string, args []string, stdin string) ([]byte, error)
+}
+
 // CommandParser defines parsing capabilities for different output formats
 type CommandParser interface {
 	GetKeyValueOutput(ctx context.Context, command string, args []string, separator string) (map[string]string, error)
@@ -34,6 +39,7 @@ type SSHManager interface {
 // CommandFilter defines command filtering/security capabilities
 type CommandFilter interface {
 	SetBlacklist(commands []string)
+	SetAllowlist(patterns []string)
 	ValidateCommand(command string, args []string) error
 }
 
@@ -41,6 +47,7 @@ type CommandFilter interface {
 // This is the "convenience interface" that most consumers will use
 type DokkuClient interface {
 	CommandExecutor
+	StdinExecutor
 	CommandParser
 	StructuredExecutor
 	CapabilityManager

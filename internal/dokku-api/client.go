@@ -5,8 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"os/exec"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -17,50 +19,44 @@ func isAppScopedCommand(commandName string) bool {
 	return strings.HasPrefix(commandName, "apps:") || strings.HasPrefix(commandName, "ps:") || commandName == "logs"
 }
 
-// ValidateCommand performs validation on Dokku commands to ensure security
+// ValidateCommand checks a Dokku command against the security policy: the
+// command name and every argument must be shell-safe, the command must not
+// match the blacklist and, when an allowlist is configured, must match it.
 func (c *client) ValidateCommand(commandName string, args []string) error {
-	if commandName == "" {
-		return fmt.Errorf("command name cannot be empty")
+	if err := validateCommandName(commandName); err != nil {
+		return err
 	}
 
-	// Blacklist first (runtime configuration)
 	for _, blacklistedPattern := range c.blacklistedCommands {
-		if strings.Contains(commandName, blacklistedPattern) {
+		if blacklistedPattern != "" && strings.Contains(commandName, blacklistedPattern) {
 			return fmt.Errorf("command is blacklisted (matches pattern '%s'): %s", blacklistedPattern, commandName)
 		}
 	}
 
-	// Basic security validation - ensure no dangerous characters in command name
-	// These characters could be used for command injection
-	dangerousChars := []string{";", "&", "|", "`", "$", "(", ")", "{", "}", "<", ">", "\n", "\r"}
-	for _, char := range dangerousChars {
-		if strings.Contains(commandName, char) {
-			return fmt.Errorf("command name contains dangerous character '%s': %s", char, commandName)
-		}
+	if len(c.allowedCommands) > 0 && !c.isAllowlisted(commandName) {
+		return fmt.Errorf("command is not in the allowlist: %s", commandName)
 	}
 
-	// Validate arguments - ensure no dangerous characters
 	for i, arg := range args {
-		for _, char := range dangerousChars {
-			if strings.Contains(arg, char) {
-				return fmt.Errorf("argument %d contains dangerous character '%s': %s", i, char, arg)
-			}
+		if err := ValidateArg(arg); err != nil {
+			return fmt.Errorf("argument %d: %w", i, err)
 		}
 	}
 
-	// Additional validation: command should only contain alphanumeric, dash, colon
-	for _, r := range commandName {
-		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '-' && r != ':' {
-			return fmt.Errorf("command name contains invalid character: %c", r)
-		}
-	}
-
-	// Log the command for audit purposes
 	c.logger.Debug("Command validated",
 		"command", commandName,
 		"args_count", len(args))
 
 	return nil
+}
+
+func (c *client) isAllowlisted(commandName string) bool {
+	for _, pattern := range c.allowedCommands {
+		if MatchesCommandPattern(commandName, pattern) {
+			return true
+		}
+	}
+	return false
 }
 
 func NewDokkuClient(config *ClientConfig, logger *slog.Logger) DokkuClient {
@@ -118,22 +114,43 @@ func (c *client) ExecuteCommand(ctx context.Context, commandName string, args []
 		return nil, fmt.Errorf("invalid command: %w", err)
 	}
 
-	// Check cache first if caching is enabled
-	if result, err, found := c.cacheManager.Get(commandName, args); found {
+	if !IsCacheableCommand(commandName) {
+		result, err := c.executeCommandDirect(ctx, commandName, args)
+		if !isReadOnlyCommand(commandName) {
+			// The command may have changed server state (even on failure),
+			// so any cached report could now be stale.
+			c.cacheManager.Invalidate()
+		}
 		return result, err
 	}
 
-	// Execute command
+	if result, found := c.cacheManager.Get(commandName, args); found {
+		return result, nil
+	}
+
 	result, err := c.executeCommandDirect(ctx, commandName, args)
-
-	// Cache the result if caching is enabled
-	c.cacheManager.Set(commandName, args, result, err)
-
+	if err == nil {
+		c.cacheManager.Set(commandName, args, result)
+	}
 	return result, err
 }
 
 // executeCommandDirect performs the actual command execution without caching
 func (c *client) executeCommandDirect(ctx context.Context, commandName string, args []string) ([]byte, error) {
+	return c.executeCommandWithInput(ctx, commandName, args, nil)
+}
+
+// ExecuteCommandWithStdin runs a command that reads its payload from stdin,
+// such as ssh-keys:add. It is never cached and always invalidates the cache.
+func (c *client) ExecuteCommandWithStdin(ctx context.Context, commandName string, args []string, stdin string) ([]byte, error) {
+	if err := c.ValidateCommand(commandName, args); err != nil {
+		return nil, fmt.Errorf("invalid command: %w", err)
+	}
+	defer c.cacheManager.Invalidate()
+	return c.executeCommandWithInput(ctx, commandName, args, strings.NewReader(stdin))
+}
+
+func (c *client) executeCommandWithInput(ctx context.Context, commandName string, args []string, stdin io.Reader) ([]byte, error) {
 	cmdCtx, cancel := c.commandContext(ctx)
 	defer cancel()
 
@@ -147,6 +164,10 @@ func (c *client) executeCommandDirect(ctx context.Context, commandName string, a
 	cmd, err := prepareSSHExecCommand(cmdCtx, sshArgs, env)
 	if err != nil {
 		return nil, fmt.Errorf("failed to prepare SSH command: %w", err)
+	}
+
+	if stdin != nil {
+		cmd.Stdin = stdin
 	}
 
 	c.logCommandExecutionStart(cmdCtx, commandName, args, dokkuCommand, sshArgs, env)
@@ -355,6 +376,13 @@ func (c *client) SetBlacklist(commands []string) {
 	c.logger.Debug("Command blacklist updated", "patterns", commands) // Audit trail
 }
 
+// SetAllowlist restricts execution to commands matching these patterns.
+// An empty list allows every command that is not blacklisted.
+func (c *client) SetAllowlist(patterns []string) {
+	c.allowedCommands = patterns
+	c.logger.Debug("Command allowlist updated", "patterns", patterns) // Audit trail
+}
+
 // Enhanced parsing methods
 
 // ExecuteStructured executes a command with automatic parsing based on the spec
@@ -401,7 +429,7 @@ func (c *client) ExecuteWithAutoFormat(ctx context.Context, commandName string, 
 			"command", commandName,
 			"supports_json", true)
 
-		jsonArgs := append(args, "--format", "json")
+		jsonArgs := slices.Concat(args, []string{"--format", "json"})
 		output, err := c.ExecuteCommand(ctx, commandName, jsonArgs)
 		if err != nil {
 			c.logger.Warn("Failed to execute with JSON format, falling back to text",
@@ -435,7 +463,7 @@ func (c *client) ExecuteWithAutoFormat(ctx context.Context, commandName string, 
 	if !supportsJSON && (strings.Contains(commandName, ":report") || strings.Contains(commandName, ":info")) {
 		c.logger.Debug("Opportunistic JSON probe for report/info command",
 			"command", commandName)
-		jsonArgs := append(args, "--format", "json")
+		jsonArgs := slices.Concat(args, []string{"--format", "json"})
 		output, err := c.ExecuteCommand(ctx, commandName, jsonArgs)
 		if err == nil && json.Valid(output) {
 			// Persist confirmed support and return

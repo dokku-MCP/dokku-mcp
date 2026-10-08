@@ -217,6 +217,21 @@ func (a *Application) SetEnvironmentVariable(key, value string) error {
 	return nil
 }
 
+// Configure sets environment variables and records them for persistence.
+// When restart is false, Dokku applies them without restarting the app.
+func (a *Application) Configure(vars map[string]string, restart bool) error {
+	if len(vars) == 0 {
+		return fmt.Errorf("at least one environment variable is required")
+	}
+	for key, value := range vars {
+		if err := a.SetEnvironmentVariable(key, value); err != nil {
+			return fmt.Errorf("unable to set variable %s: %w", key, err)
+		}
+	}
+	a.addEvent(NewConfigurationChangedEvent(a.name.Value(), vars, restart, time.Now()))
+	return nil
+}
+
 func (a *Application) AddProcess(processType process.ProcessType, command string, scale int) error {
 	proc, err := process.NewProcess(processType, command, scale)
 	if err != nil {

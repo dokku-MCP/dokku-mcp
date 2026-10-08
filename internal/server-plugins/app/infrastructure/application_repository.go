@@ -151,19 +151,14 @@ func (r *DokkuApplicationRepository) Save(ctx context.Context, application *app.
 				return fmt.Errorf("failed to scale application during save: %w", err)
 			}
 			r.logger.Debug("Applied scaling event", "app", e.AggregateID(), "process", e.ProcessType(), "scale", e.NewScale())
+		case *app.ConfigurationChangedEvent:
+			if err := r.dokku.SetApplicationConfig(ctx, e.AggregateID(), e.Vars(), e.Restart()); err != nil {
+				return fmt.Errorf("failed to update configuration: %w", err)
+			}
+			r.logger.Debug("Applied configuration event", "app", e.AggregateID(), "vars", len(e.Vars()))
 		}
 	}
 	application.ClearEvents()
-
-	// Update configuration if it exists
-	if config := application.Configuration(); config != nil {
-		configMap := r.extractEnvironmentVars(config)
-		if len(configMap) > 0 {
-			if err := r.dokku.SetApplicationConfig(ctx, application.Name().Value(), configMap); err != nil {
-				return fmt.Errorf("failed to update configuration: %w", err)
-			}
-		}
-	}
 
 	r.logger.Debug("Application saved successfully",
 		"app_name", application.Name().Value())
@@ -196,6 +191,11 @@ func (r *DokkuApplicationRepository) Exists(ctx context.Context, name *app.Appli
 	}
 
 	return true, nil
+}
+
+// GetLogs returns the last lines of the application's runtime logs
+func (r *DokkuApplicationRepository) GetLogs(ctx context.Context, name *app.ApplicationName, lines int) (string, error) {
+	return r.dokku.GetApplicationLogs(ctx, name.Value(), lines)
 }
 
 // List retrieves a paginated list of applications
@@ -490,12 +490,6 @@ func (r *DokkuApplicationRepository) tryGetBasicApplicationInfo(ctx context.Cont
 	}
 
 	return info, nil
-}
-
-// extractEnvironmentVars extracts environment variables from configuration
-func (r *DokkuApplicationRepository) extractEnvironmentVars(config *app.ApplicationConfiguration) map[string]string {
-	// For now, return empty map - implement when ApplicationConfiguration interface is defined
-	return make(map[string]string)
 }
 
 // determineStateFromInfo determines the application state from Dokku output

@@ -182,6 +182,7 @@ func (p *AppsServerPlugin) handleApplicationListResource(ctx context.Context, re
 func (p *AppsServerPlugin) buildCreateAppTool() mcp.Tool {
 	return mcp.NewTool(
 		"create_app",
+		mcp.WithTitleAnnotation("Create application"),
 		mcp.WithDescription("Create a new Dokku application with comprehensive validation"),
 		mcp.WithString("name",
 			mcp.Required(),
@@ -194,13 +195,19 @@ func (p *AppsServerPlugin) buildCreateAppTool() mcp.Tool {
 		mcp.WithBoolean("no_vhost",
 			mcp.Description("Disable default vhost creation"),
 		),
+		mcp.WithReadOnlyHintAnnotation(false),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithIdempotentHintAnnotation(false),
+		mcp.WithOpenWorldHintAnnotation(false),
 	)
 }
 
 func (p *AppsServerPlugin) buildDeployAppTool() mcp.Tool {
 	return mcp.NewTool(
 		"deploy_app",
-		mcp.WithDescription("Deploy application from Git repository"),
+		mcp.WithTitleAnnotation("Deploy application"),
+		mcp.WithDescription("Deploy an application from a Git repository. Returns immediately with a deployment_id; "+
+			"the build continues in the background, so poll get_deployment_status until it is done"),
 		mcp.WithString("app_name",
 			mcp.Required(),
 			mcp.Description("Name of the application to deploy"),
@@ -210,17 +217,28 @@ func (p *AppsServerPlugin) buildDeployAppTool() mcp.Tool {
 			mcp.Description("URL of the Git repository to deploy from"),
 		),
 		mcp.WithString("git_ref",
-			mcp.Description("Git reference to deploy (branch, tag, or commit)"),
+			mcp.Description("Git reference to deploy (branch, tag, or commit). Defaults to main"),
 		),
-		mcp.WithBoolean("force",
-			mcp.Description("Force deployment even if no changes detected"),
-		),
+		mcp.WithOutputSchema[DeployStarted](),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithIdempotentHintAnnotation(false),
+		mcp.WithOpenWorldHintAnnotation(true),
 	)
+}
+
+// DeployStarted is the structured result of deploy_app.
+type DeployStarted struct {
+	DeploymentID string `json:"deployment_id" jsonschema:"Pass to get_deployment_status to follow the build"`
+	AppName      string `json:"app_name"`
+	GitRef       string `json:"git_ref"`
+	Status       string `json:"status"`
+	Message      string `json:"message"`
 }
 
 func (p *AppsServerPlugin) buildScaleAppTool() mcp.Tool {
 	return mcp.NewTool(
 		"scale_app",
+		mcp.WithTitleAnnotation("Scale application"),
 		mcp.WithDescription("Scale application processes"),
 		mcp.WithString("app_name",
 			mcp.Required(),
@@ -233,12 +251,17 @@ func (p *AppsServerPlugin) buildScaleAppTool() mcp.Tool {
 			mcp.Required(),
 			mcp.Description("Number of instances to scale to"),
 		),
+		mcp.WithReadOnlyHintAnnotation(false),
+		mcp.WithDestructiveHintAnnotation(true),
+		mcp.WithIdempotentHintAnnotation(true),
+		mcp.WithOpenWorldHintAnnotation(false),
 	)
 }
 
 func (p *AppsServerPlugin) buildConfigureAppTool() mcp.Tool {
 	return mcp.NewTool(
 		"configure_app",
+		mcp.WithTitleAnnotation("Set environment variables"),
 		mcp.WithDescription("Set environment variables for an application"),
 		mcp.WithString("app_name",
 			mcp.Required(),
@@ -246,24 +269,32 @@ func (p *AppsServerPlugin) buildConfigureAppTool() mcp.Tool {
 		),
 		mcp.WithObject("config",
 			mcp.Required(),
-			mcp.Description("Environment variables as key-value pairs"),
-			mcp.Properties(map[string]any{ // NOTE: This is a valid exception
-				"additionalProperties": map[string]any{ // NOTE: This is a valid exception
-					"type": "string",
-				},
-			}),
+			mcp.Description("Environment variables as key-value pairs. Keys must be valid identifiers; values may contain any characters"),
+			mcp.AdditionalProperties(map[string]any{"type": "string"}),
 		),
+		mcp.WithBoolean("restart",
+			mcp.Description("Restart the application so it picks up the new values (default true)"),
+			mcp.DefaultBool(true),
+		),
+		mcp.WithReadOnlyHintAnnotation(false),
+		mcp.WithDestructiveHintAnnotation(true),
+		mcp.WithIdempotentHintAnnotation(true),
+		mcp.WithOpenWorldHintAnnotation(false),
 	)
 }
 
 func (p *AppsServerPlugin) buildGetAppStatusTool() mcp.Tool {
 	return mcp.NewTool(
 		"get_app_status",
+		mcp.WithTitleAnnotation("Get application status"),
 		mcp.WithDescription("Get comprehensive status information for an application"),
 		mcp.WithString("app_name",
 			mcp.Required(),
 			mcp.Description("Name of the application"),
 		),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithOpenWorldHintAnnotation(false),
 	)
 }
 
@@ -312,7 +343,8 @@ func (p *AppsServerPlugin) handleDeployApp(ctx context.Context, req mcp.CallTool
 		GitRef:  gitRef,
 	}
 
-	if err := p.applicationUseCase.DeployApplication(ctx, cmd); err != nil {
+	result, err := p.applicationUseCase.DeployApplication(ctx, cmd)
+	if err != nil {
 		if errors.Is(err, appdomain.ErrApplicationNotFound) {
 			return mcp.NewToolResultError(fmt.Sprintf("Application '%s' not found", appName)), nil
 		}
@@ -322,7 +354,13 @@ func (p *AppsServerPlugin) handleDeployApp(ctx context.Context, req mcp.CallTool
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to deploy application: %v", err)), nil
 	}
 
-	return mcp.NewToolResultText(fmt.Sprintf("Application '%s' deployed successfully from '%s'", appName, gitRef)), nil
+	return mcp.NewToolResultStructuredOnly(DeployStarted{
+		DeploymentID: result.ID,
+		AppName:      appName,
+		GitRef:       gitRef,
+		Status:       string(result.Status),
+		Message:      "Code synced; the build is running in the background. Poll get_deployment_status with this deployment_id until done is true.",
+	}), nil
 }
 
 func (p *AppsServerPlugin) handleScaleApp(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -394,8 +432,9 @@ func (p *AppsServerPlugin) handleConfigureApp(ctx context.Context, req mcp.CallT
 	}
 
 	cmd := appusecases.SetConfigCommand{
-		Name:   appName,
-		Config: configVars,
+		Name:    appName,
+		Config:  configVars,
+		Restart: req.GetBool("restart", true),
 	}
 
 	if err := p.applicationUseCase.SetApplicationConfig(ctx, cmd); err != nil {
@@ -492,48 +531,16 @@ func (p *AppsServerPlugin) handleRuntimeLogsResource(ctx context.Context, req mc
 
 	appName := parts[0]
 
-	// Get Dokku client from application use case
-	// We need to access the Dokku client to get logs
-	// For now, we'll use a default lines value
-	lines := min(p.logsConfig.Runtime.DefaultLines, p.logsConfig.Runtime.MaxLines)
-
-	// Validate that the application exists
-	_, validationErr := p.applicationUseCase.GetApplicationByName(ctx, appName)
-	if validationErr != nil {
-		p.logger.Error("application not found for logs request", "app_name", appName, "error", validationErr)
-		return nil, fmt.Errorf("application not found")
-	}
-
-	// Define typed struct for logs response
-	type RuntimeLogsResponse struct {
-		AppName string `json:"app_name"`
-		Lines   int    `json:"lines"`
-		Logs    string `json:"logs"`
-		Note    string `json:"note"`
-	}
-
-	// Get logs from Dokku
-	// Note: This is a simplified implementation - in a real scenario,
-	// we would need to access the Dokku client through the use case
-	// For now, we'll return a placeholder response
-	response := RuntimeLogsResponse{
-		AppName: appName,
-		Lines:   lines,
-		Logs:    "Runtime logs would be retrieved from Dokku here",
-		Note:    "This is a placeholder - actual Dokku client integration needed",
-	}
-
-	jsonData, err := json.MarshalIndent(response, "", "  ")
+	logs, err := p.runtimeLogs(ctx, appName, p.logsConfig.Runtime.DefaultLines)
 	if err != nil {
-		p.logger.Error("failed to serialize logs response", "app_name", appName, "error", err)
-		return nil, fmt.Errorf("failed to serialize logs response")
+		return nil, err
 	}
 
 	return []mcp.ResourceContents{
 		mcp.TextResourceContents{
 			URI:      req.Params.URI,
-			MIMEType: "application/json",
-			Text:     string(jsonData),
+			MIMEType: "text/plain",
+			Text:     logs.Logs,
 		},
 	}, nil
 }
@@ -542,14 +549,20 @@ func (p *AppsServerPlugin) handleRuntimeLogsResource(ctx context.Context, req mc
 func (p *AppsServerPlugin) buildGetRuntimeLogsTool() mcp.Tool {
 	return mcp.NewTool(
 		"get_runtime_logs",
+		mcp.WithTitleAnnotation("Get runtime logs"),
 		mcp.WithDescription("Retrieve runtime logs from a Dokku application"),
 		mcp.WithString("app_name",
 			mcp.Required(),
 			mcp.Description("Name of the application"),
 		),
-		mcp.WithNumber("lines",
+		mcp.WithInteger("lines",
 			mcp.Description(fmt.Sprintf("Number of log lines to retrieve (default: %d, max: %d)", p.logsConfig.Runtime.DefaultLines, p.logsConfig.Runtime.MaxLines)),
+			mcp.Min(1),
 		),
+		mcp.WithOutputSchema[RuntimeLogs](),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithOpenWorldHintAnnotation(false),
 	)
 }
 
@@ -560,55 +573,33 @@ func (p *AppsServerPlugin) handleGetRuntimeLogs(ctx context.Context, req mcp.Cal
 		return mcp.NewToolResultError("Application name is required"), nil
 	}
 
-	// Get lines parameter
-	lines := p.logsConfig.Runtime.DefaultLines
-	if linesParam, ok := req.GetArguments()["lines"]; ok {
-		if linesFloat, ok := linesParam.(float64); ok {
-			lines = int(linesFloat)
-		}
-	}
-
-	// Validate lines
-	if lines < 1 {
-		lines = 1
-	}
-	if lines > p.logsConfig.Runtime.MaxLines {
-		lines = p.logsConfig.Runtime.MaxLines
-	}
-
-	// Validate that the application exists
-	_, validationErr := p.applicationUseCase.GetApplicationByName(ctx, appName)
-	if validationErr != nil {
-		p.logger.Error("application not found for logs tool", "app_name", appName, "error", validationErr)
-		return mcp.NewToolResultError("Application not found"), nil
-	}
-
-	// Define typed struct for logs response
-	type RuntimeLogsResponse struct {
-		AppName string `json:"app_name"`
-		Lines   int    `json:"lines"`
-		Logs    string `json:"logs"`
-		Note    string `json:"note"`
-	}
-
-	// Get logs from Dokku
-	// Note: This is a simplified implementation - in a real scenario,
-	// we would need to access the Dokku client through the use case
-	// For now, we'll return a placeholder response
-	response := RuntimeLogsResponse{
-		AppName: appName,
-		Lines:   lines,
-		Logs:    "Runtime logs would be retrieved from Dokku here",
-		Note:    "This is a placeholder - actual Dokku client integration needed",
-	}
-
-	jsonData, err := json.MarshalIndent(response, "", "  ")
+	logs, err := p.runtimeLogs(ctx, appName, req.GetInt("lines", p.logsConfig.Runtime.DefaultLines))
 	if err != nil {
-		p.logger.Error("failed to serialize logs response for tool", "app_name", appName, "error", err)
-		return mcp.NewToolResultError("Failed to serialize logs response"), nil
+		if errors.Is(err, appdomain.ErrApplicationNotFound) {
+			return mcp.NewToolResultError(fmt.Sprintf("Application '%s' not found", appName)), nil
+		}
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to get logs: %v", err)), nil
 	}
 
-	return mcp.NewToolResultText(fmt.Sprintf("Runtime logs for '%s':\n%s", appName, string(jsonData))), nil
+	return mcp.NewToolResultStructuredOnly(logs), nil
+}
+
+// RuntimeLogs is the structured result of get_runtime_logs.
+type RuntimeLogs struct {
+	AppName string `json:"app_name"`
+	Lines   int    `json:"lines" jsonschema:"Number of lines requested"`
+	Logs    string `json:"logs"`
+}
+
+// runtimeLogs fetches the last lines of an application's logs, clamping the
+// line count to the configured maximum.
+func (p *AppsServerPlugin) runtimeLogs(ctx context.Context, appName string, lines int) (RuntimeLogs, error) {
+	lines = max(1, min(lines, p.logsConfig.Runtime.MaxLines))
+	logs, err := p.applicationUseCase.GetApplicationLogs(ctx, appName, lines)
+	if err != nil {
+		return RuntimeLogs{}, err
+	}
+	return RuntimeLogs{AppName: appName, Lines: lines, Logs: logs}, nil
 }
 
 var Module = fx.Module("app",
