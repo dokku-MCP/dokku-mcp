@@ -41,10 +41,9 @@ type Examples struct {
 }
 
 type CapabilityToolExampleParams struct {
-	AppName      string `json:"app_name,omitempty"`
-	RepoURL      string `json:"repo_url,omitempty"`
-	GitRef       string `json:"git_ref,omitempty"`
-	ValidateOnly bool   `json:"validateOnly,omitempty"`
+	AppName string `json:"app_name,omitempty"`
+	RepoURL string `json:"repo_url,omitempty"`
+	GitRef  string `json:"git_ref,omitempty"`
 }
 
 type CapabilityToolExample struct {

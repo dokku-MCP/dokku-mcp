@@ -64,37 +64,49 @@ func (p *OnboardingServerPlugin) GetResources(ctx context.Context) ([]serverDoma
 	}, nil
 }
 
+// quickstartMarkdown orients a model on first use. Keep tool and parameter
+// names in sync with the plugins; onboarding tests check them.
+const quickstartMarkdown = `# Quickstart
+
+This MCP server manages a Dokku host. Tools appear only when the Dokku plugin they need is installed
+(for example the Let's Encrypt tools need dokku-letsencrypt).
+
+## Core flow
+1. ` + "`create_app`" + ` → { "name": "my-app" }
+2. ` + "`deploy_app`" + ` → { "app_name": "my-app", "repo_url": "https://github.com/acme/app.git", "git_ref": "main" }
+   Returns a deployment_id immediately; the build continues in the background.
+3. ` + "`get_deployment_status`" + ` → { "deployment_id": "..." } until "done" is true. Failed builds include the build log tail.
+4. ` + "`scale_app`" + ` → { "app_name": "my-app", "process_type": "web", "instances": 2 }
+5. ` + "`get_app_status`" + ` → { "app_name": "my-app" }
+
+## Configuration and data
+- Environment variables: ` + "`configure_app`" + ` → { "app_name": "my-app", "config": { "KEY": "value" }, "restart": true }
+- Datastores: ` + "`create_service`" + ` then ` + "`link_service`" + ` (sets DATABASE_URL, REDIS_URL, ...); ` + "`list_services`" + ` shows what is installed.
+
+## Domains and HTTPS
+- ` + "`add_app_domain`" + `, ` + "`get_app_domains`" + `, then ` + "`enable_letsencrypt`" + ` once DNS points at the server.
+
+## Operating and troubleshooting
+- Logs: ` + "`get_runtime_logs`" + ` (recent), ` + "`follow_runtime_logs`" + ` (live, a few seconds), ` + "`get_failed_deploy_logs`" + ` (crashed releases)
+- Lifecycle: ` + "`restart_app`" + `, ` + "`stop_app`" + `, ` + "`start_app`" + `
+- Rollback: ` + "`rollback_app`" + ` → { "app_name": "my-app", "git_ref": "<known-good ref>" } redeploys from the last repository
+- Prompt ` + "`app_doctor`" + ` walks through a diagnosis
+
+## Safety
+- Read before you write: check ` + "`get_app_status`" + ` or ` + "`get_app_domains`" + ` first.
+- Tools carry readOnlyHint / destructiveHint annotations; destructive tools (destroy_service, remove_app_domain,
+  stop_app, ...) should only run when the user asked for them.
+- The server may block commands through its allowlist/blacklist. Report such errors instead of retrying.
+
+## Discover
+- All tools, resources and prompts: ` + "`dokku://onboarding/capabilities`" + `
+- Goal → tool mapping: ` + "`dokku://onboarding/intent-map`" + `
+- Server info and plugins: ` + "`dokku://core/server/info`" + `, ` + "`dokku://core/plugins`" + `
+`
+
 // Handlers
 func (p *OnboardingServerPlugin) handleQuickstartResource(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
-	md := "# Quickstart\n\n" +
-		"Welcome. This MCP server exposes tools and resources to manage Dokku server.\n\n" +
-		"## What you can do\n" +
-		"- Create apps: `create_app`\n" +
-		"- Deploy from Git: `deploy_app`\n" +
-		"- Scale processes: `scale_app`\n" +
-		"- Configure env: `configure_app`\n" +
-		"- Check status: `get_app_status`\n\n" +
-		"## Core flow (copy‑paste ready)\n" +
-		"1) `create_app` → `{ name: \"my-app\" }`\n" +
-		"2) `deploy_app` → `{ app_name: \"my-app\", repo_url: \"https://github.com/acme/app.git\", git_ref: \"main\" }`\n" +
-		"3) `scale_app` → `{ app_name: \"my-app\", process_type: \"web\", instances: 2 }`\n" +
-		"4) `get_app_status` → `{ app_name: \"my-app\" }`\n\n" +
-		"## Discover & learn\n" +
-		"- Generic goals → tools: `dokku://onboarding/intent-map`\n" +
-		"- Recipes (blue/green, etc.): `dokku://onboarding/examples`\n" +
-		"- Prompts (e.g., `app_doctor`): `dokku://onboarding/capabilities`\n" +
-		"- Server info (status, plugins): `dokku://core/server/info`, `dokku://core/plugins`\n\n" +
-		"## Planner (optional)\n" +
-		"Use `suggest_tools` to translate a natural goal into a safe plan.\n" +
-		"Example goal: \"deploy latest and scale to 2\" → returns read‑first checks, then mutating steps with `confirm: true`.\n\n" +
-		"## Safety & best practices\n" +
-		"- Do read‑only checks (`get_app_status`) before mutations\n" +
-		"- Use confirmations on deploy/scale/config (`confirm: true`)\n" +
-		"- Keep a rollback plan (redeploy previous `git_ref`)\n\n" +
-		"## Troubleshooting\n" +
-		"- App missing after deploy → ensure `create_app` used same name as `app_name`\n" +
-		"- Bad deploy → redeploy known‑good `git_ref`, then `get_app_status`\n" +
-		"- Need help → use prompt `app_doctor` with your `app_name`\n"
+	md := quickstartMarkdown
 	return []mcp.ResourceContents{mcp.TextResourceContents{URI: req.Params.URI, MIMEType: "text/markdown", Text: md}}, nil
 }
 
@@ -112,10 +124,9 @@ func (p *OnboardingServerPlugin) handleCapabilitiesIndexResource(ctx context.Con
 					ex = append(ex, onbDomain.CapabilityToolExample{
 						Tool: t.Name,
 						Params: onbDomain.CapabilityToolExampleParams{
-							AppName:      "my-app",
-							RepoURL:      "https://github.com/acme/app.git",
-							GitRef:       "main",
-							ValidateOnly: true,
+							AppName: "my-app",
+							RepoURL: "https://github.com/acme/app.git",
+							GitRef:  "main",
 						},
 					})
 				}
@@ -148,18 +159,32 @@ func (p *OnboardingServerPlugin) handleCapabilitiesIndexResource(ctx context.Con
 }
 
 func (p *OnboardingServerPlugin) handleIntentMapResource(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
-	mapping := map[string]onbDomain.IntentEntry{
-		"deploy":    {Synonyms: []string{"release", "ship", "publish", "roll out", "push code"}, Tool: "deploy_app", Params: []string{"app_name", "repo_url", "git_ref"}},
-		"scale":     {Synonyms: []string{"autoscale", "increase instances", "add nodes", "replicas"}, Tool: "scale_app", Params: []string{"app_name", "process_type", "instances"}},
-		"status":    {Synonyms: []string{"health", "state", "check app", "diagnose"}, Tool: "get_app_status", Params: []string{"app_name"}},
-		"configure": {Synonyms: []string{"set env", "set variables", "secrets", "config"}, Tool: "configure_app", Params: []string{"app_name", "config"}},
-		"create":    {Synonyms: []string{"new app", "provision", "bootstrap"}, Tool: "create_app", Params: []string{"name", "buildpack"}},
-	}
-	jsonData, err := json.MarshalIndent(mapping, "", "  ")
+	jsonData, err := json.MarshalIndent(intentMap, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal intent map: %w", err)
 	}
 	return []mcp.ResourceContents{mcp.TextResourceContents{URI: req.Params.URI, MIMEType: "application/json", Text: string(jsonData)}}, nil
+}
+
+// intentMap maps generic platform intents to tools and their parameters.
+var intentMap = map[string]onbDomain.IntentEntry{
+	"create":          {Synonyms: []string{"new app", "provision", "bootstrap"}, Tool: "create_app", Params: []string{"name"}},
+	"deploy":          {Synonyms: []string{"release", "ship", "publish", "roll out", "push code"}, Tool: "deploy_app", Params: []string{"app_name", "repo_url", "git_ref"}},
+	"deploy_status":   {Synonyms: []string{"is it deployed", "build status", "build logs"}, Tool: "get_deployment_status", Params: []string{"deployment_id"}},
+	"rollback":        {Synonyms: []string{"revert", "undo deploy", "previous version"}, Tool: "rollback_app", Params: []string{"app_name", "git_ref"}},
+	"scale":           {Synonyms: []string{"autoscale", "increase instances", "add nodes", "replicas"}, Tool: "scale_app", Params: []string{"app_name", "process_type", "instances"}},
+	"restart":         {Synonyms: []string{"reboot", "bounce", "reload"}, Tool: "restart_app", Params: []string{"app_name"}},
+	"status":          {Synonyms: []string{"health", "state", "check app"}, Tool: "get_app_status", Params: []string{"app_name"}},
+	"configure":       {Synonyms: []string{"set env", "set variables", "secrets", "config"}, Tool: "configure_app", Params: []string{"app_name", "config"}},
+	"logs":            {Synonyms: []string{"output", "errors", "what happened"}, Tool: "get_runtime_logs", Params: []string{"app_name", "lines"}},
+	"tail_logs":       {Synonyms: []string{"watch logs", "live logs", "follow"}, Tool: "follow_runtime_logs", Params: []string{"app_name", "seconds"}},
+	"crash":           {Synonyms: []string{"failed deploy", "boot failure", "healthcheck failed"}, Tool: "get_failed_deploy_logs", Params: []string{"app_name"}},
+	"database":        {Synonyms: []string{"postgres", "mysql", "redis", "datastore", "cache"}, Tool: "create_service", Params: []string{"service_type", "name"}},
+	"attach_database": {Synonyms: []string{"connect database", "DATABASE_URL", "link db"}, Tool: "link_service", Params: []string{"service_type", "name", "app_name"}},
+	"domain":          {Synonyms: []string{"custom domain", "hostname", "vhost"}, Tool: "add_app_domain", Params: []string{"app_name", "domain_name"}},
+	"https":           {Synonyms: []string{"ssl", "tls", "certificate", "letsencrypt"}, Tool: "enable_letsencrypt", Params: []string{"app_name", "email"}},
+	"access":          {Synonyms: []string{"ssh key", "give access", "deploy key"}, Tool: "add_ssh_key", Params: []string{"name", "public_key"}},
+	"registry":        {Synonyms: []string{"docker login", "ghcr", "private images"}, Tool: "registry_login", Params: []string{"server", "username", "password"}},
 }
 
 // aggregatePrompts collects prompts across active plugins

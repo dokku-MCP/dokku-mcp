@@ -2,8 +2,10 @@ package app
 
 import (
 	"context"
+	"slices"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -68,9 +70,19 @@ func TestFollowRuntimeLogsStreamsProgress(t *testing.T) {
 		t.Fatalf("tool failed: %+v", result.Content)
 	}
 
-	mu.Lock()
-	defer mu.Unlock()
-	if len(messages) != 2 || messages[0] != "booting" || messages[1] != "listening on :5000" {
-		t.Fatalf("progress messages = %q", messages)
+	// The in-process client dispatches notifications asynchronously, so
+	// they may still be in flight when the result arrives.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		mu.Lock()
+		got := slices.Clone(messages)
+		mu.Unlock()
+		if slices.Equal(got, []string{"booting", "listening on :5000"}) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("progress messages = %q", got)
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }

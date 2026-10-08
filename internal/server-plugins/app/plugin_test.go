@@ -219,12 +219,18 @@ func TestGetRuntimeLogsRequestsLineCount(t *testing.T) {
 	}
 }
 
+func TestCreateApp(t *testing.T) {
+	f := newFixture(t)
+	plugintest.RequireSuccess(t, plugintest.CallTool(t, f.apps, "create_app", map[string]any{"name": "new-app"}))
+	if calls := f.client.CallsTo("apps:create"); len(calls) != 1 || calls[0].String() != "apps:create new-app" {
+		t.Fatalf("unexpected calls: %v", calls)
+	}
+}
+
 func TestCreateAppRejectsInvalidName(t *testing.T) {
 	f := newFixture(t)
-	result := plugintest.CallTool(t, f.apps, "create_app", map[string]any{"app_name": "Bad_Name!"})
-	if !result.IsError {
-		t.Fatalf("expected an error for an invalid name")
-	}
+	result := plugintest.CallTool(t, f.apps, "create_app", map[string]any{"name": "Bad_Name!"})
+	plugintest.RequireError(t, result, "invalid application name")
 	if calls := f.client.CallsTo("apps:create"); len(calls) != 0 {
 		t.Fatalf("expected no apps:create call, got %v", calls)
 	}
