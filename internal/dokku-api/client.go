@@ -316,8 +316,9 @@ func (c *client) handleCommandError(ctx context.Context, commandName string, arg
 	}
 
 	if isTransportFailure(execErr) {
-		// Details (host, port, ssh output) were logged above.
-		return output, fmt.Errorf("failed to execute Dokku command %s: %w", commandName, ErrDokkuUnreachable)
+		// Details (host, port, ssh output) were logged above. The output
+		// comes from the local ssh client, not Dokku, so it is not returned.
+		return nil, fmt.Errorf("failed to execute Dokku command %s: %w", commandName, ErrDokkuUnreachable)
 	}
 
 	// Return the output as well: for builds it is the log the caller wants.
@@ -349,11 +350,13 @@ func errorDetail(output []byte) string {
 
 // sshClientNoisePrefixes start lines written by the local ssh client rather
 // than by Dokku; they reveal connection details and never explain a failure.
+// "ssh: " lines are kept: when the outer connection fails the error is
+// replaced by ErrDokkuUnreachable anyway, and otherwise they come from ssh
+// run by Dokku itself (e.g. git:sync cloning) and explain the failure.
 var sshClientNoisePrefixes = []string{
 	"Warning: Permanently added",
 	"Pseudo-terminal will not be allocated",
 	"Connection to ",
-	"ssh: ",
 }
 
 func isSSHClientNoise(line string) bool {

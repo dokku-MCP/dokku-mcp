@@ -47,6 +47,14 @@ func TestErrorDetailDropsSSHClientNoise(t *testing.T) {
 	}
 }
 
+func TestErrorDetailKeepsNestedSSHErrors(t *testing.T) {
+	out := []byte("-----> Syncing git.example.com/acme/web.git\nssh: Could not resolve hostname git.example.com: Name or service not known\nfatal: Could not read from remote repository.\n")
+	want := "-----> Syncing git.example.com/acme/web.git; ssh: Could not resolve hostname git.example.com: Name or service not known; fatal: Could not read from remote repository."
+	if got := errorDetail(out); got != want {
+		t.Fatalf("errorDetail = %q", got)
+	}
+}
+
 func TestIsTransportFailure(t *testing.T) {
 	ssh255 := exec.Command("sh", "-c", "exit 255").Run()
 	dokkuFailure := exec.Command("sh", "-c", "exit 1").Run()
