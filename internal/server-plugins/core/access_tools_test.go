@@ -38,7 +38,7 @@ func TestListSSHKeysParsesNames(t *testing.T) {
 func TestAddSSHKeySendsKeyOnStdin(t *testing.T) {
 	client, plugin := newPlugin(t)
 
-	plugintest.RequireSuccess(t, plugintest.CallTool(t, plugin, "add_ssh_key", map[string]any{"name": "alice", "public_key": testKey}))
+	plugintest.RequireSuccess(t, plugintest.CallTool(t, plugin, "add_ssh_key", plugintest.Args{"name": "alice", "public_key": testKey}))
 
 	calls := client.CallsTo("ssh-keys:add")
 	if len(calls) != 1 || calls[0].String() != "ssh-keys:add alice" || calls[0].Stdin != testKey+"\n" {
@@ -49,24 +49,24 @@ func TestAddSSHKeySendsKeyOnStdin(t *testing.T) {
 func TestAddSSHKeyGuardsAdminNamesAndPrivateKeys(t *testing.T) {
 	client, plugin := newPlugin(t)
 
-	plugintest.RequireError(t, plugintest.CallTool(t, plugin, "add_ssh_key", map[string]any{"name": "ci-admin", "public_key": testKey}), "allow_admin")
-	plugintest.RequireError(t, plugintest.CallTool(t, plugin, "add_ssh_key", map[string]any{
+	plugintest.RequireError(t, plugintest.CallTool(t, plugin, "add_ssh_key", plugintest.Args{"name": "ci-admin", "public_key": testKey}), "allow_admin")
+	plugintest.RequireError(t, plugintest.CallTool(t, plugin, "add_ssh_key", plugintest.Args{
 		"name": "alice", "public_key": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA\n-----END OPENSSH PRIVATE KEY-----",
 	}), "never a private key")
 	if len(client.CallsTo("ssh-keys:add")) != 0 {
 		t.Fatal("rejected keys must not reach Dokku")
 	}
 
-	plugintest.RequireSuccess(t, plugintest.CallTool(t, plugin, "add_ssh_key", map[string]any{"name": "ci-admin", "public_key": testKey, "allow_admin": true}))
+	plugintest.RequireSuccess(t, plugintest.CallTool(t, plugin, "add_ssh_key", plugintest.Args{"name": "ci-admin", "public_key": testKey, "allow_admin": true}))
 }
 
 func TestRegistryLoginUsesPasswordStdin(t *testing.T) {
 	client, plugin := newPlugin(t)
 
-	plugintest.RequireSuccess(t, plugintest.CallTool(t, plugin, "registry_login", map[string]any{
+	plugintest.RequireSuccess(t, plugintest.CallTool(t, plugin, "registry_login", plugintest.Args{
 		"server": "ghcr.io", "username": "acme-bot", "password": "ghp_s3cret value", "app_name": "web",
 	}))
-	plugintest.RequireSuccess(t, plugintest.CallTool(t, plugin, "registry_login", map[string]any{
+	plugintest.RequireSuccess(t, plugintest.CallTool(t, plugin, "registry_login", plugintest.Args{
 		"server": "ghcr.io", "username": "acme-bot", "password": "tok",
 	}))
 
@@ -86,12 +86,12 @@ func TestRegistryLogoutAndReport(t *testing.T) {
 	client, plugin := newPlugin(t)
 	client.Respond("registry:report", "=====> web registry information\n       Registry image repo:   acme/web\n       Registry server:       ghcr.io\n")
 
-	plugintest.RequireSuccess(t, plugintest.CallTool(t, plugin, "registry_logout", map[string]any{"server": "ghcr.io"}))
+	plugintest.RequireSuccess(t, plugintest.CallTool(t, plugin, "registry_logout", plugintest.Args{"server": "ghcr.io"}))
 	if calls := client.CallsTo("registry:logout"); len(calls) != 1 || calls[0].String() != "registry:logout --global ghcr.io" {
 		t.Fatalf("unexpected logout calls: %v", calls)
 	}
 
-	report := plugintest.Structured[RegistryReport](t, plugintest.CallTool(t, plugin, "get_registry_report", map[string]any{"app_name": "web"}))
+	report := plugintest.Structured[RegistryReport](t, plugintest.CallTool(t, plugin, "get_registry_report", plugintest.Args{"app_name": "web"}))
 	if report.Report["Registry server"] != "ghcr.io" || report.Report["Registry image repo"] != "acme/web" {
 		t.Fatalf("unexpected report: %+v", report)
 	}

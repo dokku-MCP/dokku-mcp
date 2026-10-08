@@ -239,7 +239,7 @@ func progressReporter(ctx context.Context, req mcp.CallToolRequest) func(string)
 	count := 0
 	return func(line string) {
 		count++
-		_ = srv.SendNotificationToClient(ctx, string(mcp.MethodNotificationProgress), map[string]any{
+		_ = srv.SendNotificationToClient(ctx, string(mcp.MethodNotificationProgress), map[string]any{ // NOTE: mcp-go notification params are untyped JSON. This is a valid exception
 			"progressToken": token,
 			"progress":      count,
 			"message":       line,
@@ -495,7 +495,7 @@ func (p *AppsServerPlugin) buildConfigureAppTool() mcp.Tool {
 		mcp.WithObject("config",
 			mcp.Required(),
 			mcp.Description("Environment variables as key-value pairs. Keys must be valid identifiers; values may contain any characters"),
-			mcp.AdditionalProperties(map[string]any{"type": "string"}),
+			mcp.AdditionalProperties(map[string]any{"type": "string"}), // NOTE: JSON Schema fragment. This is a valid exception
 		),
 		mcp.WithBoolean("restart",
 			mcp.Description("Restart the application so it picks up the new values (default true)"),

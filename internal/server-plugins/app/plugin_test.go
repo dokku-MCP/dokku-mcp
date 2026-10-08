@@ -74,9 +74,9 @@ func TestConfigureAppEncodesValues(t *testing.T) {
 	f := newFixture(t)
 
 	value := `postgres://u:p@db:5432/app?sslmode=require&x=$(rm -rf /) "quoted" spaced value`
-	result := plugintest.CallTool(t, f.apps, "configure_app", map[string]any{
+	result := plugintest.CallTool(t, f.apps, "configure_app", plugintest.Args{
 		"app_name": "myapp",
-		"config":   map[string]any{"DATABASE_URL": value, "A_FLAG": ""},
+		"config":   plugintest.Args{"DATABASE_URL": value, "A_FLAG": ""},
 	})
 	plugintest.RequireSuccess(t, result)
 
@@ -97,9 +97,9 @@ func TestConfigureAppEncodesValues(t *testing.T) {
 func TestConfigureAppWithoutRestart(t *testing.T) {
 	f := newFixture(t)
 
-	result := plugintest.CallTool(t, f.apps, "configure_app", map[string]any{
+	result := plugintest.CallTool(t, f.apps, "configure_app", plugintest.Args{
 		"app_name": "myapp",
-		"config":   map[string]any{"KEY": "v"},
+		"config":   plugintest.Args{"KEY": "v"},
 		"restart":  false,
 	})
 	plugintest.RequireSuccess(t, result)
@@ -113,9 +113,9 @@ func TestConfigureAppWithoutRestart(t *testing.T) {
 func TestConfigureAppRejectsInvalidKey(t *testing.T) {
 	f := newFixture(t)
 
-	result := plugintest.CallTool(t, f.apps, "configure_app", map[string]any{
+	result := plugintest.CallTool(t, f.apps, "configure_app", plugintest.Args{
 		"app_name": "myapp",
-		"config":   map[string]any{"BAD KEY": "v"},
+		"config":   plugintest.Args{"BAD KEY": "v"},
 	})
 	plugintest.RequireError(t, result, "BAD KEY")
 	if calls := f.client.CallsTo("config:set"); len(calls) != 0 {
@@ -126,9 +126,9 @@ func TestConfigureAppRejectsInvalidKey(t *testing.T) {
 func TestConfigureAppUnknownApp(t *testing.T) {
 	f := newFixture(t)
 
-	result := plugintest.CallTool(t, f.apps, "configure_app", map[string]any{
+	result := plugintest.CallTool(t, f.apps, "configure_app", plugintest.Args{
 		"app_name": "ghost",
-		"config":   map[string]any{"KEY": "v"},
+		"config":   plugintest.Args{"KEY": "v"},
 	})
 	plugintest.RequireError(t, result, "not found")
 }
@@ -136,7 +136,7 @@ func TestConfigureAppUnknownApp(t *testing.T) {
 func TestScaleAppDoesNotRewriteConfig(t *testing.T) {
 	f := newFixture(t)
 
-	result := plugintest.CallTool(t, f.apps, "scale_app", map[string]any{
+	result := plugintest.CallTool(t, f.apps, "scale_app", plugintest.Args{
 		"app_name":     "myapp",
 		"process_type": "web",
 		"instances":    3,
@@ -154,7 +154,7 @@ func TestScaleAppDoesNotRewriteConfig(t *testing.T) {
 func TestDeployAppReturnsTrackableDeployment(t *testing.T) {
 	f := newFixture(t)
 
-	result := plugintest.CallTool(t, f.apps, "deploy_app", map[string]any{
+	result := plugintest.CallTool(t, f.apps, "deploy_app", plugintest.Args{
 		"app_name": "myapp",
 		"repo_url": "https://github.com/dokku/smoke-test-app.git",
 		"git_ref":  "v1.0.0",
@@ -169,14 +169,14 @@ func TestDeployAppReturnsTrackableDeployment(t *testing.T) {
 		t.Fatalf("unexpected git:sync calls: %v", sync)
 	}
 
-	status := plugintest.Structured[deployment.DeploymentView](t, plugintest.CallTool(t, f.deployments, "get_deployment_status", map[string]any{
+	status := plugintest.Structured[deployment.DeploymentView](t, plugintest.CallTool(t, f.deployments, "get_deployment_status", plugintest.Args{
 		"deployment_id": started.DeploymentID,
 	}))
 	if status.ID != started.DeploymentID || status.AppName != "myapp" || status.GitRef != "v1.0.0" {
 		t.Fatalf("unexpected deployment status: %+v", status)
 	}
 
-	list := plugintest.Structured[deployment.DeploymentList](t, plugintest.CallTool(t, f.deployments, "list_deployments", map[string]any{
+	list := plugintest.Structured[deployment.DeploymentList](t, plugintest.CallTool(t, f.deployments, "list_deployments", plugintest.Args{
 		"app_name": "myapp",
 	}))
 	if len(list.Deployments) != 1 || list.Deployments[0].ID != started.DeploymentID {
@@ -188,7 +188,7 @@ func TestDeployAppGitSyncFailure(t *testing.T) {
 	f := newFixture(t)
 	f.client.Fail("git:sync", errors.New("repository not found"))
 
-	result := plugintest.CallTool(t, f.apps, "deploy_app", map[string]any{
+	result := plugintest.CallTool(t, f.apps, "deploy_app", plugintest.Args{
 		"app_name": "myapp",
 		"repo_url": "https://github.com/dokku/missing.git",
 	})
@@ -197,14 +197,14 @@ func TestDeployAppGitSyncFailure(t *testing.T) {
 
 func TestGetDeploymentStatusUnknownID(t *testing.T) {
 	f := newFixture(t)
-	result := plugintest.CallTool(t, f.deployments, "get_deployment_status", map[string]any{"deployment_id": "nope"})
+	result := plugintest.CallTool(t, f.deployments, "get_deployment_status", plugintest.Args{"deployment_id": "nope"})
 	plugintest.RequireError(t, result, "not found")
 }
 
 func TestGetRuntimeLogsRequestsLineCount(t *testing.T) {
 	f := newFixture(t)
 
-	result := plugintest.CallTool(t, f.apps, "get_runtime_logs", map[string]any{
+	result := plugintest.CallTool(t, f.apps, "get_runtime_logs", plugintest.Args{
 		"app_name": "myapp",
 		"lines":    50,
 	})
@@ -221,7 +221,7 @@ func TestGetRuntimeLogsRequestsLineCount(t *testing.T) {
 
 func TestCreateApp(t *testing.T) {
 	f := newFixture(t)
-	plugintest.RequireSuccess(t, plugintest.CallTool(t, f.apps, "create_app", map[string]any{"name": "new-app"}))
+	plugintest.RequireSuccess(t, plugintest.CallTool(t, f.apps, "create_app", plugintest.Args{"name": "new-app"}))
 	if calls := f.client.CallsTo("apps:create"); len(calls) != 1 || calls[0].String() != "apps:create new-app" {
 		t.Fatalf("unexpected calls: %v", calls)
 	}
@@ -229,7 +229,7 @@ func TestCreateApp(t *testing.T) {
 
 func TestCreateAppRejectsInvalidName(t *testing.T) {
 	f := newFixture(t)
-	result := plugintest.CallTool(t, f.apps, "create_app", map[string]any{"name": "Bad_Name!"})
+	result := plugintest.CallTool(t, f.apps, "create_app", plugintest.Args{"name": "Bad_Name!"})
 	plugintest.RequireError(t, result, "invalid application name")
 	if calls := f.client.CallsTo("apps:create"); len(calls) != 0 {
 		t.Fatalf("expected no apps:create call, got %v", calls)
@@ -239,19 +239,19 @@ func TestCreateAppRejectsInvalidName(t *testing.T) {
 func TestProcessStateTools(t *testing.T) {
 	f := newFixture(t)
 	for tool, command := range map[string]string{"restart_app": "ps:restart", "stop_app": "ps:stop", "start_app": "ps:start"} {
-		plugintest.RequireSuccess(t, plugintest.CallTool(t, f.apps, tool, map[string]any{"app_name": "myapp"}))
+		plugintest.RequireSuccess(t, plugintest.CallTool(t, f.apps, tool, plugintest.Args{"app_name": "myapp"}))
 		if calls := f.client.CallsTo(command); len(calls) != 1 || calls[0].String() != command+" myapp" {
 			t.Fatalf("%s: unexpected calls %v", tool, calls)
 		}
 	}
-	plugintest.RequireError(t, plugintest.CallTool(t, f.apps, "restart_app", map[string]any{"app_name": "ghost"}), "not found")
+	plugintest.RequireError(t, plugintest.CallTool(t, f.apps, "restart_app", plugintest.Args{"app_name": "ghost"}), "not found")
 }
 
 func TestGetFailedDeployLogs(t *testing.T) {
 	f := newFixture(t)
 	f.client.Respond("logs:failed", "web.1 | Error: Cannot find module 'express'\n")
 
-	result := plugintest.CallTool(t, f.apps, "get_failed_deploy_logs", map[string]any{"app_name": "myapp"})
+	result := plugintest.CallTool(t, f.apps, "get_failed_deploy_logs", plugintest.Args{"app_name": "myapp"})
 	plugintest.RequireSuccess(t, result)
 	if !strings.Contains(plugintest.Text(result), "Cannot find module") {
 		t.Fatalf("unexpected output: %s", plugintest.Text(result))
@@ -262,7 +262,7 @@ func TestRollbackInfersRepositoryFromLastDeploy(t *testing.T) {
 	f := newFixture(t)
 	f.client.Respond("apps:report", "=====> myapp app information\n       App deploy source:             git-sync\n       App deploy source metadata:    https://github.com/acme/web.git#0a1b2c3d\n")
 
-	result := plugintest.CallTool(t, f.apps, "rollback_app", map[string]any{"app_name": "myapp", "git_ref": "v1.2.0"})
+	result := plugintest.CallTool(t, f.apps, "rollback_app", plugintest.Args{"app_name": "myapp", "git_ref": "v1.2.0"})
 	started := plugintest.Structured[DeployStarted](t, result)
 	if started.DeploymentID == "" {
 		t.Fatalf("expected a deployment id, got %+v", started)
@@ -277,10 +277,10 @@ func TestRollbackNeedsRepositoryForNonGitSyncDeploys(t *testing.T) {
 	f := newFixture(t)
 	f.client.Respond("apps:report", "App deploy source:   git-push\nApp deploy source metadata:  0a1b2c3d\n")
 
-	result := plugintest.CallTool(t, f.apps, "rollback_app", map[string]any{"app_name": "myapp", "git_ref": "v1.2.0"})
+	result := plugintest.CallTool(t, f.apps, "rollback_app", plugintest.Args{"app_name": "myapp", "git_ref": "v1.2.0"})
 	plugintest.RequireError(t, result, "repo_url")
 
-	result = plugintest.CallTool(t, f.apps, "rollback_app", map[string]any{
+	result = plugintest.CallTool(t, f.apps, "rollback_app", plugintest.Args{
 		"app_name": "myapp", "git_ref": "v1.2.0", "repo_url": "https://github.com/acme/web.git",
 	})
 	plugintest.RequireSuccess(t, result)
@@ -291,7 +291,7 @@ func waitForDeployment(t *testing.T, f *fixture, id string) deployment.Deploymen
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		view := plugintest.Structured[deployment.DeploymentView](t, plugintest.CallTool(t, f.deployments, "get_deployment_status", map[string]any{"deployment_id": id}))
+		view := plugintest.Structured[deployment.DeploymentView](t, plugintest.CallTool(t, f.deployments, "get_deployment_status", plugintest.Args{"deployment_id": id}))
 		if view.Done {
 			return view
 		}
@@ -306,7 +306,7 @@ func TestDeploymentSucceedsWhenRebuildSucceeds(t *testing.T) {
 	f := newFixture(t)
 	f.client.Respond("ps:rebuild", "-----> Building myapp\n-----> Build complete\n")
 
-	started := plugintest.Structured[DeployStarted](t, plugintest.CallTool(t, f.apps, "deploy_app", map[string]any{
+	started := plugintest.Structured[DeployStarted](t, plugintest.CallTool(t, f.apps, "deploy_app", plugintest.Args{
 		"app_name": "myapp", "repo_url": "https://github.com/acme/web.git",
 	}))
 	view := waitForDeployment(t, f, started.DeploymentID)
@@ -321,7 +321,7 @@ func TestDeploymentFailsWithBuildOutput(t *testing.T) {
 		return []byte("-----> Building myapp\nnpm ERR! missing script: build\n"), errors.New("exit status 1")
 	})
 
-	started := plugintest.Structured[DeployStarted](t, plugintest.CallTool(t, f.apps, "deploy_app", map[string]any{
+	started := plugintest.Structured[DeployStarted](t, plugintest.CallTool(t, f.apps, "deploy_app", plugintest.Args{
 		"app_name": "myapp", "repo_url": "https://github.com/acme/web.git",
 	}))
 	view := waitForDeployment(t, f, started.DeploymentID)
@@ -334,7 +334,7 @@ func TestFollowRuntimeLogs(t *testing.T) {
 	f := newFixture(t)
 	f.client.Respond("logs", "line one\nline two\nline three\n")
 
-	result := plugintest.Structured[FollowedLogs](t, plugintest.CallTool(t, f.apps, "follow_runtime_logs", map[string]any{
+	result := plugintest.Structured[FollowedLogs](t, plugintest.CallTool(t, f.apps, "follow_runtime_logs", plugintest.Args{
 		"app_name": "myapp", "seconds": 5,
 	}))
 	if !slices.Equal(result.Lines, []string{"line one", "line two", "line three"}) || result.Truncated {
@@ -349,7 +349,7 @@ func TestFollowRuntimeLogsStopsAtMaxLines(t *testing.T) {
 	f := newFixture(t)
 	f.client.Respond("logs", "1\n2\n3\n4\n")
 
-	result := plugintest.Structured[FollowedLogs](t, plugintest.CallTool(t, f.apps, "follow_runtime_logs", map[string]any{
+	result := plugintest.Structured[FollowedLogs](t, plugintest.CallTool(t, f.apps, "follow_runtime_logs", plugintest.Args{
 		"app_name": "myapp", "max_lines": 2,
 	}))
 	if !slices.Equal(result.Lines, []string{"1", "2"}) || !result.Truncated {
@@ -359,5 +359,5 @@ func TestFollowRuntimeLogsStopsAtMaxLines(t *testing.T) {
 
 func TestFollowRuntimeLogsUnknownApp(t *testing.T) {
 	f := newFixture(t)
-	plugintest.RequireError(t, plugintest.CallTool(t, f.apps, "follow_runtime_logs", map[string]any{"app_name": "ghost"}), "not found")
+	plugintest.RequireError(t, plugintest.CallTool(t, f.apps, "follow_runtime_logs", plugintest.Args{"app_name": "ghost"}), "not found")
 }

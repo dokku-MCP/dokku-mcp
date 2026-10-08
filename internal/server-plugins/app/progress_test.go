@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dokku-mcp/dokku-mcp/internal/server-plugin/plugintest"
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -60,7 +61,7 @@ func TestFollowRuntimeLogsStreamsProgress(t *testing.T) {
 
 	req := mcp.CallToolRequest{}
 	req.Params.Name = "follow_runtime_logs"
-	req.Params.Arguments = map[string]any{"app_name": "myapp", "seconds": 5}
+	req.Params.Arguments = plugintest.Args{"app_name": "myapp", "seconds": 5}
 	req.Params.Meta = &mcp.Meta{ProgressToken: "follow-1"}
 	result, err := c.CallTool(ctx, req)
 	if err != nil {

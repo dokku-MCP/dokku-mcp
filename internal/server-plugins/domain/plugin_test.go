@@ -33,7 +33,7 @@ func TestGetAppDomains(t *testing.T) {
        Domains global vhosts:         example.com
 `)
 
-	result := plugintest.Structured[domaindomain.AppDomains](t, plugintest.CallTool(t, plugin, "get_app_domains", map[string]any{"app_name": "web"}))
+	result := plugintest.Structured[domaindomain.AppDomains](t, plugintest.CallTool(t, plugin, "get_app_domains", plugintest.Args{"app_name": "web"}))
 	if !result.Enabled || !slices.Equal(result.Domains, []string{"web.example.com", "www.example.com"}) || !slices.Equal(result.GlobalDomains, []string{"example.com"}) {
 		t.Fatalf("unexpected domains: %+v", result)
 	}
@@ -44,8 +44,8 @@ func TestGetAppDomains(t *testing.T) {
 
 func TestAddAndRemoveAppDomain(t *testing.T) {
 	client, plugin := newPlugin(t)
-	plugintest.RequireSuccess(t, plugintest.CallTool(t, plugin, "add_app_domain", map[string]any{"app_name": "web", "domain_name": "www.example.com"}))
-	plugintest.RequireSuccess(t, plugintest.CallTool(t, plugin, "remove_app_domain", map[string]any{"app_name": "web", "domain_name": "old.example.com"}))
+	plugintest.RequireSuccess(t, plugintest.CallTool(t, plugin, "add_app_domain", plugintest.Args{"app_name": "web", "domain_name": "www.example.com"}))
+	plugintest.RequireSuccess(t, plugintest.CallTool(t, plugin, "remove_app_domain", plugintest.Args{"app_name": "web", "domain_name": "old.example.com"}))
 
 	if calls := client.CallsTo("domains:add"); len(calls) != 1 || calls[0].String() != "domains:add web www.example.com" {
 		t.Fatalf("unexpected add calls: %v", calls)
@@ -57,7 +57,7 @@ func TestAddAndRemoveAppDomain(t *testing.T) {
 
 func TestAddAppDomainRejectsInvalidDomain(t *testing.T) {
 	client, plugin := newPlugin(t)
-	result := plugintest.CallTool(t, plugin, "add_app_domain", map[string]any{"app_name": "web", "domain_name": "not a domain"})
+	result := plugintest.CallTool(t, plugin, "add_app_domain", plugintest.Args{"app_name": "web", "domain_name": "not a domain"})
 	plugintest.RequireError(t, result, "invalid domain")
 	if len(client.Calls()) != 0 {
 		t.Fatalf("expected no calls, got %v", client.Calls())

@@ -11,6 +11,9 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
+// Args are the arguments of a tool call.
+type Args = map[string]any // NOTE: MCP tool arguments are untyped JSON objects. This is a valid exception
+
 // FindTool returns the named tool of a tool provider, failing the test if
 // it does not exist.
 func FindTool(t *testing.T, provider domain.ToolProvider, name string) domain.Tool {
@@ -29,7 +32,7 @@ func FindTool(t *testing.T, provider domain.ToolProvider, name string) domain.To
 }
 
 // CallTool invokes a tool handler with the given arguments.
-func CallTool(t *testing.T, provider domain.ToolProvider, name string, args map[string]any) *mcp.CallToolResult {
+func CallTool(t *testing.T, provider domain.ToolProvider, name string, args Args) *mcp.CallToolResult {
 	t.Helper()
 	tool := FindTool(t, provider, name)
 	req := mcp.CallToolRequest{}

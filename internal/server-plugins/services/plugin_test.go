@@ -60,7 +60,7 @@ func TestListServicesEmpty(t *testing.T) {
 func TestCreateServiceRequiresInstalledPlugin(t *testing.T) {
 	client, plugin := newPlugin(t)
 
-	result := plugintest.CallTool(t, plugin, "create_service", map[string]any{"service_type": "postgres", "name": "db"})
+	result := plugintest.CallTool(t, plugin, "create_service", plugintest.Args{"service_type": "postgres", "name": "db"})
 	plugintest.RequireError(t, result, "plugin:install https://github.com/dokku/dokku-postgres.git")
 	if len(client.CallsTo("postgres:create")) != 0 {
 		t.Fatal("must not run postgres:create when the plugin is missing")
@@ -70,7 +70,7 @@ func TestCreateServiceRequiresInstalledPlugin(t *testing.T) {
 func TestCreateService(t *testing.T) {
 	client, plugin := newPlugin(t, "postgres")
 
-	result := plugintest.CallTool(t, plugin, "create_service", map[string]any{
+	result := plugintest.CallTool(t, plugin, "create_service", plugintest.Args{
 		"service_type": "postgres", "name": "main-db", "image_version": "17.2",
 	})
 	plugintest.RequireSuccess(t, result)
@@ -83,7 +83,7 @@ func TestCreateService(t *testing.T) {
 
 func TestCreateServiceRejectsInvalidName(t *testing.T) {
 	client, plugin := newPlugin(t, "postgres")
-	result := plugintest.CallTool(t, plugin, "create_service", map[string]any{"service_type": "postgres", "name": "Main DB"})
+	result := plugintest.CallTool(t, plugin, "create_service", plugintest.Args{"service_type": "postgres", "name": "Main DB"})
 	plugintest.RequireError(t, result, "invalid service name")
 	if len(client.Calls()) != 0 {
 		t.Fatalf("expected no Dokku calls, got %v", client.Calls())
@@ -101,7 +101,7 @@ func TestGetServiceInfoMasksCredentials(t *testing.T) {
 `)
 	client.Respond("postgres:links", "web\nworker\n")
 
-	result := plugintest.CallTool(t, plugin, "get_service_info", map[string]any{"service_type": "postgres", "name": "main-db"})
+	result := plugintest.CallTool(t, plugin, "get_service_info", plugintest.Args{"service_type": "postgres", "name": "main-db"})
 	info := plugintest.Structured[ServiceInfo](t, result)
 
 	if got := info.Info["Dsn"]; got != "postgres://postgres:***@dokku-postgres-main-db:5432/main_db" {
@@ -124,7 +124,7 @@ func TestGetServiceInfoMasksCredentials(t *testing.T) {
 func TestLinkService(t *testing.T) {
 	client, plugin := newPlugin(t, "redis")
 
-	result := plugintest.CallTool(t, plugin, "link_service", map[string]any{
+	result := plugintest.CallTool(t, plugin, "link_service", plugintest.Args{
 		"service_type": "redis", "name": "cache", "app_name": "web", "alias": "CACHE", "no_restart": true,
 	})
 	plugintest.RequireSuccess(t, result)
@@ -137,7 +137,7 @@ func TestLinkService(t *testing.T) {
 
 func TestLinkServiceRejectsInvalidAlias(t *testing.T) {
 	_, plugin := newPlugin(t, "redis")
-	result := plugintest.CallTool(t, plugin, "link_service", map[string]any{
+	result := plugintest.CallTool(t, plugin, "link_service", plugintest.Args{
 		"service_type": "redis", "name": "cache", "app_name": "web", "alias": "cache url",
 	})
 	plugintest.RequireError(t, result, "invalid alias")
@@ -145,7 +145,7 @@ func TestLinkServiceRejectsInvalidAlias(t *testing.T) {
 
 func TestUnlinkService(t *testing.T) {
 	client, plugin := newPlugin(t, "postgres")
-	result := plugintest.CallTool(t, plugin, "unlink_service", map[string]any{
+	result := plugintest.CallTool(t, plugin, "unlink_service", plugintest.Args{
 		"service_type": "postgres", "name": "db", "app_name": "web",
 	})
 	plugintest.RequireSuccess(t, result)
@@ -158,7 +158,7 @@ func TestGetServiceLogsDoesNotFollow(t *testing.T) {
 	client, plugin := newPlugin(t, "postgres")
 	client.Respond("postgres:logs", "LOG:  database system is ready to accept connections\n")
 
-	result := plugintest.CallTool(t, plugin, "get_service_logs", map[string]any{"service_type": "postgres", "name": "db"})
+	result := plugintest.CallTool(t, plugin, "get_service_logs", plugintest.Args{"service_type": "postgres", "name": "db"})
 	plugintest.RequireSuccess(t, result)
 	if calls := client.CallsTo("postgres:logs"); len(calls) != 1 || calls[0].String() != "postgres:logs db" {
 		t.Fatalf("unexpected calls: %v", calls)
@@ -168,7 +168,7 @@ func TestGetServiceLogsDoesNotFollow(t *testing.T) {
 func TestDestroyServiceRequiresConfirmation(t *testing.T) {
 	client, plugin := newPlugin(t, "postgres")
 
-	result := plugintest.CallTool(t, plugin, "destroy_service", map[string]any{
+	result := plugintest.CallTool(t, plugin, "destroy_service", plugintest.Args{
 		"service_type": "postgres", "name": "db", "confirm_name": "other",
 	})
 	plugintest.RequireError(t, result, "confirm_name")
@@ -176,7 +176,7 @@ func TestDestroyServiceRequiresConfirmation(t *testing.T) {
 		t.Fatal("must not destroy without confirmation")
 	}
 
-	result = plugintest.CallTool(t, plugin, "destroy_service", map[string]any{
+	result = plugintest.CallTool(t, plugin, "destroy_service", plugintest.Args{
 		"service_type": "postgres", "name": "db", "confirm_name": "db",
 	})
 	plugintest.RequireSuccess(t, result)
