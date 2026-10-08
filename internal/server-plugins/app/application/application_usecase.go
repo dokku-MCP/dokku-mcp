@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	domain "github.com/dokku-mcp/dokku-mcp/internal/server-plugins/app/domain"
@@ -394,29 +393,17 @@ func (uc *ApplicationUseCase) RollbackApplication(ctx context.Context, cmd Rollb
 		if err != nil {
 			return nil, err
 		}
-		source, metadata, err := uc.applicationRepo.GetDeploySource(ctx, appName)
+		source, err := uc.applicationRepo.GetDeploySource(ctx, appName)
 		if err != nil {
 			return nil, err
 		}
-		repoURL = RepoFromDeploySource(source, metadata)
+		repoURL = source.RepoURL()
 		if repoURL == "" {
 			return nil, ErrUnknownDeploySource
 		}
 	}
 	uc.logger.Info("Rolling back application", "app_name", cmd.Name, "git_ref", cmd.GitRef, "repo_url", repoURL)
 	return uc.DeployApplication(ctx, DeployApplicationCommand{Name: cmd.Name, RepoURL: repoURL, GitRef: cmd.GitRef})
-}
-
-// RepoFromDeploySource extracts the repository URL from git:sync deploy
-// source metadata ("<repo>#<sha>"). It returns "" for other deploy sources.
-func RepoFromDeploySource(source, metadata string) string {
-	if source != "git-sync" || metadata == "" {
-		return ""
-	}
-	if i := strings.LastIndex(metadata, "#"); i > 0 {
-		return metadata[:i]
-	}
-	return metadata
 }
 
 // existingApp validates a name and checks that the application exists.

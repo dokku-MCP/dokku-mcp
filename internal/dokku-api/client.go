@@ -174,11 +174,15 @@ func (c *client) executeCommandWithInput(ctx context.Context, commandName string
 		cmd.Stdin = stdin
 	}
 
-	c.logCommandExecutionStart(cmdCtx, commandName, args, dokkuCommand, sshArgs, env)
+	// Logs get a redacted copy: config:set values are reversible base64.
+	logArgs := RedactArgs(commandName, args)
+	logCommand := buildDokkuCommand(commandName, logArgs)
+	logSSHArgs := append(slices.Clone(sshArgs[:len(sshArgs)-1]), logCommand)
+	c.logCommandExecutionStart(cmdCtx, commandName, logArgs, logCommand, logSSHArgs, env)
 
 	output, execErr := cmd.CombinedOutput()
 	if execErr != nil {
-		return c.handleCommandError(cmdCtx, commandName, args, dokkuCommand, sshArgs, env, output, execErr)
+		return c.handleCommandError(cmdCtx, commandName, logArgs, logCommand, logSSHArgs, env, output, execErr)
 	}
 
 	c.logger.Debug("Dokku command executed successfully",
@@ -274,6 +278,11 @@ func (c *client) logCommandExecutionStart(ctx context.Context, commandName strin
 }
 
 func (c *client) handleCommandError(ctx context.Context, commandName string, args []string, dokkuCommand string, sshArgs []string, env []string, output []byte, execErr error) ([]byte, error) {
+	if slices.Contains(secretValueCommands, commandName) {
+		// config:set echoes the decoded values it was setting; keep them out
+		// of logs and error messages.
+		output = nil
+	}
 	if isUnsupportedJSONProbe(args, output, commandName) {
 		c.logger.Debug("JSON format not supported for command (probe)",
 			"command", commandName,
@@ -699,12 +708,14 @@ func (c *client) StreamLogs(ctx context.Context, appName string) (<-chan LogLine
 			}
 		}
 
-		if err := scanner.Err(); err != nil {
-			errChan <- fmt.Errorf("error reading logs: %w", err)
-		}
-
-		// Wait for command to complete and check for errors
-		if waitErr := cmd.Wait(); waitErr != nil {
+		// Report at most one error: errChan has room for exactly one, so a
+		// second send would block forever once the consumer stops reading.
+		scanErr := scanner.Err()
+		waitErr := cmd.Wait()
+		switch {
+		case scanErr != nil:
+			errChan <- fmt.Errorf("error reading logs: %w", scanErr)
+		case waitErr != nil:
 			errChan <- fmt.Errorf("command failed: %w", waitErr)
 		}
 	}()

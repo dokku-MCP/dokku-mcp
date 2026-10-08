@@ -83,6 +83,9 @@ func RequireError(t *testing.T, result *mcp.CallToolResult, contains string) {
 func Structured[T any](t *testing.T, result *mcp.CallToolResult) T {
 	t.Helper()
 	RequireSuccess(t, result)
+	if result.StructuredContent == nil {
+		t.Fatalf("expected structured content, got text-only result: %s", Text(result))
+	}
 	var out T
 	data, err := json.Marshal(result.StructuredContent)
 	if err != nil {

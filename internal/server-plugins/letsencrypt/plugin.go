@@ -123,7 +123,8 @@ func requireAppName(req mcp.CallToolRequest) (string, error) {
 }
 
 func validateEmail(email string) error {
-	if !emailPattern.MatchString(email) {
+	// 254 bytes is the maximum length of an SMTP address.
+	if len(email) > 254 || !emailPattern.MatchString(email) {
 		return fmt.Errorf("invalid email address %q", email)
 	}
 	return nil

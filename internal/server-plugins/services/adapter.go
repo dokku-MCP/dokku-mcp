@@ -10,9 +10,9 @@ import (
 	dokkuApi "github.com/dokku-mcp/dokku-mcp/internal/dokku-api"
 )
 
-// SupportedTypes lists the official Dokku datastore plugins. They all share
+// supportedTypes lists the official Dokku datastore plugins. They all share
 // the same command interface (<type>:create, <type>:link, ...).
-var SupportedTypes = []string{
+var supportedTypes = []string{
 	"postgres", "mysql", "mariadb", "redis", "mongo",
 	"rabbitmq", "memcached", "clickhouse", "elasticsearch",
 }
@@ -28,8 +28,8 @@ var (
 
 // ValidateServiceType checks that a type is one of the supported datastores.
 func ValidateServiceType(serviceType string) error {
-	if !slices.Contains(SupportedTypes, serviceType) {
-		return fmt.Errorf("unsupported service type %q (supported: %s)", serviceType, strings.Join(SupportedTypes, ", "))
+	if !slices.Contains(supportedTypes, serviceType) {
+		return fmt.Errorf("unsupported service type %q (supported: %s)", serviceType, strings.Join(supportedTypes, ", "))
 	}
 	return nil
 }
@@ -71,7 +71,7 @@ func (a *Adapter) InstalledTypes(ctx context.Context) ([]string, error) {
 		return nil, fmt.Errorf("failed to list Dokku plugins: %w", err)
 	}
 	var installed []string
-	for _, t := range SupportedTypes {
+	for _, t := range supportedTypes {
 		if slices.Contains(enabled, t) {
 			installed = append(installed, t)
 		}

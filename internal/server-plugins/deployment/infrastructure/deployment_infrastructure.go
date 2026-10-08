@@ -180,12 +180,17 @@ func (s *deploymentInfrastructure) recordBuildOutput(deploymentID string, output
 	if len(output) > maxBuildLogBytes {
 		output = output[len(output)-maxBuildLogBytes:]
 	}
-	_ = s.tracker.AddLogs(deploymentID, string(output))
+	if err := s.tracker.AddLogs(deploymentID, string(output)); err != nil {
+		s.logger.Warn("Failed to record build output", "deployment_id", deploymentID, "error", err)
+	}
 }
 
 func (s *deploymentInfrastructure) updateStatus(deploymentID string, status domain.DeploymentStatus, msg string) {
-	if s.tracker != nil {
-		_ = s.tracker.UpdateStatus(deploymentID, status, msg)
+	if s.tracker == nil {
+		return
+	}
+	if err := s.tracker.UpdateStatus(deploymentID, status, msg); err != nil {
+		s.logger.Warn("Failed to record deployment status", "deployment_id", deploymentID, "status", status, "error", err)
 	}
 }
 

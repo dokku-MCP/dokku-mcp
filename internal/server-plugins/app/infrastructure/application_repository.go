@@ -236,6 +236,13 @@ func (r *DokkuApplicationRepository) FollowLogs(ctx context.Context, name *app.A
 			select {
 			case out <- text:
 			case <-ctx.Done():
+				// Drain the stream so its producer can finish and exit.
+				go func() {
+					for range logLines {
+					}
+					for range errs {
+					}
+				}()
 				return
 			}
 		}
@@ -277,12 +284,12 @@ func (r *DokkuApplicationRepository) SetProcessState(ctx context.Context, name *
 }
 
 // GetDeploySource returns the deploy source and its metadata from apps:report
-func (r *DokkuApplicationRepository) GetDeploySource(ctx context.Context, name *app.ApplicationName) (string, string, error) {
+func (r *DokkuApplicationRepository) GetDeploySource(ctx context.Context, name *app.ApplicationName) (app.DeploySource, error) {
 	info, err := r.tryGetBasicApplicationInfo(ctx, name.Value())
 	if err != nil {
-		return "", "", err
+		return app.DeploySource{}, err
 	}
-	return info["App deploy source"], info["App deploy source metadata"], nil
+	return app.DeploySource{Type: info["App deploy source"], Metadata: info["App deploy source metadata"]}, nil
 }
 
 // List retrieves a paginated list of applications

@@ -2,6 +2,7 @@ package dokkuApi
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -116,4 +117,23 @@ func isReadOnlyCommand(commandName string) bool {
 		return true
 	}
 	return false
+}
+
+// secretValueCommands take KEY=value arguments whose values may be secrets.
+var secretValueCommands = []string{"config:set"}
+
+// RedactArgs returns a copy of args that is safe to log: for commands that
+// take KEY=value secrets, every value is replaced with "***".
+func RedactArgs(commandName string, args []string) []string {
+	if !slices.Contains(secretValueCommands, commandName) {
+		return args
+	}
+	redacted := make([]string, len(args))
+	for i, arg := range args {
+		if key, _, ok := strings.Cut(arg, "="); ok && !strings.HasPrefix(arg, "-") {
+			arg = key + "=***"
+		}
+		redacted[i] = arg
+	}
+	return redacted
 }

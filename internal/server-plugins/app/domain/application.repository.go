@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"strings"
 )
 
 type ApplicationRepository interface {
@@ -21,9 +22,8 @@ type ApplicationRepository interface {
 	GetFailedDeployLogs(ctx context.Context, name *ApplicationName) (string, error)
 	// SetProcessState restarts, stops or starts all processes of the application.
 	SetProcessState(ctx context.Context, name *ApplicationName, action ProcessAction) error
-	// GetDeploySource returns how the application was last deployed, e.g.
-	// ("git-sync", "https://github.com/org/repo.git#<sha>").
-	GetDeploySource(ctx context.Context, name *ApplicationName) (source, metadata string, err error)
+	// GetDeploySource returns how the application was last deployed.
+	GetDeploySource(ctx context.Context, name *ApplicationName) (DeploySource, error)
 	List(ctx context.Context, offset, limit int) ([]*Application, int, error)
 	GetByDomain(ctx context.Context, domain string) ([]*Application, error)
 	GetRunningApplications(ctx context.Context) ([]*Application, error)
@@ -98,3 +98,22 @@ const (
 	ProcessStop    ProcessAction = "stop"
 	ProcessStart   ProcessAction = "start"
 )
+
+// DeploySource describes how an application was last deployed, as reported
+// by apps:report, e.g. Type "git-sync" with Metadata "<repo>#<sha>".
+type DeploySource struct {
+	Type     string
+	Metadata string
+}
+
+// RepoURL returns the repository of a git:sync deployment, or "" for other
+// deploy sources.
+func (d DeploySource) RepoURL() string {
+	if d.Type != "git-sync" || d.Metadata == "" {
+		return ""
+	}
+	if i := strings.LastIndex(d.Metadata, "#"); i > 0 {
+		return d.Metadata[:i]
+	}
+	return d.Metadata
+}

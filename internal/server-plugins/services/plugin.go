@@ -57,7 +57,7 @@ func serviceTypeParam() mcp.ToolOption {
 	return mcp.WithString("service_type",
 		mcp.Required(),
 		mcp.Description("Datastore type"),
-		mcp.Enum(SupportedTypes...),
+		mcp.Enum(supportedTypes...),
 	)
 }
 
@@ -87,7 +87,7 @@ func buildListServicesTool() mcp.Tool {
 		mcp.WithDescription("List datastore services (postgres, redis, ...) and which datastore plugins are installed"),
 		mcp.WithString("service_type",
 			mcp.Description("Only list services of this type"),
-			mcp.Enum(SupportedTypes...),
+			mcp.Enum(supportedTypes...),
 		),
 		mcp.WithOutputSchema[ServiceList](),
 		mcp.WithReadOnlyHintAnnotation(true),

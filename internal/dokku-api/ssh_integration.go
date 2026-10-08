@@ -80,8 +80,13 @@ func (m *SSHConnectionManager) PrepareSSHCommand(command string) ([]string, []st
 	}
 	env := m.authService.PrepareEnvironment(authMethod, baseEnv)
 
+	// The remote command is logged by the caller, with secrets redacted.
+	loggedArgs := sshArgs
+	if command != "" {
+		loggedArgs = sshArgs[:len(sshArgs)-1]
+	}
 	m.logger.Debug("Prepared SSH command",
-		"ssh_args", sshArgs,
+		"ssh_args", loggedArgs,
 		"auth_method", authMethod.Description,
 		"target", m.config.ConnectionString())
 

@@ -134,3 +134,12 @@ func TestAppNamesAreNormalized(t *testing.T) {
 		t.Fatalf("commands = %v", got)
 	}
 }
+
+func TestEnableRejectsOverlongEmail(t *testing.T) {
+	client, plugin := newPlugin(t)
+	email := strings.Repeat("a", 250) + "@example.com"
+	plugintest.RequireError(t, plugintest.CallTool(t, plugin, "enable_letsencrypt", plugintest.Args{"app_name": "web", "email": email}), "invalid email")
+	if len(client.Calls()) != 0 {
+		t.Fatalf("expected no calls, got %v", commands(client))
+	}
+}

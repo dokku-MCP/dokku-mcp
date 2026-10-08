@@ -19,3 +19,14 @@ func TestErrorDetail(t *testing.T) {
 		t.Fatalf("long output not truncated to its tail: %d chars, suffix %q", len(got), got[len(got)-12:])
 	}
 }
+
+func TestRedactArgs(t *testing.T) {
+	got := RedactArgs("config:set", []string{"--encoded", "--no-restart", "web", "SECRET=c2VjcmV0", "EMPTY="})
+	want := []string{"--encoded", "--no-restart", "web", "SECRET=***", "EMPTY=***"}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("RedactArgs = %v, want %v", got, want)
+	}
+	if other := RedactArgs("ps:scale", []string{"web", "web=2"}); other[1] != "web=2" {
+		t.Fatalf("non-secret commands must not be redacted: %v", other)
+	}
+}

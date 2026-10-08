@@ -127,16 +127,16 @@ const maxBuildLogTail = 4000
 
 // DeploymentView is the structured representation of a tracked deployment.
 type DeploymentView struct {
-	ID           string     `json:"id" jsonschema:"Deployment identifier"`
-	AppName      string     `json:"app_name"`
-	GitRef       string     `json:"git_ref"`
-	Status       string     `json:"status" jsonschema:"One of pending, running, succeeded, failed, rolled_back"`
-	Done         bool       `json:"done" jsonschema:"True once the deployment reached a final status"`
-	CreatedAt    time.Time  `json:"created_at"`
-	CompletedAt  *time.Time `json:"completed_at,omitempty"`
-	Duration     string     `json:"duration"`
-	Error        string     `json:"error,omitempty"`
-	BuildLogTail string     `json:"build_log_tail,omitempty" jsonschema:"Last part of the build output"`
+	ID           string                             `json:"id" jsonschema:"Deployment identifier"`
+	AppName      string                             `json:"app_name"`
+	GitRef       string                             `json:"git_ref"`
+	Status       deployment_domain.DeploymentStatus `json:"status" jsonschema:"One of pending, running, succeeded, failed, rolled_back"`
+	Done         bool                               `json:"done" jsonschema:"True once the deployment reached a final status"`
+	CreatedAt    time.Time                          `json:"created_at"`
+	CompletedAt  *time.Time                         `json:"completed_at,omitempty"`
+	Duration     string                             `json:"duration"`
+	Error        string                             `json:"error,omitempty"`
+	BuildLogTail string                             `json:"build_log_tail,omitempty" jsonschema:"Last part of the build output"`
 }
 
 // DeploymentList is the structured result of list_deployments.
@@ -149,7 +149,7 @@ func newDeploymentView(d *deployment_domain.Deployment, withLogs bool) Deploymen
 		ID:          d.ID(),
 		AppName:     d.AppName(),
 		GitRef:      d.GitRef(),
-		Status:      string(d.Status()),
+		Status:      d.Status(),
 		Done:        d.IsCompleted(),
 		CreatedAt:   d.CreatedAt(),
 		CompletedAt: d.CompletedAt(),
