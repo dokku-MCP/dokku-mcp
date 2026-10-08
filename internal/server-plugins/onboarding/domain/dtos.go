@@ -49,7 +49,7 @@ type CapabilityToolExampleParams struct {
 
 type CapabilityToolExample struct {
 	Tool   string                      `json:"tool"`
-	Params CapabilityToolExampleParams `json:"params,omitempty"`
+	Params CapabilityToolExampleParams `json:"params"`
 }
 
 type CapabilityTool struct {

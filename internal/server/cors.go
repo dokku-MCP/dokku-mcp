@@ -65,8 +65,8 @@ func isOriginAllowed(origin string, allowedOrigins []string) bool {
 			return true
 		}
 		// Check for wildcard subdomain match
-		if strings.HasPrefix(allowed, "*.") {
-			domain := strings.TrimPrefix(allowed, "*.")
+		if after, ok := strings.CutPrefix(allowed, "*."); ok {
+			domain := after
 			if strings.HasSuffix(origin, domain) {
 				return true
 			}

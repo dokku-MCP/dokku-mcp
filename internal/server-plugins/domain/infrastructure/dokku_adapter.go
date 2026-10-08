@@ -145,9 +145,9 @@ func (a *DokkuDomainAdapter) parseGlobalDomains(output string) []string {
 
 	for _, line := range lines {
 		if strings.Contains(line, "Global vhosts:") {
-			idx := strings.Index(line, ":")
-			if idx != -1 {
-				domainsStr := strings.TrimSpace(line[idx+1:])
+			_, after, ok := strings.Cut(line, ":")
+			if ok {
+				domainsStr := strings.TrimSpace(after)
 				if domainsStr != "" && domainsStr != "none" {
 					return strings.Fields(domainsStr)
 				}

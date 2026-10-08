@@ -7,9 +7,9 @@ import (
 // ParseKeyValueOutput parses key-value output (e.g., key: value or key=value) from Dokku CLI.
 func ParseKeyValueOutput(output string, separator string) map[string]string {
 	result := make(map[string]string)
-	lines := strings.Split(output, "\n")
+	lines := strings.SplitSeq(output, "\n")
 
-	for _, line := range lines {
+	for line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue

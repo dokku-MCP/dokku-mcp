@@ -3,6 +3,7 @@ package plugins
 import (
 	"context"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -278,12 +279,7 @@ func (r *DynamicServerPluginRegistry) IsServerPluginActive(srvPluginID string) b
 
 // isDokkuPluginEnabled checks if a plugin is in the list of enabled Dokku plugins.
 func (r *DynamicServerPluginRegistry) isDokkuPluginEnabled(dokkuPluginName string, enabledDokkuPlugins []string) bool {
-	for _, enabled := range enabledDokkuPlugins {
-		if enabled == dokkuPluginName {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(enabledDokkuPlugins, dokkuPluginName)
 }
 
 // SyncServerPlugins performs a manual synchronization of server plugins (exposed for testing).

@@ -218,8 +218,8 @@ func (s *deploymentInfrastructure) parseEventsOutput(eventsOutput, appName strin
 func (s *deploymentInfrastructure) parseEventLine(line, appName string) *domain.Deployment {
 	// Extract git ref if available, otherwise use "main"
 	gitRef := "main"
-	parts := strings.Fields(line)
-	for _, part := range parts {
+	parts := strings.FieldsSeq(line)
+	for part := range parts {
 		if strings.Contains(part, ":") && strings.Contains(part, "git") {
 			gitParts := strings.Split(part, ":")
 			if len(gitParts) > 1 {

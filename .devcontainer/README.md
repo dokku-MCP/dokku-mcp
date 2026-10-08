@@ -5,7 +5,7 @@ This Dev Container provides a complete Go development environment for the Dokku 
 ## Features
 
 ### Base Image
-- **Go 1.23** (Debian Bookworm)
+- **Go 1.26** (Debian Bookworm)
 - Pre-configured for Go development
 
 ### Included Tools

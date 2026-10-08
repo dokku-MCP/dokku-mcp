@@ -138,7 +138,7 @@ dokku-mcp --version
 If you prefer to build from source:
 
 1. **Prerequisites:**
-   - [Go](https://golang.org/doc/install) (version 1.25 or later)
+   - [Go](https://golang.org/doc/install) (version 1.26 or later)
 
 2. **Clone and build:**
    ```bash
@@ -245,7 +245,7 @@ This section is for developers who want to contribute to the project or modify t
 ### Development Setup
 
 1. **Prerequisites:**
-   - [Go](https://golang.org/doc/install) (version 1.25 or later)
+   - [Go](https://golang.org/doc/install) (version 1.26 or later)
    - [Docker](https://docs.docker.com/get-docker/) and Docker Compose
    - [Make](https://www.gnu.org/software/make/)
 

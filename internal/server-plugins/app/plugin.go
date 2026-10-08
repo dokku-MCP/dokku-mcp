@@ -247,8 +247,8 @@ func (p *AppsServerPlugin) buildConfigureAppTool() mcp.Tool {
 		mcp.WithObject("config",
 			mcp.Required(),
 			mcp.Description("Environment variables as key-value pairs"),
-			mcp.Properties(map[string]interface{}{ // NOTE: This is a valid exception
-				"additionalProperties": map[string]interface{}{ // NOTE: This is a valid exception
+			mcp.Properties(map[string]any{ // NOTE: This is a valid exception
+				"additionalProperties": map[string]any{ // NOTE: This is a valid exception
 					"type": "string",
 				},
 			}),
@@ -380,7 +380,7 @@ func (p *AppsServerPlugin) handleConfigureApp(ctx context.Context, req mcp.CallT
 
 	configVars := make(map[string]string)
 	if configParam, ok := req.GetArguments()["config"]; ok {
-		if configMap, ok := configParam.(map[string]interface{}); ok { // NOTE: This is a valid exception
+		if configMap, ok := configParam.(map[string]any); ok { // NOTE: This is a valid exception
 			for key, value := range configMap {
 				if valueStr, ok := value.(string); ok {
 					configVars[key] = valueStr
@@ -495,10 +495,7 @@ func (p *AppsServerPlugin) handleRuntimeLogsResource(ctx context.Context, req mc
 	// Get Dokku client from application use case
 	// We need to access the Dokku client to get logs
 	// For now, we'll use a default lines value
-	lines := p.logsConfig.Runtime.DefaultLines
-	if lines > p.logsConfig.Runtime.MaxLines {
-		lines = p.logsConfig.Runtime.MaxLines
-	}
+	lines := min(p.logsConfig.Runtime.DefaultLines, p.logsConfig.Runtime.MaxLines)
 
 	// Validate that the application exists
 	_, validationErr := p.applicationUseCase.GetApplicationByName(ctx, appName)

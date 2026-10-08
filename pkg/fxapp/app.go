@@ -22,7 +22,7 @@ func New() *fx.App {
 	}
 
 	// Default to a verbose logger for debug level
-	var fxLogger fx.Option = fx.WithLogger(
+	fxLogger := fx.WithLogger(
 		func() fxevent.Logger {
 			return &fxevent.ConsoleLogger{W: log.Writer()}
 		},

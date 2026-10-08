@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/dokku-mcp/dokku-mcp/pkg/buildinfo"
 	"github.com/dokku-mcp/dokku-mcp/pkg/fxapp"
 )
 
@@ -19,5 +20,6 @@ func main() {
 		os.Exit(0)
 	}
 
+	buildinfo.Version = Version
 	fxapp.New().Run()
 }

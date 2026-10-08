@@ -50,9 +50,9 @@ func (s *srvPluginDiscoveryService) GetEnabledDokkuPlugins(ctx context.Context) 
 
 	// Parse the output to extract enabled plugin names
 	var enabledPlugins []string
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	lines := strings.SplitSeq(strings.TrimSpace(string(output)), "\n")
 
-	for _, line := range lines {
+	for line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "====") {
 			continue

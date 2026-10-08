@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"maps"
 	"time"
 
 	"github.com/dokku-mcp/dokku-mcp/internal/shared"
@@ -310,14 +311,11 @@ func (a *Application) copyConfiguration() *ApplicationConfiguration {
 	copy(domains, a.configuration.domains)
 
 	envVars := make(map[shared.EnvVarKey]*shared.EnvVarValue)
-	for k, v := range a.configuration.environmentVars {
-		envVars[k] = v
-	}
+	maps.Copy(envVars, a.configuration.environmentVars)
 
 	processes := make(map[process.ProcessType]*process.Process)
-	for k, v := range a.configuration.processes {
-		processes[k] = v // This is a shallow copy, but Process is now an entity-like object
-	}
+	// This is a shallow copy, but Process is now an entity-like object
+	maps.Copy(processes, a.configuration.processes)
 
 	return &ApplicationConfiguration{
 		buildpack:       a.configuration.buildpack,

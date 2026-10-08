@@ -376,14 +376,6 @@ func (r *DokkuApplicationRepository) GetRecentlyDeployed(ctx context.Context, li
 	return allApps, nil
 }
 
-// Private utility methods
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 // updateApplicationFromInfo updates the application with retrieved information
 func (r *DokkuApplicationRepository) updateApplicationFromInfo(app *app.Application, info map[string]string, config map[string]string) error {
 	// Apply environment variables
@@ -402,8 +394,8 @@ func (r *DokkuApplicationRepository) updateApplicationFromInfo(app *app.Applicat
 
 	// Process domains if present
 	if domainsStr, ok := info["domains"]; ok && domainsStr != "" {
-		domains := strings.Split(domainsStr, " ")
-		for _, domain := range domains {
+		domains := strings.SplitSeq(domainsStr, " ")
+		for domain := range domains {
 			if domain != "" {
 				if err := app.AddDomain(domain); err != nil {
 					r.logger.Warn("Failed to add domain",
@@ -419,8 +411,8 @@ func (r *DokkuApplicationRepository) updateApplicationFromInfo(app *app.Applicat
 
 // parseProcesses parses and adds processes from a string
 func (r *DokkuApplicationRepository) parseProcesses(application *app.Application, processesStr string) {
-	processes := strings.Fields(processesStr)
-	for _, proc := range processes {
+	processes := strings.FieldsSeq(processesStr)
+	for proc := range processes {
 		parts := strings.Split(proc, ":")
 		if len(parts) == 2 {
 			processType := parts[0]
@@ -461,8 +453,8 @@ func (r *DokkuApplicationRepository) tryGetPsReportInfo(ctx context.Context, app
 
 	// Parse ps:report output to extract deployment and running state
 	info := make(map[string]string)
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(string(output), "\n")
+	for line := range lines {
 		if strings.Contains(line, ":") {
 			parts := strings.SplitN(line, ":", 2)
 			if len(parts) == 2 {
@@ -485,8 +477,8 @@ func (r *DokkuApplicationRepository) tryGetBasicApplicationInfo(ctx context.Cont
 
 	// Parse apps:report output to extract basic information
 	info := make(map[string]string)
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(string(output), "\n")
+	for line := range lines {
 		if strings.Contains(line, ":") {
 			parts := strings.SplitN(line, ":", 2)
 			if len(parts) == 2 {
@@ -525,12 +517,11 @@ func (r *DokkuApplicationRepository) determineStateFromInfo(info map[string]stri
 	}
 
 	// Check for running status (from ps:report output)
-	if running, ok := info["Running"]; ok {
-		if running == "true" {
-			return app.StateRunning
-		} else if running == "false" {
-			return app.StateStopped
-		}
+	switch info["Running"] {
+	case "true":
+		return app.StateRunning
+	case "false":
+		return app.StateStopped
 	}
 
 	// Check for process scale information to determine if app is running (fallback)
@@ -561,8 +552,8 @@ func (r *DokkuApplicationRepository) determineStateFromInfo(info map[string]stri
 
 // hasRunningProcesses checks if any processes have scale > 0
 func (r *DokkuApplicationRepository) hasRunningProcesses(processesStr string) bool {
-	processes := strings.Fields(processesStr)
-	for _, proc := range processes {
+	processes := strings.FieldsSeq(processesStr)
+	for proc := range processes {
 		parts := strings.Split(proc, ":")
 		if len(parts) == 2 {
 			if scale, err := strconv.Atoi(parts[1]); err == nil && scale > 0 {

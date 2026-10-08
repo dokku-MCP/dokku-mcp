@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 
 	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/core/domain"
 )
@@ -250,21 +251,11 @@ func (s *CoreService) validateSSHKeyContent(keyContent string) error {
 }
 
 func (s *CoreService) isValidProxyType(proxyType string, validTypes []string) bool {
-	for _, valid := range validTypes {
-		if proxyType == valid {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(validTypes, proxyType)
 }
 
 func (s *CoreService) isValidScheduler(scheduler string, validSchedulers []string) bool {
-	for _, valid := range validSchedulers {
-		if scheduler == valid {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(validSchedulers, scheduler)
 }
 
 // Utility functions

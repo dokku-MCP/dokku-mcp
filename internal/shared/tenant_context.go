@@ -2,6 +2,7 @@ package shared
 
 import (
 	"context"
+	"slices"
 	"time"
 )
 
@@ -15,12 +16,7 @@ type TenantContext struct {
 }
 
 func (tc *TenantContext) HasPermission(permission string) bool {
-	for _, p := range tc.Permissions {
-		if p == permission {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(tc.Permissions, permission)
 }
 
 func (tc *TenantContext) IsExpired() bool {

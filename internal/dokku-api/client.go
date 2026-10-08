@@ -50,7 +50,7 @@ func (c *client) ValidateCommand(commandName string, args []string) error {
 
 	// Additional validation: command should only contain alphanumeric, dash, colon
 	for _, r := range commandName {
-		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == ':') {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '-' && r != ':' {
 			return fmt.Errorf("command name contains invalid character: %c", r)
 		}
 	}

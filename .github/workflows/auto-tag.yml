@@ -28,7 +28,7 @@ jobs:
     steps:
       - name: Gate on all required workflows succeeding for this commit
         id: gate
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const owner = context.repo.owner;
@@ -65,7 +65,7 @@ jobs:
 
       - name: Checkout repository
         if: steps.gate.outputs.ready == 'true'
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -111,7 +111,7 @@ jobs:
 
       - name: Trigger release workflow
         if: steps.gate.outputs.ready == 'true' && steps.version_change.outputs.changed == 'true'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |

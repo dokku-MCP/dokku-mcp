@@ -14,7 +14,7 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Manual Trivy Setup
         uses: aquasecurity/setup-trivy@v0.3.1
@@ -43,7 +43,7 @@ jobs:
           category: 'trivy-fs-scan'
 
       - name: Upload Trivy results as artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         if: always() && hashFiles('trivy-results.sarif') != ''
         with:
           name: trivy-results
@@ -53,10 +53,10 @@ jobs:
           retention-days: 30
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
         
       - name: Build Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: false
@@ -85,7 +85,7 @@ jobs:
           category: 'trivy-container-scan'
 
       - name: Upload Trivy container results as artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         if: always() && hashFiles('trivy-container-results.sarif') != ''
         with:
           name: trivy-container-results
