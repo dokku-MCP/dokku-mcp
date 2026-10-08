@@ -35,10 +35,19 @@ jobs:
     name: Build bundle & publish
     runs-on: ubuntu-latest
     steps:
+      - name: Validate tag
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Tag must look like v1.2.3 (prereleases are not published): $TAG" >&2
+            exit 1
+          fi
+
+      # The workflow's own ref, not the tag: the bundle script may be newer
+      # than the release being (re)published.
       - name: Checkout code
         uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.tag }}
 
       - name: Download release binaries
         env:

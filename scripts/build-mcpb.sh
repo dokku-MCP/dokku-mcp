@@ -43,7 +43,7 @@ os=$(uname -s | tr '[:upper:]' '[:lower:]')
 case "$(uname -m)" in
   x86_64 | amd64) arch=amd64 ;;
   aarch64 | arm64) arch=arm64 ;;
-  armv6* | armv7*) arch=arm ;;
+  armv6* | armv7* | armv8l) arch=arm ;;
   *) echo "dokku-mcp: unsupported architecture $(uname -m)" >&2; exit 1 ;;
 esac
 bin="$dir/dokku-mcp-$os-$arch"
