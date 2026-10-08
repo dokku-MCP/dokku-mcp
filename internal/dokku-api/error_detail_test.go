@@ -1,6 +1,8 @@
 package dokkuApi
 
 import (
+	"context"
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -35,5 +37,31 @@ func TestRedactArgsMasksURLCredentials(t *testing.T) {
 	got := RedactArgs("git:sync", []string{"web", "https://bot:ghp_secret@github.com/acme/web.git", "main"})
 	if got[1] != "https://bot:***@github.com/acme/web.git" {
 		t.Fatalf("RedactArgs = %v", got)
+	}
+}
+
+func TestErrorDetailDropsSSHClientNoise(t *testing.T) {
+	out := []byte("Warning: Permanently added 'dokku.example.com' (ED25519) to the list of known hosts.\n !     App web does not exist\nConnection to dokku.example.com closed.\n")
+	if got := errorDetail(out); got != "App web does not exist" {
+		t.Fatalf("errorDetail = %q", got)
+	}
+}
+
+func TestIsTransportFailure(t *testing.T) {
+	ssh255 := exec.Command("sh", "-c", "exit 255").Run()
+	dokkuFailure := exec.Command("sh", "-c", "exit 1").Run()
+	notRunnable := exec.Command("/nonexistent/ssh").Run()
+
+	if !isTransportFailure(ssh255) {
+		t.Error("exit status 255 is an ssh connection failure")
+	}
+	if isTransportFailure(dokkuFailure) {
+		t.Error("exit status 1 comes from Dokku, not the transport")
+	}
+	if !isTransportFailure(notRunnable) {
+		t.Error("an ssh binary that cannot start is a transport failure")
+	}
+	if isTransportFailure(context.DeadlineExceeded) {
+		t.Error("timeouts are reported as such, not as unreachable")
 	}
 }

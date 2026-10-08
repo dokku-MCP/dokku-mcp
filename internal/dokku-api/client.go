@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -314,6 +315,11 @@ func (c *client) handleCommandError(ctx context.Context, commandName string, arg
 		return nil, fmt.Errorf("failed to execute Dokku command %s: %w", commandName, &NotFoundError{Command: commandName, Err: ErrAppNotFound})
 	}
 
+	if isTransportFailure(execErr) {
+		// Details (host, port, ssh output) were logged above.
+		return output, fmt.Errorf("failed to execute Dokku command %s: %w", commandName, ErrDokkuUnreachable)
+	}
+
 	// Return the output as well: for builds it is the log the caller wants.
 	if detail := errorDetail(output); detail != "" {
 		return output, fmt.Errorf("failed to execute Dokku command %s: %w: %s", commandName, execErr, detail)
@@ -330,7 +336,7 @@ func errorDetail(output []byte) string {
 	var lines []string
 	for line := range strings.Lines(string(output)) {
 		line = strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(line), "!"))
-		if line != "" {
+		if line != "" && !isSSHClientNoise(line) {
 			lines = append(lines, line)
 		}
 	}
@@ -339,6 +345,35 @@ func errorDetail(output []byte) string {
 		detail = "..." + detail[len(detail)-maxErrorDetail:]
 	}
 	return detail
+}
+
+// sshClientNoisePrefixes start lines written by the local ssh client rather
+// than by Dokku; they reveal connection details and never explain a failure.
+var sshClientNoisePrefixes = []string{
+	"Warning: Permanently added",
+	"Pseudo-terminal will not be allocated",
+	"Connection to ",
+	"ssh: ",
+}
+
+func isSSHClientNoise(line string) bool {
+	for _, prefix := range sshClientNoisePrefixes {
+		if strings.HasPrefix(line, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// isTransportFailure reports whether a command never ran on Dokku: ssh
+// exits with 255 when it cannot connect or authenticate, and any error other
+// than an exit status means ssh itself could not run.
+func isTransportFailure(execErr error) bool {
+	var exitErr *exec.ExitError
+	if errors.As(execErr, &exitErr) {
+		return exitErr.ExitCode() == 255
+	}
+	return !errors.Is(execErr, context.Canceled) && !errors.Is(execErr, context.DeadlineExceeded)
 }
 
 func isUnsupportedJSONProbe(args []string, output []byte, commandName string) bool {

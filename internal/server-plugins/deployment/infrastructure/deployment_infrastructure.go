@@ -2,6 +2,7 @@ package dokku
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -162,11 +163,11 @@ func (s *deploymentInfrastructure) performAsyncRebuild(deploymentID, appName, gi
 // isConnectionLost reports whether a rebuild error came from the SSH
 // transport rather than from the build itself.
 func isConnectionLost(ctx context.Context, err error) bool {
-	if ctx.Err() != nil {
+	if ctx.Err() != nil || errors.Is(err, dokku_client.ErrDokkuUnreachable) {
 		return true
 	}
 	msg := err.Error()
-	for _, marker := range []string{"signal: killed", "connection closed", "connection reset", "broken pipe", "exit status 255"} {
+	for _, marker := range []string{"signal: killed", "connection closed", "connection reset", "broken pipe"} {
 		if strings.Contains(msg, marker) {
 			return true
 		}
