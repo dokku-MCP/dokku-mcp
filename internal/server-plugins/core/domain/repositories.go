@@ -33,9 +33,16 @@ type SSHKeyRepository interface {
 // RegistryRepository defines methods for managing Docker registry credentials
 type RegistryRepository interface {
 	ListRegistries(ctx context.Context) ([]RegistryCredential, error)
-	LoginRegistry(ctx context.Context, registry, username, password string) error
-	LogoutRegistry(ctx context.Context, registry string) error
+	// LoginRegistry stores registry credentials for one app, or globally
+	// when appName is empty.
+	LoginRegistry(ctx context.Context, appName, registry, username, password string) error
+	// LogoutRegistry removes registry credentials for one app, or globally
+	// when appName is empty.
+	LogoutRegistry(ctx context.Context, appName, registry string) error
 	GetRegistryStatus(ctx context.Context, registry string) (*RegistryCredential, error)
+	// GetRegistryReport returns registry settings for one app, or the global
+	// settings when appName is empty.
+	GetRegistryReport(ctx context.Context, appName string) (map[string]string, error)
 }
 
 // ConfigurationRepository defines methods for managing global configuration

@@ -30,10 +30,13 @@ const (
 
 	// SSH key commands
 	CommandSSHKeysList   CoreCommand = "ssh-keys:list"
+	CommandSSHKeysAdd    CoreCommand = "ssh-keys:add"
 	CommandSSHKeysRemove CoreCommand = "ssh-keys:remove"
 
 	// Registry commands
+	CommandRegistryLogin  CoreCommand = "registry:login"
 	CommandRegistryLogout CoreCommand = "registry:logout"
+	CommandRegistryReport CoreCommand = "registry:report"
 
 	// Logs commands
 	CommandLogsSet CoreCommand = "logs:set"
@@ -48,8 +51,8 @@ func (c CoreCommand) IsValid() bool {
 		CommandGitReport, CommandGitSet,
 		CommandPluginList, CommandPluginInstall, CommandPluginUninstall,
 		CommandPluginEnable, CommandPluginDisable, CommandPluginUpdate,
-		CommandSSHKeysList, CommandSSHKeysRemove,
-		CommandRegistryLogout,
+		CommandSSHKeysList, CommandSSHKeysAdd, CommandSSHKeysRemove,
+		CommandRegistryLogin, CommandRegistryLogout, CommandRegistryReport,
 		CommandLogsSet:
 		return true
 	default:
@@ -80,8 +83,11 @@ func GetAllowedCoreCommands() []CoreCommand {
 		CommandPluginDisable,
 		CommandPluginUpdate,
 		CommandSSHKeysList,
+		CommandSSHKeysAdd,
 		CommandSSHKeysRemove,
+		CommandRegistryLogin,
 		CommandRegistryLogout,
+		CommandRegistryReport,
 		CommandLogsSet,
 	}
 }

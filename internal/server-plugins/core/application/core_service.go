@@ -170,22 +170,26 @@ func (s *CoreService) ListRegistries(ctx context.Context) ([]domain.RegistryCred
 	return s.registryRepo.ListRegistries(ctx)
 }
 
-func (s *CoreService) LoginRegistry(ctx context.Context, registry, username, password string) error {
-	s.logger.Info("Logging into registry", "registry", registry, "username", username)
+func (s *CoreService) LoginRegistry(ctx context.Context, appName, registry, username, password string) error {
+	s.logger.Info("Logging in to registry", "registry", registry, "app", appName, "username", username)
+	if registry == "" || username == "" || password == "" {
+		return fmt.Errorf("registry, username and password are required")
+	}
+	return s.registryRepo.LoginRegistry(ctx, appName, registry, username, password)
+}
 
+// LogoutRegistry removes registry credentials for an app, or globally.
+func (s *CoreService) LogoutRegistry(ctx context.Context, appName, registry string) error {
+	s.logger.Info("Logging out of registry", "registry", registry, "app", appName)
 	if registry == "" {
-		return fmt.Errorf("registry URL cannot be empty")
+		return fmt.Errorf("registry is required")
 	}
+	return s.registryRepo.LogoutRegistry(ctx, appName, registry)
+}
 
-	if username == "" {
-		return fmt.Errorf("username cannot be empty")
-	}
-
-	if password == "" {
-		return fmt.Errorf("password cannot be empty")
-	}
-
-	return s.registryRepo.LoginRegistry(ctx, registry, username, password)
+// GetRegistryReport returns registry settings for an app, or globally.
+func (s *CoreService) GetRegistryReport(ctx context.Context, appName string) (map[string]string, error) {
+	return s.registryRepo.GetRegistryReport(ctx, appName)
 }
 
 // Configuration Management Operations

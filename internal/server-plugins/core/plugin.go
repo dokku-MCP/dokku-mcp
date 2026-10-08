@@ -139,7 +139,7 @@ func (p *CoreServerPlugin) handlePluginsResource(ctx context.Context, req mcp.Re
 func (p *CoreServerPlugin) GetTools(ctx context.Context) ([]serverDomain.Tool, error) {
 	p.logger.Debug("Core plugin: Getting MCP tools")
 
-	tools := []serverDomain.Tool{}
+	tools := p.accessTools()
 	if p.cfg != nil && p.cfg.ExposeServerLogs {
 		tools = append(tools, serverDomain.Tool{
 			Name:        "get_server_logs",
