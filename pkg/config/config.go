@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/spf13/viper"
@@ -135,7 +136,7 @@ func DefaultConfig() *ServerConfig {
 			Host:    "localhost",
 			Port:    3022,
 			User:    "dokku",
-			KeyPath: "dokku_mcp_test",
+			KeyPath: "",
 		},
 		PluginDiscovery: PluginDiscoveryConfig{
 			SyncInterval: 1 * time.Minute,
@@ -186,6 +187,8 @@ func LoadConfig() (*ServerConfig, error) {
 	viper.AddConfigPath("$HOME/.dokku-mcp/")
 
 	viper.SetEnvPrefix("DOKKU_MCP")
+	// Map nested keys to environment variables: ssh.host -> DOKKU_MCP_SSH_HOST
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
 
 	// Server configuration defaults
