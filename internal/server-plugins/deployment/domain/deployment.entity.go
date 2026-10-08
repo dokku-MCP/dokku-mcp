@@ -206,3 +206,10 @@ func NewDeploymentWithID(id, appName, gitRef string) (*Deployment, error) {
 		createdAt: time.Now(),
 	}, nil
 }
+
+// snapshot returns a copy of the deployment. Time pointers are shared but
+// never mutated in place, so the copy is safe to read concurrently.
+func (d *Deployment) snapshot() *Deployment {
+	cp := *d
+	return &cp
+}

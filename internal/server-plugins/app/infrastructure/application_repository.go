@@ -198,6 +198,43 @@ func (r *DokkuApplicationRepository) GetLogs(ctx context.Context, name *app.Appl
 	return r.dokku.GetApplicationLogs(ctx, name.Value(), lines)
 }
 
+// GetFailedDeployLogs returns the logs of containers from the last failed deploy
+func (r *DokkuApplicationRepository) GetFailedDeployLogs(ctx context.Context, name *app.ApplicationName) (string, error) {
+	output, err := r.dokku.ExecuteCommand(ctx, app.CommandLogsFailed, []string{name.Value()})
+	if err != nil {
+		return "", fmt.Errorf("failed to get failed deploy logs: %w", err)
+	}
+	return string(output), nil
+}
+
+// SetProcessState restarts, stops or starts all processes of an application
+func (r *DokkuApplicationRepository) SetProcessState(ctx context.Context, name *app.ApplicationName, action app.ProcessAction) error {
+	var command app.ApplicationCommand
+	switch action {
+	case app.ProcessRestart:
+		command = app.CommandPsRestart
+	case app.ProcessStop:
+		command = app.CommandPsStop
+	case app.ProcessStart:
+		command = app.CommandPsStart
+	default:
+		return fmt.Errorf("unknown process action %q", action)
+	}
+	if _, err := r.dokku.ExecuteCommand(ctx, command, []string{name.Value()}); err != nil {
+		return fmt.Errorf("failed to %s application: %w", action, err)
+	}
+	return nil
+}
+
+// GetDeploySource returns the deploy source and its metadata from apps:report
+func (r *DokkuApplicationRepository) GetDeploySource(ctx context.Context, name *app.ApplicationName) (string, string, error) {
+	info, err := r.tryGetBasicApplicationInfo(ctx, name.Value())
+	if err != nil {
+		return "", "", err
+	}
+	return info["App deploy source"], info["App deploy source metadata"], nil
+}
+
 // List retrieves a paginated list of applications
 func (r *DokkuApplicationRepository) List(ctx context.Context, offset, limit int) ([]*app.Application, int, error) {
 	r.logger.Debug("Retrieving paginated application list",

@@ -291,7 +291,31 @@ func (c *client) handleCommandError(ctx context.Context, commandName string, arg
 		return nil, fmt.Errorf("failed to execute Dokku command %s: %w", commandName, &NotFoundError{Command: commandName, Err: ErrAppNotFound})
 	}
 
-	return nil, fmt.Errorf("failed to execute Dokku command %s: %w", commandName, execErr)
+	// Return the output as well: for builds it is the log the caller wants.
+	if detail := errorDetail(output); detail != "" {
+		return output, fmt.Errorf("failed to execute Dokku command %s: %w: %s", commandName, execErr, detail)
+	}
+	return output, fmt.Errorf("failed to execute Dokku command %s: %w", commandName, execErr)
+}
+
+// maxErrorDetail bounds how much command output is copied into an error.
+const maxErrorDetail = 600
+
+// errorDetail extracts Dokku's explanation from failed command output: the
+// last non-empty lines, without the " !     " prefix Dokku uses for errors.
+func errorDetail(output []byte) string {
+	var lines []string
+	for line := range strings.Lines(string(output)) {
+		line = strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(line), "!"))
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	detail := strings.Join(lines, "; ")
+	if len(detail) > maxErrorDetail {
+		detail = "..." + detail[len(detail)-maxErrorDetail:]
+	}
+	return detail
 }
 
 func isUnsupportedJSONProbe(args []string, output []byte, commandName string) bool {

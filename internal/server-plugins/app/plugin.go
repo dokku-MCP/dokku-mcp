@@ -125,7 +125,149 @@ func (p *AppsServerPlugin) GetTools(ctx context.Context) ([]domain.Tool, error) 
 			Builder:     p.buildGetRuntimeLogsTool,
 			Handler:     p.handleGetRuntimeLogs,
 		},
+		{
+			Name:        "get_failed_deploy_logs",
+			Description: "Retrieve logs of the last failed deploy",
+			Builder:     buildGetFailedDeployLogsTool,
+			Handler:     p.handleGetFailedDeployLogs,
+		},
+		{
+			Name:        "restart_app",
+			Description: "Restart all processes of an application",
+			Builder:     buildProcessStateTool("restart_app", "Restart application", "Restart all processes of an application", false),
+			Handler:     p.processStateHandler(appdomain.ProcessRestart),
+		},
+		{
+			Name:        "stop_app",
+			Description: "Stop all processes of an application",
+			Builder:     buildProcessStateTool("stop_app", "Stop application", "Stop all processes of an application; it goes offline until start_app", true),
+			Handler:     p.processStateHandler(appdomain.ProcessStop),
+		},
+		{
+			Name:        "start_app",
+			Description: "Start a stopped application",
+			Builder:     buildProcessStateTool("start_app", "Start application", "Start all processes of a stopped application", false),
+			Handler:     p.processStateHandler(appdomain.ProcessStart),
+		},
+		{
+			Name:        "rollback_app",
+			Description: "Redeploy an earlier Git reference",
+			Builder:     buildRollbackAppTool,
+			Handler:     p.handleRollbackApp,
+		},
 	}, nil
+}
+
+func buildGetFailedDeployLogsTool() mcp.Tool {
+	return mcp.NewTool(
+		"get_failed_deploy_logs",
+		mcp.WithTitleAnnotation("Get failed deploy logs"),
+		mcp.WithDescription("Retrieve the logs of the containers from an application's last failed deploy, "+
+			"e.g. when a new release crashed at boot or failed its healthchecks"),
+		mcp.WithString("app_name", mcp.Required(), mcp.Description("Name of the application")),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithOpenWorldHintAnnotation(false),
+	)
+}
+
+func buildProcessStateTool(name, title, description string, destructive bool) func() mcp.Tool {
+	return func() mcp.Tool {
+		return mcp.NewTool(
+			name,
+			mcp.WithTitleAnnotation(title),
+			mcp.WithDescription(description),
+			mcp.WithString("app_name", mcp.Required(), mcp.Description("Name of the application")),
+			mcp.WithReadOnlyHintAnnotation(false),
+			mcp.WithDestructiveHintAnnotation(destructive),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithOpenWorldHintAnnotation(false),
+		)
+	}
+}
+
+func buildRollbackAppTool() mcp.Tool {
+	return mcp.NewTool(
+		"rollback_app",
+		mcp.WithTitleAnnotation("Roll back application"),
+		mcp.WithDescription("Redeploy an earlier, known-good Git reference. Dokku keeps no release history, so this "+
+			"deploys git_ref from the repository of the last deploy_app (or repo_url). Returns a deployment_id "+
+			"to follow with get_deployment_status"),
+		mcp.WithString("app_name", mcp.Required(), mcp.Description("Name of the application")),
+		mcp.WithString("git_ref", mcp.Required(), mcp.Description("Branch, tag or commit to redeploy")),
+		mcp.WithString("repo_url", mcp.Description("Repository to deploy from; defaults to the last deployed repository")),
+		mcp.WithOutputSchema[DeployStarted](),
+		mcp.WithReadOnlyHintAnnotation(false),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithIdempotentHintAnnotation(false),
+		mcp.WithOpenWorldHintAnnotation(true),
+	)
+}
+
+func (p *AppsServerPlugin) handleGetFailedDeployLogs(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	appName, err := req.RequireString("app_name")
+	if err != nil {
+		return mcp.NewToolResultError("Application name is required"), nil
+	}
+	logs, err := p.applicationUseCase.GetFailedDeployLogs(ctx, appName)
+	if err != nil {
+		return appErrorResult(appName, "get failed deploy logs", err), nil
+	}
+	if strings.TrimSpace(logs) == "" {
+		return mcp.NewToolResultText(fmt.Sprintf("No failed deploy containers found for '%s'.", appName)), nil
+	}
+	return mcp.NewToolResultText(logs), nil
+}
+
+func (p *AppsServerPlugin) processStateHandler(action appdomain.ProcessAction) domain.ToolHandler {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		appName, err := req.RequireString("app_name")
+		if err != nil {
+			return mcp.NewToolResultError("Application name is required"), nil
+		}
+		if err := p.applicationUseCase.ChangeProcessState(ctx, appName, action); err != nil {
+			return appErrorResult(appName, string(action), err), nil
+		}
+		return mcp.NewToolResultText(fmt.Sprintf("Application '%s': %s done", appName, action)), nil
+	}
+}
+
+func (p *AppsServerPlugin) handleRollbackApp(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	appName, err := req.RequireString("app_name")
+	if err != nil {
+		return mcp.NewToolResultError("Application name is required"), nil
+	}
+	gitRef, err := req.RequireString("git_ref")
+	if err != nil {
+		return mcp.NewToolResultError("git_ref is required"), nil
+	}
+	result, err := p.applicationUseCase.RollbackApplication(ctx, appusecases.RollbackApplicationCommand{
+		Name:    appName,
+		GitRef:  gitRef,
+		RepoURL: req.GetString("repo_url", ""),
+	})
+	if err != nil {
+		return appErrorResult(appName, "roll back", err), nil
+	}
+	return mcp.NewToolResultStructuredOnly(DeployStarted{
+		DeploymentID: result.ID,
+		AppName:      appName,
+		GitRef:       gitRef,
+		Status:       string(result.Status),
+		Message:      "Rollback started; poll get_deployment_status with this deployment_id until done is true.",
+	}), nil
+}
+
+// appErrorResult turns a use-case error into a tool error the model can act on.
+func appErrorResult(appName, action string, err error) *mcp.CallToolResult {
+	switch {
+	case errors.Is(err, appdomain.ErrApplicationNotFound):
+		return mcp.NewToolResultError(fmt.Sprintf("Application '%s' not found", appName))
+	case errors.Is(err, appdomain.ErrDeploymentInProgress):
+		return mcp.NewToolResultError(fmt.Sprintf("Deployment already in progress for '%s'", appName))
+	default:
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to %s '%s': %v", action, appName, err))
+	}
 }
 
 // PromptProvider implementation

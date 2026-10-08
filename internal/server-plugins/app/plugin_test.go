@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	dokkuApi "github.com/dokku-mcp/dokku-mcp/internal/dokku-api"
 	"github.com/dokku-mcp/dokku-mcp/internal/dokku-api/dokkutest"
@@ -226,5 +227,99 @@ func TestCreateAppRejectsInvalidName(t *testing.T) {
 	}
 	if calls := f.client.CallsTo("apps:create"); len(calls) != 0 {
 		t.Fatalf("expected no apps:create call, got %v", calls)
+	}
+}
+
+func TestProcessStateTools(t *testing.T) {
+	f := newFixture(t)
+	for tool, command := range map[string]string{"restart_app": "ps:restart", "stop_app": "ps:stop", "start_app": "ps:start"} {
+		plugintest.RequireSuccess(t, plugintest.CallTool(t, f.apps, tool, map[string]any{"app_name": "myapp"}))
+		if calls := f.client.CallsTo(command); len(calls) != 1 || calls[0].String() != command+" myapp" {
+			t.Fatalf("%s: unexpected calls %v", tool, calls)
+		}
+	}
+	plugintest.RequireError(t, plugintest.CallTool(t, f.apps, "restart_app", map[string]any{"app_name": "ghost"}), "not found")
+}
+
+func TestGetFailedDeployLogs(t *testing.T) {
+	f := newFixture(t)
+	f.client.Respond("logs:failed", "web.1 | Error: Cannot find module 'express'\n")
+
+	result := plugintest.CallTool(t, f.apps, "get_failed_deploy_logs", map[string]any{"app_name": "myapp"})
+	plugintest.RequireSuccess(t, result)
+	if !strings.Contains(plugintest.Text(result), "Cannot find module") {
+		t.Fatalf("unexpected output: %s", plugintest.Text(result))
+	}
+}
+
+func TestRollbackInfersRepositoryFromLastDeploy(t *testing.T) {
+	f := newFixture(t)
+	f.client.Respond("apps:report", "=====> myapp app information\n       App deploy source:             git-sync\n       App deploy source metadata:    https://github.com/acme/web.git#0a1b2c3d\n")
+
+	result := plugintest.CallTool(t, f.apps, "rollback_app", map[string]any{"app_name": "myapp", "git_ref": "v1.2.0"})
+	started := plugintest.Structured[DeployStarted](t, result)
+	if started.DeploymentID == "" {
+		t.Fatalf("expected a deployment id, got %+v", started)
+	}
+	sync := f.client.CallsTo("git:sync")
+	if len(sync) != 1 || sync[0].String() != "git:sync myapp https://github.com/acme/web.git v1.2.0" {
+		t.Fatalf("unexpected git:sync calls: %v", sync)
+	}
+}
+
+func TestRollbackNeedsRepositoryForNonGitSyncDeploys(t *testing.T) {
+	f := newFixture(t)
+	f.client.Respond("apps:report", "App deploy source:   git-push\nApp deploy source metadata:  0a1b2c3d\n")
+
+	result := plugintest.CallTool(t, f.apps, "rollback_app", map[string]any{"app_name": "myapp", "git_ref": "v1.2.0"})
+	plugintest.RequireError(t, result, "repo_url")
+
+	result = plugintest.CallTool(t, f.apps, "rollback_app", map[string]any{
+		"app_name": "myapp", "git_ref": "v1.2.0", "repo_url": "https://github.com/acme/web.git",
+	})
+	plugintest.RequireSuccess(t, result)
+}
+
+// waitForDeployment polls get_deployment_status until the deployment is done.
+func waitForDeployment(t *testing.T, f *fixture, id string) deployment.DeploymentView {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		view := plugintest.Structured[deployment.DeploymentView](t, plugintest.CallTool(t, f.deployments, "get_deployment_status", map[string]any{"deployment_id": id}))
+		if view.Done {
+			return view
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("deployment %s did not finish: %+v", id, view)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestDeploymentSucceedsWhenRebuildSucceeds(t *testing.T) {
+	f := newFixture(t)
+	f.client.Respond("ps:rebuild", "-----> Building myapp\n-----> Build complete\n")
+
+	started := plugintest.Structured[DeployStarted](t, plugintest.CallTool(t, f.apps, "deploy_app", map[string]any{
+		"app_name": "myapp", "repo_url": "https://github.com/acme/web.git",
+	}))
+	view := waitForDeployment(t, f, started.DeploymentID)
+	if view.Status != "succeeded" || !strings.Contains(view.BuildLogTail, "Build complete") {
+		t.Fatalf("unexpected deployment: %+v", view)
+	}
+}
+
+func TestDeploymentFailsWithBuildOutput(t *testing.T) {
+	f := newFixture(t)
+	f.client.On("ps:rebuild", func([]string) ([]byte, error) {
+		return []byte("-----> Building myapp\nnpm ERR! missing script: build\n"), errors.New("exit status 1")
+	})
+
+	started := plugintest.Structured[DeployStarted](t, plugintest.CallTool(t, f.apps, "deploy_app", map[string]any{
+		"app_name": "myapp", "repo_url": "https://github.com/acme/web.git",
+	}))
+	view := waitForDeployment(t, f, started.DeploymentID)
+	if view.Status != "failed" || !strings.Contains(view.BuildLogTail, "missing script") || view.Error == "" {
+		t.Fatalf("unexpected deployment: %+v", view)
 	}
 }

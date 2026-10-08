@@ -2,8 +2,10 @@ package usecases
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	domain "github.com/dokku-mcp/dokku-mcp/internal/server-plugins/app/domain"
 	"github.com/dokku-mcp/dokku-mcp/internal/shared"
@@ -343,16 +345,91 @@ func (uc *ApplicationUseCase) GetApplicationByName(ctx context.Context, name str
 
 // GetApplicationLogs returns the last lines of an application's runtime logs.
 func (uc *ApplicationUseCase) GetApplicationLogs(ctx context.Context, name string, lines int) (string, error) {
-	appName, err := domain.NewApplicationName(name)
-	if err != nil {
-		return "", fmt.Errorf("invalid application name: %w", err)
-	}
-	exists, err := uc.applicationRepo.Exists(ctx, appName)
+	appName, err := uc.existingApp(ctx, name)
 	if err != nil {
 		return "", err
 	}
-	if !exists {
-		return "", domain.ErrApplicationNotFound
-	}
 	return uc.applicationRepo.GetLogs(ctx, appName, lines)
+}
+
+// ChangeProcessState restarts, stops or starts all processes of an application.
+func (uc *ApplicationUseCase) ChangeProcessState(ctx context.Context, name string, action domain.ProcessAction) error {
+	appName, err := uc.existingApp(ctx, name)
+	if err != nil {
+		return err
+	}
+	uc.logger.Info("Changing application process state", "app_name", name, "action", action)
+	return uc.applicationRepo.SetProcessState(ctx, appName, action)
+}
+
+// GetFailedDeployLogs returns the logs of the containers of the last failed deploy.
+func (uc *ApplicationUseCase) GetFailedDeployLogs(ctx context.Context, name string) (string, error) {
+	appName, err := uc.existingApp(ctx, name)
+	if err != nil {
+		return "", err
+	}
+	return uc.applicationRepo.GetFailedDeployLogs(ctx, appName)
+}
+
+// RollbackApplicationCommand redeploys an earlier Git reference.
+type RollbackApplicationCommand struct {
+	Name   string
+	GitRef string
+	// RepoURL defaults to the repository of the last git:sync deployment.
+	RepoURL string
+}
+
+// ErrUnknownDeploySource is returned when a rollback cannot infer the
+// repository the application was deployed from.
+var ErrUnknownDeploySource = errors.New("cannot determine the repository the application was deployed from; pass repo_url")
+
+// RollbackApplication redeploys an earlier Git reference. Dokku keeps no
+// release history, so a rollback is a deployment of a known-good ref from
+// the same repository.
+func (uc *ApplicationUseCase) RollbackApplication(ctx context.Context, cmd RollbackApplicationCommand) (*shared.DeploymentResult, error) {
+	repoURL := cmd.RepoURL
+	if repoURL == "" {
+		appName, err := uc.existingApp(ctx, cmd.Name)
+		if err != nil {
+			return nil, err
+		}
+		source, metadata, err := uc.applicationRepo.GetDeploySource(ctx, appName)
+		if err != nil {
+			return nil, err
+		}
+		repoURL = RepoFromDeploySource(source, metadata)
+		if repoURL == "" {
+			return nil, ErrUnknownDeploySource
+		}
+	}
+	uc.logger.Info("Rolling back application", "app_name", cmd.Name, "git_ref", cmd.GitRef, "repo_url", repoURL)
+	return uc.DeployApplication(ctx, DeployApplicationCommand{Name: cmd.Name, RepoURL: repoURL, GitRef: cmd.GitRef})
+}
+
+// RepoFromDeploySource extracts the repository URL from git:sync deploy
+// source metadata ("<repo>#<sha>"). It returns "" for other deploy sources.
+func RepoFromDeploySource(source, metadata string) string {
+	if source != "git-sync" || metadata == "" {
+		return ""
+	}
+	if i := strings.LastIndex(metadata, "#"); i > 0 {
+		return metadata[:i]
+	}
+	return metadata
+}
+
+// existingApp validates a name and checks that the application exists.
+func (uc *ApplicationUseCase) existingApp(ctx context.Context, name string) (*domain.ApplicationName, error) {
+	appName, err := domain.NewApplicationName(name)
+	if err != nil {
+		return nil, fmt.Errorf("invalid application name: %w", err)
+	}
+	exists, err := uc.applicationRepo.Exists(ctx, appName)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, domain.ErrApplicationNotFound
+	}
+	return appName, nil
 }

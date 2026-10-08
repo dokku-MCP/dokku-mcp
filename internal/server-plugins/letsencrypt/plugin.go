@@ -131,9 +131,6 @@ func validateEmail(email string) error {
 func (p *LetsEncryptServerPlugin) run(ctx context.Context, command string, args ...string) (string, error) {
 	out, err := p.client.ExecuteCommand(ctx, command, args)
 	if err != nil {
-		if s := strings.TrimSpace(string(out)); s != "" {
-			return "", fmt.Errorf("%s failed: %w: %s", command, err, s)
-		}
 		return "", fmt.Errorf("%s failed: %w", command, err)
 	}
 	return string(out), nil

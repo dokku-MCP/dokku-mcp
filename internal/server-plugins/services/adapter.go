@@ -101,16 +101,9 @@ func (a *Adapter) run(ctx context.Context, serviceType, subcommand string, args 
 	}
 	out, err := a.client.ExecuteCommand(ctx, serviceType+":"+subcommand, args)
 	if err != nil {
-		return "", fmt.Errorf("%s:%s failed: %w%s", serviceType, subcommand, err, outputSuffix(out))
+		return "", fmt.Errorf("%s:%s failed: %w", serviceType, subcommand, err)
 	}
 	return string(out), nil
-}
-
-func outputSuffix(out []byte) string {
-	if s := strings.TrimSpace(string(out)); s != "" {
-		return ": " + s
-	}
-	return ""
 }
 
 // List returns the names of the services of one type.

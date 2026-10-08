@@ -13,6 +13,13 @@ type ApplicationRepository interface {
 	Exists(ctx context.Context, name *ApplicationName) (bool, error)
 	// GetLogs returns the last lines of the application's runtime logs.
 	GetLogs(ctx context.Context, name *ApplicationName, lines int) (string, error)
+	// GetFailedDeployLogs returns the logs of containers from the last failed deploy.
+	GetFailedDeployLogs(ctx context.Context, name *ApplicationName) (string, error)
+	// SetProcessState restarts, stops or starts all processes of the application.
+	SetProcessState(ctx context.Context, name *ApplicationName, action ProcessAction) error
+	// GetDeploySource returns how the application was last deployed, e.g.
+	// ("git-sync", "https://github.com/org/repo.git#<sha>").
+	GetDeploySource(ctx context.Context, name *ApplicationName) (source, metadata string, err error)
 	List(ctx context.Context, offset, limit int) ([]*Application, int, error)
 	GetByDomain(ctx context.Context, domain string) ([]*Application, error)
 	GetRunningApplications(ctx context.Context) ([]*Application, error)
@@ -78,3 +85,12 @@ type QueryableApplicationRepository interface {
 	Search(ctx context.Context, searchTerm string, limit int) ([]*Application, error)
 	GetApplicationsRequiringAttention(ctx context.Context) ([]*Application, error)
 }
+
+// ProcessAction is a lifecycle operation on all processes of an application.
+type ProcessAction string
+
+const (
+	ProcessRestart ProcessAction = "restart"
+	ProcessStop    ProcessAction = "stop"
+	ProcessStart   ProcessAction = "start"
+)
