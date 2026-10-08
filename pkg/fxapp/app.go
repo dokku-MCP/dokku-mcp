@@ -9,6 +9,7 @@ import (
 	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/deployment"
 	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/domain"
 	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/onboarding"
+	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/services"
 	"github.com/dokku-mcp/dokku-mcp/pkg/config"
 	"github.com/dokku-mcp/dokku-mcp/pkg/logger"
 	"go.uber.org/fx"
@@ -43,5 +44,6 @@ func New() *fx.App {
 		deployment.Module,
 		onboarding.Module,
 		app.Module,
+		services.Module,
 	)
 }
