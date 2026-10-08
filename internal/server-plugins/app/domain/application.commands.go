@@ -17,11 +17,15 @@ const (
 	CommandConfigSet  ApplicationCommand = "config:set"
 
 	// Process management commands
-	CommandPsScale  ApplicationCommand = "ps:scale"
-	CommandPsReport ApplicationCommand = "ps:report"
+	CommandPsScale   ApplicationCommand = "ps:scale"
+	CommandPsReport  ApplicationCommand = "ps:report"
+	CommandPsRestart ApplicationCommand = "ps:restart"
+	CommandPsStop    ApplicationCommand = "ps:stop"
+	CommandPsStart   ApplicationCommand = "ps:start"
 
 	// Logging commands
-	CommandLogs ApplicationCommand = "logs"
+	CommandLogs       ApplicationCommand = "logs"
+	CommandLogsFailed ApplicationCommand = "logs:failed"
 )
 
 // IsValid checks if the command is a valid application command
@@ -29,7 +33,8 @@ func (c ApplicationCommand) IsValid() bool {
 	switch c {
 	case CommandAppsList, CommandAppsInfo, CommandAppsCreate, CommandAppsDestroy,
 		CommandAppsExists, CommandAppsReport, CommandConfigShow, CommandConfigSet,
-		CommandPsScale, CommandPsReport, CommandLogs:
+		CommandPsScale, CommandPsReport, CommandPsRestart, CommandPsStop, CommandPsStart,
+		CommandLogs, CommandLogsFailed:
 		return true
 	default:
 		return false
@@ -54,6 +59,10 @@ func GetAllowedCommands() []ApplicationCommand {
 		CommandConfigSet,
 		CommandPsScale,
 		CommandPsReport,
+		CommandPsRestart,
+		CommandPsStop,
+		CommandPsStart,
 		CommandLogs,
+		CommandLogsFailed,
 	}
 }

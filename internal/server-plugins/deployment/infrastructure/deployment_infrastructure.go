@@ -2,6 +2,7 @@ package dokku
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -11,6 +12,7 @@ import (
 
 	dokku_client "github.com/dokku-mcp/dokku-mcp/internal/dokku-api"
 	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/deployment/domain"
+	"github.com/dokku-mcp/dokku-mcp/internal/shared"
 )
 
 // deploymentInfrastructure implements the simplified DeploymentInfrastructure interface
@@ -67,7 +69,7 @@ func (s *deploymentInfrastructure) PerformGitDeploy(ctx context.Context, deploym
 	s.logger.Debug("Performing git deployment",
 		"deployment_id", deploymentID,
 		"app_name", appName,
-		"repo_url", repoURL,
+		"repo_url", shared.RedactURLCredentials(repoURL),
 		"git_ref", gitRef)
 
 	// Check for concurrent deployment
@@ -111,68 +113,87 @@ func (s *deploymentInfrastructure) PerformGitDeploy(ctx context.Context, deploym
 	return nil
 }
 
-// performAsyncRebuild performs the rebuild operation with proper tracking
+// rebuildTimeout bounds how long a build may run before tracking falls back
+// to polling Dokku for the outcome.
+const rebuildTimeout = 30 * time.Minute
+
+// connectionLostMessage explains a deployment whose build session dropped.
+const connectionLostMessage = "lost the connection to Dokku during the build, so its outcome is unknown; " +
+	"check get_app_status and get_failed_deploy_logs, and redeploy if needed"
+
+// maxBuildLogBytes caps the build output kept in memory per deployment.
+const maxBuildLogBytes = 1 << 20
+
+// performAsyncRebuild builds the synced code in the background. The exit
+// status of ps:rebuild decides the outcome and its output becomes the build
+// log. When the SSH session is lost the outcome is reported as unknown:
+// polling the app's status cannot tell the new release from the previous
+// one, which keeps running until the new build is promoted.
 func (s *deploymentInfrastructure) performAsyncRebuild(deploymentID, appName, gitRef string) {
 	s.logger.Info("Starting tracked async rebuild",
 		"deployment_id", deploymentID,
 		"app_name", appName,
 		"git_ref", gitRef)
 
-	// Start polling for status in background
-	if s.poller != nil {
-		s.poller.StartPolling(context.Background(), deploymentID, appName)
-	}
-
-	// Trigger the rebuild command (may timeout but build continues on Dokku)
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), rebuildTimeout)
 		defer cancel()
 
-		s.logger.Debug("Executing ps:rebuild command", "deployment_id", deploymentID, "app_name", appName)
+		output, err := s.executeCommand(ctx, domain.CommandPsRebuild, []string{appName})
+		s.recordBuildOutput(deploymentID, output)
 
-		_, err := s.executeCommand(ctx, domain.CommandPsRebuild, []string{appName})
-
-		// SSH timeout is expected - the poller will track actual status
-		if err != nil {
-			if dokku_client.IsNotFoundError(err) {
-				s.logger.Warn("Rebuild command skipped (app missing)",
-					"deployment_id", deploymentID,
-					"app_name", appName)
-				// Update tracker with failed status but without surfacing an error
-				if s.tracker != nil {
-					_ = s.tracker.UpdateStatus(deploymentID, domain.DeploymentStatusFailed, "application no longer exists")
-				}
-			} else if strings.Contains(err.Error(), "signal: killed") ||
-				strings.Contains(err.Error(), "context deadline exceeded") ||
-				strings.Contains(err.Error(), "connection closed") ||
-				strings.Contains(err.Error(), "timeout") {
-				s.logger.Info("Rebuild command sent, SSH connection closed (expected for long builds)",
-					"deployment_id", deploymentID,
-					"app_name", appName,
-					"note", "Poller will track actual completion status")
-			} else {
-				// Demote expected not-found races using sentinel classification only
-				if dokku_client.IsNotFoundError(err) {
-					s.logger.Warn("Rebuild aborted (app removed during deploy)",
-						"deployment_id", deploymentID,
-						"app_name", appName)
-					if s.tracker != nil {
-						_ = s.tracker.UpdateStatus(deploymentID, domain.DeploymentStatusFailed, "application no longer exists")
-					}
-				} else {
-					s.logger.Error("Rebuild command failed",
-						"deployment_id", deploymentID,
-						"app_name", appName,
-						"error", err)
-
-					// Update tracker with error
-					if s.tracker != nil {
-						_ = s.tracker.UpdateStatus(deploymentID, domain.DeploymentStatusFailed, err.Error())
-					}
-				}
-			}
+		switch {
+		case err == nil:
+			s.logger.Info("Rebuild succeeded", "deployment_id", deploymentID, "app_name", appName)
+			s.updateStatus(deploymentID, domain.DeploymentStatusSucceeded, "")
+		case dokku_client.IsNotFoundError(err):
+			s.logger.Warn("Rebuild aborted (app removed during deploy)", "deployment_id", deploymentID, "app_name", appName)
+			s.updateStatus(deploymentID, domain.DeploymentStatusFailed, "application no longer exists")
+		case isConnectionLost(ctx, err):
+			s.logger.Warn("Lost the rebuild session; build outcome unknown",
+				"deployment_id", deploymentID, "app_name", appName, "error", err)
+			s.updateStatus(deploymentID, domain.DeploymentStatusFailed, connectionLostMessage)
+		default:
+			s.logger.Error("Rebuild failed", "deployment_id", deploymentID, "app_name", appName, "error", err)
+			s.updateStatus(deploymentID, domain.DeploymentStatusFailed, "build failed: "+err.Error())
 		}
 	}()
+}
+
+// isConnectionLost reports whether a rebuild error came from the SSH
+// transport rather than from the build itself.
+func isConnectionLost(ctx context.Context, err error) bool {
+	if ctx.Err() != nil || errors.Is(err, dokku_client.ErrDokkuUnreachable) {
+		return true
+	}
+	msg := err.Error()
+	for _, marker := range []string{"signal: killed", "connection closed", "connection reset", "broken pipe"} {
+		if strings.Contains(msg, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *deploymentInfrastructure) recordBuildOutput(deploymentID string, output []byte) {
+	if s.tracker == nil || len(output) == 0 {
+		return
+	}
+	if len(output) > maxBuildLogBytes {
+		output = output[len(output)-maxBuildLogBytes:]
+	}
+	if err := s.tracker.AddLogs(deploymentID, string(output)); err != nil {
+		s.logger.Warn("Failed to record build output", "deployment_id", deploymentID, "error", err)
+	}
+}
+
+func (s *deploymentInfrastructure) updateStatus(deploymentID string, status domain.DeploymentStatus, msg string) {
+	if s.tracker == nil {
+		return
+	}
+	if err := s.tracker.UpdateStatus(deploymentID, status, msg); err != nil {
+		s.logger.Warn("Failed to record deployment status", "deployment_id", deploymentID, "status", status, "error", err)
+	}
 }
 
 // ParseDeploymentHistory retrieves deployment history from Dokku - INFRASTRUCTURE ONLY
@@ -218,8 +239,8 @@ func (s *deploymentInfrastructure) parseEventsOutput(eventsOutput, appName strin
 func (s *deploymentInfrastructure) parseEventLine(line, appName string) *domain.Deployment {
 	// Extract git ref if available, otherwise use "main"
 	gitRef := "main"
-	parts := strings.Fields(line)
-	for _, part := range parts {
+	parts := strings.FieldsSeq(line)
+	for part := range parts {
 		if strings.Contains(part, ":") && strings.Contains(part, "git") {
 			gitParts := strings.Split(part, ":")
 			if len(gitParts) > 1 {

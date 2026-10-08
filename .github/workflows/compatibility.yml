@@ -28,7 +28,7 @@ jobs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
     - name: Checkout code
-      uses: actions/checkout@v5
+      uses: actions/checkout@v7
     
     - name: Set matrix versions
       id: set-matrix
@@ -96,12 +96,12 @@ jobs:
         esac
     
     - name: Checkout code
-      uses: actions/checkout@v5
+      uses: actions/checkout@v7
     
     - name: Setup Go
-      uses: actions/setup-go@v6
+      uses: actions/setup-go@v7
       with:
-        go-version: '1.25'
+        go-version: '1.26'
         cache: true
     
     - name: Install Dokku ${{ matrix.dokku-version }}
@@ -132,10 +132,10 @@ jobs:
     
   #   steps:
   #   - name: Checkout code
-  #     uses: actions/checkout@v5
+  #     uses: actions/checkout@v7
     
   #   - name: Setup Go
-  #     uses: actions/setup-go@v6
+  #     uses: actions/setup-go@v7
   #     with:
   #       go-version: '1.24'
   #       cache: true
@@ -157,7 +157,7 @@ jobs:
   #     run: make profile
     
   #   - name: Upload profiles
-  #     uses: actions/upload-artifact@v5
+  #     uses: actions/upload-artifact@v7
   #     with:
   #       name: performance-profiles-${{ github.run_number }}
   #       path: |
@@ -213,7 +213,7 @@ jobs:
     
     - name: Create issue if tests fail
       if: needs.dokku-compatibility.result == 'failure'
-      uses: actions/github-script@v8
+      uses: actions/github-script@v9
       with:
         script: |
           const fs = require('fs');

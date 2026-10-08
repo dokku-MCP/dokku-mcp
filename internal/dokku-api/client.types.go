@@ -82,6 +82,7 @@ type client struct {
 	logger              *slog.Logger
 	sshConnManager      *SSHConnectionManager
 	blacklistedCommands []string
+	allowedCommands     []string
 
 	// Optional caching - managed by cache manager
 	cacheManager *CommandCacheManager

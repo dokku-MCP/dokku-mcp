@@ -2,9 +2,15 @@ package infrastructure
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"log/slog"
+	"maps"
+	"slices"
+	"strconv"
 	"strings"
+
+	"github.com/dokku-mcp/dokku-mcp/internal/shared"
 
 	dokkuApi "github.com/dokku-mcp/dokku-mcp/internal/dokku-api"
 	app "github.com/dokku-mcp/dokku-mcp/internal/server-plugins/app/domain"
@@ -82,13 +88,20 @@ func (a *DokkuApplicationAdapter) GetApplicationConfig(ctx context.Context, appN
 	return config, nil
 }
 
-// SetApplicationConfig sets application configuration
-func (a *DokkuApplicationAdapter) SetApplicationConfig(ctx context.Context, appName string, config map[string]string) error {
-	var args []string
+// SetApplicationConfig sets environment variables on an application.
+// Values are sent base64-encoded (config:set --encoded) so that spaces,
+// quotes and shell metacharacters reach Dokku unchanged.
+func (a *DokkuApplicationAdapter) SetApplicationConfig(ctx context.Context, appName string, vars map[string]string, restart bool) error {
+	args := []string{"--encoded"}
+	if !restart {
+		args = append(args, "--no-restart")
+	}
 	args = append(args, appName)
-
-	for key, value := range config {
-		args = append(args, fmt.Sprintf("%s=%s", key, value))
+	for _, key := range slices.Sorted(maps.Keys(vars)) {
+		if !shared.EnvVarKeyRegex.MatchString(key) {
+			return fmt.Errorf("invalid environment variable key: %q", key)
+		}
+		args = append(args, key+"="+base64.StdEncoding.EncodeToString([]byte(vars[key])))
 	}
 
 	_, err := a.ExecuteCommand(ctx, app.CommandConfigSet, args)
@@ -110,11 +123,16 @@ func (a *DokkuApplicationAdapter) ScaleApplication(ctx context.Context, appName 
 	return nil
 }
 
+// StreamLogs follows an application's logs until ctx is cancelled
+func (a *DokkuApplicationAdapter) StreamLogs(ctx context.Context, appName string) (<-chan dokkuApi.LogLine, <-chan error, error) {
+	return a.client.StreamLogs(ctx, appName)
+}
+
 // GetApplicationLogs retrieves application logs
 func (a *DokkuApplicationAdapter) GetApplicationLogs(ctx context.Context, appName string, lines int) (string, error) {
 	args := []string{appName}
 	if lines > 0 {
-		args = append(args, "--tail", fmt.Sprintf("%d", lines))
+		args = append(args, "--num", strconv.Itoa(lines))
 	}
 
 	output, err := a.ExecuteCommand(ctx, app.CommandLogs, args)

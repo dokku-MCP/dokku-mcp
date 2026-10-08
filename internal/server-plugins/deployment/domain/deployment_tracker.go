@@ -41,8 +41,9 @@ func (dt *DeploymentTracker) Track(deployment *Deployment) error {
 		return fmt.Errorf("deployment cannot be nil")
 	}
 
+	// The tracker owns its copy: callers keep mutating theirs without locks.
 	tracked := &TrackedDeployment{
-		Deployment:  deployment,
+		Deployment:  deployment.snapshot(),
 		StartedAt:   time.Now(),
 		LastChecked: time.Now(),
 	}
@@ -54,7 +55,8 @@ func (dt *DeploymentTracker) Track(deployment *Deployment) error {
 	return nil
 }
 
-// GetByID retrieves a tracked deployment by ID
+// GetByID retrieves a snapshot of a tracked deployment by ID. Snapshots are
+// safe to read while background updates continue.
 func (dt *DeploymentTracker) GetByID(deploymentID string) (*Deployment, error) {
 	dt.mu.RLock()
 	tracked, exists := dt.deployments[deploymentID]
@@ -67,7 +69,7 @@ func (dt *DeploymentTracker) GetByID(deploymentID string) (*Deployment, error) {
 	tracked.mu.RLock()
 	defer tracked.mu.RUnlock()
 
-	return tracked.Deployment, nil
+	return tracked.Deployment.snapshot(), nil
 }
 
 // UpdateStatus updates the status of a tracked deployment
@@ -131,7 +133,7 @@ func (dt *DeploymentTracker) GetAll() []*Deployment {
 	deployments := make([]*Deployment, 0, len(dt.deployments))
 	for _, tracked := range dt.deployments {
 		tracked.mu.RLock()
-		deployments = append(deployments, tracked.Deployment)
+		deployments = append(deployments, tracked.Deployment.snapshot())
 		tracked.mu.RUnlock()
 	}
 
@@ -147,7 +149,7 @@ func (dt *DeploymentTracker) GetActive() []*Deployment {
 	for _, tracked := range dt.deployments {
 		tracked.mu.RLock()
 		if !tracked.Deployment.IsCompleted() {
-			active = append(active, tracked.Deployment)
+			active = append(active, tracked.Deployment.snapshot())
 		}
 		tracked.mu.RUnlock()
 	}

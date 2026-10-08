@@ -1,6 +1,9 @@
 package process
 
-import "fmt"
+import (
+	"fmt"
+	"slices"
+)
 
 type ProcessType string
 
@@ -26,12 +29,7 @@ func (pt ProcessType) IsValid() bool {
 		ProcessTypeRelease, ProcessTypeUtil,
 	}
 
-	for _, validType := range validTypes {
-		if pt == validType {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(validTypes, pt)
 }
 
 func (pt ProcessType) IsWebProcess() bool {

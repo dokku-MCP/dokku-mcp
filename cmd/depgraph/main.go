@@ -24,9 +24,9 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Failed to list imports for %s: %v\n", pkg, err)
 			continue
 		}
-		imports := strings.Fields(string(out))
+		imports := strings.FieldsSeq(string(out))
 		// Only keep imports that are in our module
-		for _, imp := range imports {
+		for imp := range imports {
 			for _, p := range pkgs {
 				if imp == p {
 					deps[pkg] = append(deps[pkg], imp)

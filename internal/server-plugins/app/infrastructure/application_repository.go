@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"time"
 
 	dokkuApi "github.com/dokku-mcp/dokku-mcp/internal/dokku-api"
 	app "github.com/dokku-mcp/dokku-mcp/internal/server-plugins/app/domain"
@@ -71,10 +72,9 @@ func (r *DokkuApplicationRepository) GetByName(ctx context.Context, name *app.Ap
 	// Check if the application exists in Dokku first
 	exists, err := r.Exists(ctx, name)
 	if err != nil {
-		r.logger.Warn("Cannot verify application existence",
-			"error", err,
-			"app_name", name.Value())
-	} else if !exists {
+		return nil, err
+	}
+	if !exists {
 		r.logger.Warn("Application does not exist in Dokku",
 			"app_name", name.Value())
 		return nil, app.ErrApplicationNotFound
@@ -151,19 +151,14 @@ func (r *DokkuApplicationRepository) Save(ctx context.Context, application *app.
 				return fmt.Errorf("failed to scale application during save: %w", err)
 			}
 			r.logger.Debug("Applied scaling event", "app", e.AggregateID(), "process", e.ProcessType(), "scale", e.NewScale())
+		case *app.ConfigurationChangedEvent:
+			if err := r.dokku.SetApplicationConfig(ctx, e.AggregateID(), e.Vars(), e.Restart()); err != nil {
+				return fmt.Errorf("failed to update configuration: %w", err)
+			}
+			r.logger.Debug("Applied configuration event", "app", e.AggregateID(), "vars", len(e.Vars()))
 		}
 	}
 	application.ClearEvents()
-
-	// Update configuration if it exists
-	if config := application.Configuration(); config != nil {
-		configMap := r.extractEnvironmentVars(config)
-		if len(configMap) > 0 {
-			if err := r.dokku.SetApplicationConfig(ctx, application.Name().Value(), configMap); err != nil {
-				return fmt.Errorf("failed to update configuration: %w", err)
-			}
-		}
-	}
 
 	r.logger.Debug("Application saved successfully",
 		"app_name", application.Name().Value())
@@ -191,11 +186,96 @@ func (r *DokkuApplicationRepository) Exists(ctx context.Context, name *app.Appli
 		"app_name", name.Value())
 
 	_, err := r.dokku.ExecuteCommand(ctx, app.CommandAppsExists, []string{name.Value()})
-	if err != nil {
+	if err == nil {
+		return true, nil
+	}
+	// Only Dokku's own "App ... does not exist" answer means the app is
+	// missing; transport, permission or other failures must not be read as
+	// "missing" (Save would then try apps:create).
+	if dokkuApi.IsNotFoundError(err) {
 		return false, nil
 	}
+	return false, fmt.Errorf("cannot check whether application %s exists: %w", name.Value(), err)
+}
 
-	return true, nil
+// GetLogs returns the last lines of the application's runtime logs
+func (r *DokkuApplicationRepository) GetLogs(ctx context.Context, name *app.ApplicationName, lines int) (string, error) {
+	return r.dokku.GetApplicationLogs(ctx, name.Value(), lines)
+}
+
+// FollowLogs streams new runtime log lines until ctx is cancelled
+func (r *DokkuApplicationRepository) FollowLogs(ctx context.Context, name *app.ApplicationName) (<-chan string, <-chan error, error) {
+	logLines, errs, err := r.dokku.StreamLogs(ctx, name.Value())
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to follow logs: %w", err)
+	}
+	out := make(chan string)
+	outErr := make(chan error, 1)
+	go func() {
+		defer close(outErr)
+		defer close(out)
+		for line := range logLines {
+			text := line.Message
+			if line.Container != "" {
+				text = line.Timestamp.Format(time.RFC3339) + " " + line.Container + ": " + line.Message
+			}
+			select {
+			case out <- text:
+			case <-ctx.Done():
+				// Drain the stream so its producer can finish and exit.
+				go func() {
+					for range logLines {
+					}
+					for range errs {
+					}
+				}()
+				return
+			}
+		}
+		// Stopping the command through ctx also ends the stream with an
+		// error; only report errors that happened before that.
+		if err := <-errs; err != nil && ctx.Err() == nil {
+			outErr <- fmt.Errorf("log stream ended: %w", err)
+		}
+	}()
+	return out, outErr, nil
+}
+
+// GetFailedDeployLogs returns the logs of containers from the last failed deploy
+func (r *DokkuApplicationRepository) GetFailedDeployLogs(ctx context.Context, name *app.ApplicationName) (string, error) {
+	output, err := r.dokku.ExecuteCommand(ctx, app.CommandLogsFailed, []string{name.Value()})
+	if err != nil {
+		return "", fmt.Errorf("failed to get failed deploy logs: %w", err)
+	}
+	return string(output), nil
+}
+
+// SetProcessState restarts, stops or starts all processes of an application
+func (r *DokkuApplicationRepository) SetProcessState(ctx context.Context, name *app.ApplicationName, action app.ProcessAction) error {
+	var command app.ApplicationCommand
+	switch action {
+	case app.ProcessRestart:
+		command = app.CommandPsRestart
+	case app.ProcessStop:
+		command = app.CommandPsStop
+	case app.ProcessStart:
+		command = app.CommandPsStart
+	default:
+		return fmt.Errorf("unknown process action %q", action)
+	}
+	if _, err := r.dokku.ExecuteCommand(ctx, command, []string{name.Value()}); err != nil {
+		return fmt.Errorf("failed to %s application: %w", action, err)
+	}
+	return nil
+}
+
+// GetDeploySource returns the deploy source and its metadata from apps:report
+func (r *DokkuApplicationRepository) GetDeploySource(ctx context.Context, name *app.ApplicationName) (app.DeploySource, error) {
+	info, err := r.tryGetBasicApplicationInfo(ctx, name.Value())
+	if err != nil {
+		return app.DeploySource{}, err
+	}
+	return app.DeploySource{Type: app.DeploySourceType(info["App deploy source"]), Metadata: info["App deploy source metadata"]}, nil
 }
 
 // List retrieves a paginated list of applications
@@ -376,14 +456,6 @@ func (r *DokkuApplicationRepository) GetRecentlyDeployed(ctx context.Context, li
 	return allApps, nil
 }
 
-// Private utility methods
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 // updateApplicationFromInfo updates the application with retrieved information
 func (r *DokkuApplicationRepository) updateApplicationFromInfo(app *app.Application, info map[string]string, config map[string]string) error {
 	// Apply environment variables
@@ -402,8 +474,8 @@ func (r *DokkuApplicationRepository) updateApplicationFromInfo(app *app.Applicat
 
 	// Process domains if present
 	if domainsStr, ok := info["domains"]; ok && domainsStr != "" {
-		domains := strings.Split(domainsStr, " ")
-		for _, domain := range domains {
+		domains := strings.SplitSeq(domainsStr, " ")
+		for domain := range domains {
 			if domain != "" {
 				if err := app.AddDomain(domain); err != nil {
 					r.logger.Warn("Failed to add domain",
@@ -419,8 +491,8 @@ func (r *DokkuApplicationRepository) updateApplicationFromInfo(app *app.Applicat
 
 // parseProcesses parses and adds processes from a string
 func (r *DokkuApplicationRepository) parseProcesses(application *app.Application, processesStr string) {
-	processes := strings.Fields(processesStr)
-	for _, proc := range processes {
+	processes := strings.FieldsSeq(processesStr)
+	for proc := range processes {
 		parts := strings.Split(proc, ":")
 		if len(parts) == 2 {
 			processType := parts[0]
@@ -461,8 +533,8 @@ func (r *DokkuApplicationRepository) tryGetPsReportInfo(ctx context.Context, app
 
 	// Parse ps:report output to extract deployment and running state
 	info := make(map[string]string)
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(string(output), "\n")
+	for line := range lines {
 		if strings.Contains(line, ":") {
 			parts := strings.SplitN(line, ":", 2)
 			if len(parts) == 2 {
@@ -485,8 +557,8 @@ func (r *DokkuApplicationRepository) tryGetBasicApplicationInfo(ctx context.Cont
 
 	// Parse apps:report output to extract basic information
 	info := make(map[string]string)
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(string(output), "\n")
+	for line := range lines {
 		if strings.Contains(line, ":") {
 			parts := strings.SplitN(line, ":", 2)
 			if len(parts) == 2 {
@@ -498,12 +570,6 @@ func (r *DokkuApplicationRepository) tryGetBasicApplicationInfo(ctx context.Cont
 	}
 
 	return info, nil
-}
-
-// extractEnvironmentVars extracts environment variables from configuration
-func (r *DokkuApplicationRepository) extractEnvironmentVars(config *app.ApplicationConfiguration) map[string]string {
-	// For now, return empty map - implement when ApplicationConfiguration interface is defined
-	return make(map[string]string)
 }
 
 // determineStateFromInfo determines the application state from Dokku output
@@ -525,12 +591,11 @@ func (r *DokkuApplicationRepository) determineStateFromInfo(info map[string]stri
 	}
 
 	// Check for running status (from ps:report output)
-	if running, ok := info["Running"]; ok {
-		if running == "true" {
-			return app.StateRunning
-		} else if running == "false" {
-			return app.StateStopped
-		}
+	switch info["Running"] {
+	case "true":
+		return app.StateRunning
+	case "false":
+		return app.StateStopped
 	}
 
 	// Check for process scale information to determine if app is running (fallback)
@@ -561,8 +626,8 @@ func (r *DokkuApplicationRepository) determineStateFromInfo(info map[string]stri
 
 // hasRunningProcesses checks if any processes have scale > 0
 func (r *DokkuApplicationRepository) hasRunningProcesses(processesStr string) bool {
-	processes := strings.Fields(processesStr)
-	for _, proc := range processes {
+	processes := strings.FieldsSeq(processesStr)
+	for proc := range processes {
 		parts := strings.Split(proc, ":")
 		if len(parts) == 2 {
 			if scale, err := strconv.Atoi(parts[1]); err == nil && scale > 0 {

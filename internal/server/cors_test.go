@@ -233,6 +233,12 @@ func TestIsOriginAllowed(t *testing.T) {
 			allowedOrigins: []string{"*.example.com"},
 			expected:       false,
 		},
+		{
+			name:           "wildcard subdomain rejects lookalike domain",
+			origin:         "https://evilexample.com",
+			allowedOrigins: []string{"*.example.com"},
+			expected:       false,
+		},
 	}
 
 	for _, tt := range tests {

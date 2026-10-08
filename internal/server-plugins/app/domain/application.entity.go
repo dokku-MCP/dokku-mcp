@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"maps"
 	"time"
 
 	"github.com/dokku-mcp/dokku-mcp/internal/shared"
@@ -216,6 +217,27 @@ func (a *Application) SetEnvironmentVariable(key, value string) error {
 	return nil
 }
 
+// Configure sets environment variables and records them for persistence.
+// When restart is false, Dokku applies them without restarting the app.
+func (a *Application) Configure(vars map[string]string, restart bool) error {
+	if len(vars) == 0 {
+		return fmt.Errorf("at least one environment variable is required")
+	}
+	// Validate every key first so a bad key leaves the aggregate unchanged.
+	for key := range vars {
+		if _, err := shared.NewEnvVarKey(key); err != nil {
+			return fmt.Errorf("unable to set variable %s: %w", key, err)
+		}
+	}
+	for key, value := range vars {
+		if err := a.SetEnvironmentVariable(key, value); err != nil {
+			return fmt.Errorf("unable to set variable %s: %w", key, err)
+		}
+	}
+	a.addEvent(NewConfigurationChangedEvent(a.name.Value(), vars, restart, time.Now()))
+	return nil
+}
+
 func (a *Application) AddProcess(processType process.ProcessType, command string, scale int) error {
 	proc, err := process.NewProcess(processType, command, scale)
 	if err != nil {
@@ -310,14 +332,11 @@ func (a *Application) copyConfiguration() *ApplicationConfiguration {
 	copy(domains, a.configuration.domains)
 
 	envVars := make(map[shared.EnvVarKey]*shared.EnvVarValue)
-	for k, v := range a.configuration.environmentVars {
-		envVars[k] = v
-	}
+	maps.Copy(envVars, a.configuration.environmentVars)
 
 	processes := make(map[process.ProcessType]*process.Process)
-	for k, v := range a.configuration.processes {
-		processes[k] = v // This is a shallow copy, but Process is now an entity-like object
-	}
+	// This is a shallow copy, but Process is now an entity-like object
+	maps.Copy(processes, a.configuration.processes)
 
 	return &ApplicationConfiguration{
 		buildpack:       a.configuration.buildpack,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 	"sync"
 	"time"
@@ -147,9 +148,7 @@ func (dc *DokkuCapabilities) Clone() *DokkuCapabilities {
 	}
 
 	// Copy JSON support map
-	for cmd, supported := range dc.JSONSupport {
-		clone.JSONSupport[cmd] = supported
-	}
+	maps.Copy(clone.JSONSupport, dc.JSONSupport)
 
 	return clone
 }

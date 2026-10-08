@@ -2,6 +2,8 @@ package config
 
 import (
 	"fmt"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/spf13/viper"
@@ -39,6 +41,10 @@ type PluginDiscoveryConfig struct {
 
 type SecurityConfig struct {
 	Blacklist []string `mapstructure:"blacklist"`
+	// Allowlist, when non-empty, restricts execution to matching commands.
+	// Patterns are exact names ("apps:list"), prefixes ending in ':' or '*'
+	// ("postgres:", "apps:*"), or "*".
+	Allowlist []string `mapstructure:"allowlist"`
 }
 
 type MultiTenantConfig struct {
@@ -131,7 +137,7 @@ func DefaultConfig() *ServerConfig {
 			Host:    "localhost",
 			Port:    3022,
 			User:    "dokku",
-			KeyPath: "dokku_mcp_test",
+			KeyPath: "",
 		},
 		PluginDiscovery: PluginDiscoveryConfig{
 			SyncInterval: 1 * time.Minute,
@@ -139,6 +145,7 @@ func DefaultConfig() *ServerConfig {
 		},
 		Security: SecurityConfig{
 			Blacklist: []string{},
+			Allowlist: []string{},
 		},
 		MultiTenant: MultiTenantConfig{
 			Enabled: false,
@@ -181,6 +188,8 @@ func LoadConfig() (*ServerConfig, error) {
 	viper.AddConfigPath("$HOME/.dokku-mcp/")
 
 	viper.SetEnvPrefix("DOKKU_MCP")
+	// Map nested keys to environment variables: ssh.host -> DOKKU_MCP_SSH_HOST
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
 
 	// Server configuration defaults
@@ -217,6 +226,7 @@ func LoadConfig() (*ServerConfig, error) {
 
 	// Security configuration defaults
 	viper.SetDefault("security.blacklist", config.Security.Blacklist)
+	viper.SetDefault("security.allowlist", config.Security.Allowlist)
 
 	// Logs configuration defaults
 	viper.SetDefault("logs.runtime.default_lines", config.Logs.Runtime.DefaultLines)
@@ -243,6 +253,9 @@ func LoadConfig() (*ServerConfig, error) {
 	return config, nil
 }
 
+// allowlistPattern matches the command patterns accepted by security.allowlist.
+var allowlistPattern = regexp.MustCompile(`^(\*|[a-z0-9][a-z0-9:-]{0,63}\*?)$`)
+
 func validateConfig(config *ServerConfig) error {
 	if config.Port <= 0 || config.Port > 65535 {
 		return fmt.Errorf("the port must be between 1 and 65535")
@@ -267,6 +280,12 @@ func validateConfig(config *ServerConfig) error {
 
 	if config.SSH.User == "" {
 		return fmt.Errorf("the SSH user cannot be empty")
+	}
+
+	for _, pattern := range config.Security.Allowlist {
+		if !allowlistPattern.MatchString(pattern) {
+			return fmt.Errorf("invalid security.allowlist pattern %q: use a command name (\"apps:list\"), a prefix ending in ':' or '*' (\"postgres:\", \"apps:*\"), or \"*\"", pattern)
+		}
 	}
 
 	validLogLevels := map[string]bool{

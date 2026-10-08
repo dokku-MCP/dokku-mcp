@@ -3,6 +3,7 @@ package shared
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -119,12 +120,7 @@ func (g *GitRef) IsMainBranch() bool {
 	}
 
 	mainBranches := []string{"main", "master", "develop", "dev"}
-	for _, branch := range mainBranches {
-		if g.value == branch {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(mainBranches, g.value)
 }
 
 // String implémente fmt.Stringer

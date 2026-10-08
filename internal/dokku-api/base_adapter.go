@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 )
 
 // BaseAdapter provides common functionality for all plugin adapters
@@ -161,13 +162,7 @@ func (a *BaseAdapter) ExecuteAndParseFields(ctx context.Context, command string,
 func (a *BaseAdapter) ValidateAndExecute(ctx context.Context, command string, args []string, allowedCommands []string) ([]byte, error) {
 	// Validate command is allowed
 	if len(allowedCommands) > 0 {
-		allowed := false
-		for _, allowedCmd := range allowedCommands {
-			if command == allowedCmd {
-				allowed = true
-				break
-			}
-		}
+		allowed := slices.Contains(allowedCommands, command)
 		if !allowed {
 			return nil, fmt.Errorf("command %s is not in allowed commands list", command)
 		}

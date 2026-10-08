@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -64,12 +65,7 @@ func (an *ApplicationName) IsReserved() bool {
 		"service", "services", "builder", "scheduler", "registry",
 	}
 
-	for _, reserved := range reservedNames {
-		if an.value == reserved {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(reservedNames, an.value)
 }
 
 // validateApplicationName validates an application name according to Dokku rules
@@ -104,10 +100,8 @@ func validateApplicationName(name string) error {
 		"service", "services", "builder", "scheduler", "registry",
 	}
 
-	for _, reserved := range reservedNames {
-		if name == reserved {
-			return fmt.Errorf("name '%s' is reserved by Dokku", name)
-		}
+	if slices.Contains(reservedNames, name) {
+		return fmt.Errorf("name '%s' is reserved by Dokku", name)
 	}
 
 	return nil

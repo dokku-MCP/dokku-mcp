@@ -2,6 +2,7 @@ package process
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -110,10 +111,5 @@ func isValidRestartPolicyType(policyType RestartPolicyType) bool {
 		RestartPolicyNever, RestartPolicyUnlessStopped,
 	}
 
-	for _, validType := range validTypes {
-		if policyType == validType {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(validTypes, policyType)
 }

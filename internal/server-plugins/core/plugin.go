@@ -139,7 +139,7 @@ func (p *CoreServerPlugin) handlePluginsResource(ctx context.Context, req mcp.Re
 func (p *CoreServerPlugin) GetTools(ctx context.Context) ([]serverDomain.Tool, error) {
 	p.logger.Debug("Core plugin: Getting MCP tools")
 
-	tools := []serverDomain.Tool{}
+	tools := p.accessTools()
 	if p.cfg != nil && p.cfg.ExposeServerLogs {
 		tools = append(tools, serverDomain.Tool{
 			Name:        "get_server_logs",
@@ -159,6 +159,7 @@ func (p *CoreServerPlugin) GetTools(ctx context.Context) ([]serverDomain.Tool, e
 func (p *CoreServerPlugin) buildGetServerLogsTool() mcp.Tool {
 	return mcp.NewTool(
 		"get_server_logs",
+		mcp.WithTitleAnnotation("Get MCP server logs"),
 		mcp.WithDescription("Get recent dokku-mcp server logs"),
 		mcp.WithNumber("last",
 			mcp.Description("Number of last lines to return (default 200)"),
@@ -169,6 +170,9 @@ func (p *CoreServerPlugin) buildGetServerLogsTool() mcp.Tool {
 		mcp.WithString("contains",
 			mcp.Description("Optional substring filter"),
 		),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithOpenWorldHintAnnotation(false),
 	)
 }
 

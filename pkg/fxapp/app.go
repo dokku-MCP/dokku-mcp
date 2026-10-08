@@ -8,7 +8,9 @@ import (
 	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/core"
 	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/deployment"
 	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/domain"
+	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/letsencrypt"
 	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/onboarding"
+	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/services"
 	"github.com/dokku-mcp/dokku-mcp/pkg/config"
 	"github.com/dokku-mcp/dokku-mcp/pkg/logger"
 	"go.uber.org/fx"
@@ -22,7 +24,7 @@ func New() *fx.App {
 	}
 
 	// Default to a verbose logger for debug level
-	var fxLogger fx.Option = fx.WithLogger(
+	fxLogger := fx.WithLogger(
 		func() fxevent.Logger {
 			return &fxevent.ConsoleLogger{W: log.Writer()}
 		},
@@ -43,5 +45,7 @@ func New() *fx.App {
 		deployment.Module,
 		onboarding.Module,
 		app.Module,
+		services.Module,
+		letsencrypt.Module,
 	)
 }

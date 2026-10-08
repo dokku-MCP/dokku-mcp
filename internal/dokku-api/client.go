@@ -4,12 +4,17 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os/exec"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/dokku-mcp/dokku-mcp/internal/shared"
 )
 
 // isAppScopedCommand returns true for commands that target a specific app
@@ -17,50 +22,49 @@ func isAppScopedCommand(commandName string) bool {
 	return strings.HasPrefix(commandName, "apps:") || strings.HasPrefix(commandName, "ps:") || commandName == "logs"
 }
 
-// ValidateCommand performs validation on Dokku commands to ensure security
+// ValidateCommand checks a Dokku command against the security policy: the
+// command name and every argument must be shell-safe, the command must not
+// match the blacklist and, when an allowlist is configured, must match it.
 func (c *client) ValidateCommand(commandName string, args []string) error {
-	if commandName == "" {
-		return fmt.Errorf("command name cannot be empty")
+	if err := validateCommandName(commandName); err != nil {
+		return err
 	}
 
-	// Blacklist first (runtime configuration)
 	for _, blacklistedPattern := range c.blacklistedCommands {
-		if strings.Contains(commandName, blacklistedPattern) {
+		if blacklistedPattern != "" && strings.Contains(commandName, blacklistedPattern) {
 			return fmt.Errorf("command is blacklisted (matches pattern '%s'): %s", blacklistedPattern, commandName)
 		}
 	}
 
-	// Basic security validation - ensure no dangerous characters in command name
-	// These characters could be used for command injection
-	dangerousChars := []string{";", "&", "|", "`", "$", "(", ")", "{", "}", "<", ">", "\n", "\r"}
-	for _, char := range dangerousChars {
-		if strings.Contains(commandName, char) {
-			return fmt.Errorf("command name contains dangerous character '%s': %s", char, commandName)
-		}
+	if len(c.allowedCommands) > 0 && !c.isAllowlisted(commandName) {
+		return fmt.Errorf("command is not in the allowlist: %s", commandName)
 	}
 
-	// Validate arguments - ensure no dangerous characters
+	total := len(commandName)
 	for i, arg := range args {
-		for _, char := range dangerousChars {
-			if strings.Contains(arg, char) {
-				return fmt.Errorf("argument %d contains dangerous character '%s': %s", i, char, arg)
-			}
+		if err := ValidateArg(arg); err != nil {
+			return fmt.Errorf("argument %d: %w", i, err)
 		}
+		total += 1 + len(arg)
+	}
+	if total > MaxCommandBytes {
+		return fmt.Errorf("command line exceeds %d bytes; split the request", MaxCommandBytes)
 	}
 
-	// Additional validation: command should only contain alphanumeric, dash, colon
-	for _, r := range commandName {
-		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == ':') {
-			return fmt.Errorf("command name contains invalid character: %c", r)
-		}
-	}
-
-	// Log the command for audit purposes
 	c.logger.Debug("Command validated",
 		"command", commandName,
 		"args_count", len(args))
 
 	return nil
+}
+
+func (c *client) isAllowlisted(commandName string) bool {
+	for _, pattern := range c.allowedCommands {
+		if MatchesCommandPattern(commandName, pattern) {
+			return true
+		}
+	}
+	return false
 }
 
 func NewDokkuClient(config *ClientConfig, logger *slog.Logger) DokkuClient {
@@ -118,22 +122,47 @@ func (c *client) ExecuteCommand(ctx context.Context, commandName string, args []
 		return nil, fmt.Errorf("invalid command: %w", err)
 	}
 
-	// Check cache first if caching is enabled
-	if result, err, found := c.cacheManager.Get(commandName, args); found {
+	if !IsCacheableCommand(commandName) {
+		result, err := c.executeCommandDirect(ctx, commandName, args)
+		if !isReadOnlyCommand(commandName) {
+			// The command may have changed server state (even on failure),
+			// so any cached report could now be stale.
+			c.cacheManager.Invalidate()
+		}
 		return result, err
 	}
 
-	// Execute command
+	if result, found := c.cacheManager.Get(commandName, args); found {
+		return result, nil
+	}
+
+	generation := c.cacheManager.Generation()
 	result, err := c.executeCommandDirect(ctx, commandName, args)
-
-	// Cache the result if caching is enabled
-	c.cacheManager.Set(commandName, args, result, err)
-
+	if err == nil {
+		c.cacheManager.Set(commandName, args, result, generation)
+	}
 	return result, err
 }
 
 // executeCommandDirect performs the actual command execution without caching
 func (c *client) executeCommandDirect(ctx context.Context, commandName string, args []string) ([]byte, error) {
+	return c.executeCommandWithInput(ctx, commandName, args, nil)
+}
+
+// ExecuteCommandWithStdin runs a command that reads its payload from stdin,
+// such as ssh-keys:add. It is never cached and always invalidates the cache.
+func (c *client) ExecuteCommandWithStdin(ctx context.Context, commandName string, args []string, stdin string) ([]byte, error) {
+	if err := c.ValidateCommand(commandName, args); err != nil {
+		return nil, fmt.Errorf("invalid command: %w", err)
+	}
+	if len(stdin) > MaxStdinBytes {
+		return nil, fmt.Errorf("stdin payload exceeds %d bytes", MaxStdinBytes)
+	}
+	defer c.cacheManager.Invalidate()
+	return c.executeCommandWithInput(ctx, commandName, args, strings.NewReader(stdin))
+}
+
+func (c *client) executeCommandWithInput(ctx context.Context, commandName string, args []string, stdin io.Reader) ([]byte, error) {
 	cmdCtx, cancel := c.commandContext(ctx)
 	defer cancel()
 
@@ -149,11 +178,19 @@ func (c *client) executeCommandDirect(ctx context.Context, commandName string, a
 		return nil, fmt.Errorf("failed to prepare SSH command: %w", err)
 	}
 
-	c.logCommandExecutionStart(cmdCtx, commandName, args, dokkuCommand, sshArgs, env)
+	if stdin != nil {
+		cmd.Stdin = stdin
+	}
+
+	// Logs get a redacted copy: config:set values are reversible base64.
+	logArgs := RedactArgs(commandName, args)
+	logCommand := buildDokkuCommand(commandName, logArgs)
+	logSSHArgs := append(slices.Clone(sshArgs[:len(sshArgs)-1]), logCommand)
+	c.logCommandExecutionStart(cmdCtx, commandName, logArgs, logCommand, logSSHArgs, env)
 
 	output, execErr := cmd.CombinedOutput()
 	if execErr != nil {
-		return c.handleCommandError(cmdCtx, commandName, args, dokkuCommand, sshArgs, env, output, execErr)
+		return c.handleCommandError(cmdCtx, commandName, logArgs, logCommand, logSSHArgs, env, output, execErr)
 	}
 
 	c.logger.Debug("Dokku command executed successfully",
@@ -249,6 +286,14 @@ func (c *client) logCommandExecutionStart(ctx context.Context, commandName strin
 }
 
 func (c *client) handleCommandError(ctx context.Context, commandName string, args []string, dokkuCommand string, sshArgs []string, env []string, output []byte, execErr error) ([]byte, error) {
+	if slices.Contains(secretValueCommands, commandName) {
+		// config:set echoes the decoded values it was setting; keep them out
+		// of logs and error messages.
+		output = nil
+	} else if len(output) > 0 {
+		// git errors echo the repository URL, credentials included.
+		output = []byte(shared.RedactURLCredentials(string(output)))
+	}
 	if isUnsupportedJSONProbe(args, output, commandName) {
 		c.logger.Debug("JSON format not supported for command (probe)",
 			"command", commandName,
@@ -270,7 +315,68 @@ func (c *client) handleCommandError(ctx context.Context, commandName string, arg
 		return nil, fmt.Errorf("failed to execute Dokku command %s: %w", commandName, &NotFoundError{Command: commandName, Err: ErrAppNotFound})
 	}
 
-	return nil, fmt.Errorf("failed to execute Dokku command %s: %w", commandName, execErr)
+	if isTransportFailure(execErr) {
+		// Details (host, port, ssh output) were logged above. The output
+		// comes from the local ssh client, not Dokku, so it is not returned.
+		return nil, fmt.Errorf("failed to execute Dokku command %s: %w", commandName, ErrDokkuUnreachable)
+	}
+
+	// Return the output as well: for builds it is the log the caller wants.
+	if detail := errorDetail(output); detail != "" {
+		return output, fmt.Errorf("failed to execute Dokku command %s: %w: %s", commandName, execErr, detail)
+	}
+	return output, fmt.Errorf("failed to execute Dokku command %s: %w", commandName, execErr)
+}
+
+// maxErrorDetail bounds how much command output is copied into an error.
+const maxErrorDetail = 600
+
+// errorDetail extracts Dokku's explanation from failed command output: the
+// last non-empty lines, without the " !     " prefix Dokku uses for errors.
+func errorDetail(output []byte) string {
+	var lines []string
+	for line := range strings.Lines(string(output)) {
+		line = strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(line), "!"))
+		if line != "" && !isSSHClientNoise(line) {
+			lines = append(lines, line)
+		}
+	}
+	detail := strings.Join(lines, "; ")
+	if len(detail) > maxErrorDetail {
+		detail = "..." + detail[len(detail)-maxErrorDetail:]
+	}
+	return detail
+}
+
+// sshClientNoisePrefixes start lines written by the local ssh client rather
+// than by Dokku; they reveal connection details and never explain a failure.
+// "ssh: " lines are kept: when the outer connection fails the error is
+// replaced by ErrDokkuUnreachable anyway, and otherwise they come from ssh
+// run by Dokku itself (e.g. git:sync cloning) and explain the failure.
+var sshClientNoisePrefixes = []string{
+	"Warning: Permanently added",
+	"Pseudo-terminal will not be allocated",
+	"Connection to ",
+}
+
+func isSSHClientNoise(line string) bool {
+	for _, prefix := range sshClientNoisePrefixes {
+		if strings.HasPrefix(line, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// isTransportFailure reports whether a command never ran on Dokku: ssh
+// exits with 255 when it cannot connect or authenticate, and any error other
+// than an exit status means ssh itself could not run.
+func isTransportFailure(execErr error) bool {
+	var exitErr *exec.ExitError
+	if errors.As(execErr, &exitErr) {
+		return exitErr.ExitCode() == 255
+	}
+	return !errors.Is(execErr, context.Canceled) && !errors.Is(execErr, context.DeadlineExceeded)
 }
 
 func isUnsupportedJSONProbe(args []string, output []byte, commandName string) bool {
@@ -355,6 +461,13 @@ func (c *client) SetBlacklist(commands []string) {
 	c.logger.Debug("Command blacklist updated", "patterns", commands) // Audit trail
 }
 
+// SetAllowlist restricts execution to commands matching these patterns.
+// An empty list allows every command that is not blacklisted.
+func (c *client) SetAllowlist(patterns []string) {
+	c.allowedCommands = patterns
+	c.logger.Debug("Command allowlist updated", "patterns", patterns) // Audit trail
+}
+
 // Enhanced parsing methods
 
 // ExecuteStructured executes a command with automatic parsing based on the spec
@@ -401,7 +514,7 @@ func (c *client) ExecuteWithAutoFormat(ctx context.Context, commandName string, 
 			"command", commandName,
 			"supports_json", true)
 
-		jsonArgs := append(args, "--format", "json")
+		jsonArgs := slices.Concat(args, []string{"--format", "json"})
 		output, err := c.ExecuteCommand(ctx, commandName, jsonArgs)
 		if err != nil {
 			c.logger.Warn("Failed to execute with JSON format, falling back to text",
@@ -435,7 +548,7 @@ func (c *client) ExecuteWithAutoFormat(ctx context.Context, commandName string, 
 	if !supportsJSON && (strings.Contains(commandName, ":report") || strings.Contains(commandName, ":info")) {
 		c.logger.Debug("Opportunistic JSON probe for report/info command",
 			"command", commandName)
-		jsonArgs := append(args, "--format", "json")
+		jsonArgs := slices.Concat(args, []string{"--format", "json"})
 		output, err := c.ExecuteCommand(ctx, commandName, jsonArgs)
 		if err == nil && json.Valid(output) {
 			// Persist confirmed support and return
@@ -547,8 +660,11 @@ func parseLogLine(line string) LogLine {
 
 	timestamp, err := time.Parse(time.RFC3339Nano, parts[0])
 	if err != nil {
-		// Fall back to current time if parsing fails
-		timestamp = time.Now()
+		// Not a "<timestamp> <container>: <message>" line: keep it whole.
+		return LogLine{
+			Timestamp: time.Now(),
+			Message:   line,
+		}
 	}
 	container := strings.Trim(parts[1], ":")
 
@@ -640,12 +756,14 @@ func (c *client) StreamLogs(ctx context.Context, appName string) (<-chan LogLine
 			}
 		}
 
-		if err := scanner.Err(); err != nil {
-			errChan <- fmt.Errorf("error reading logs: %w", err)
-		}
-
-		// Wait for command to complete and check for errors
-		if waitErr := cmd.Wait(); waitErr != nil {
+		// Report at most one error: errChan has room for exactly one, so a
+		// second send would block forever once the consumer stops reading.
+		scanErr := scanner.Err()
+		waitErr := cmd.Wait()
+		switch {
+		case scanErr != nil:
+			errChan <- fmt.Errorf("error reading logs: %w", scanErr)
+		case waitErr != nil:
 			errChan <- fmt.Errorf("command failed: %w", waitErr)
 		}
 	}()

@@ -48,13 +48,13 @@ setup-dokku: ## Setup local Dokku instance via Docker
 
 install-tools: ## Install development tools
 	@printf "$(GREEN)🔧 Installing development tools...$(NC)\n"
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
 	go install golang.org/x/tools/cmd/goimports@latest
 	go install github.com/fzipp/gocyclo/cmd/gocyclo@latest
 	go install github.com/mibk/dupl@latest
 	go install github.com/securego/gosec/v2/cmd/gosec@latest
 	go install honnef.co/go/tools/cmd/staticcheck@latest
-	go install github.com/golang/mock/mockgen@latest
+	go install go.uber.org/mock/mockgen@latest
 	go install github.com/onsi/ginkgo/v2/ginkgo@latest
 	go install github.com/go-delve/delve/cmd/dlv@latest
 	go install golang.org/x/tools/cmd/godoc@latest

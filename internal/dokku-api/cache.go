@@ -40,9 +40,9 @@ func NewCommandCacheManager(config *CacheConfig, logger *slog.Logger) *CommandCa
 }
 
 // Get retrieves a cached result if available and not expired
-func (cm *CommandCacheManager) Get(command string, args []string) ([]byte, error, bool) {
+func (cm *CommandCacheManager) Get(command string, args []string) ([]byte, bool) {
 	if cm == nil {
-		return nil, nil, false
+		return nil, false
 	}
 
 	key := cm.generateCacheKey(command, args)
@@ -52,12 +52,12 @@ func (cm *CommandCacheManager) Get(command string, args []string) ([]byte, error
 
 	entry, exists := cm.cache.entries[key]
 	if !exists {
-		return nil, nil, false
+		return nil, false
 	}
 
 	// Check if expired
 	if time.Now().After(entry.expiresAt) {
-		return nil, nil, false
+		return nil, false
 	}
 
 	cm.logger.Debug("Cache hit",
@@ -65,11 +65,23 @@ func (cm *CommandCacheManager) Get(command string, args []string) ([]byte, error
 		"args", args,
 		"key", key)
 
-	return entry.result, entry.error, true
+	return entry.result, true
 }
 
-// Set stores a command result in the cache with appropriate TTL
-func (cm *CommandCacheManager) Set(command string, args []string, result []byte, err error) {
+// Generation returns the current cache generation. Pass it to Set to drop
+// results computed before an invalidation.
+func (cm *CommandCacheManager) Generation() uint64 {
+	if cm == nil {
+		return 0
+	}
+	cm.cache.mutex.RLock()
+	defer cm.cache.mutex.RUnlock()
+	return cm.cache.generation
+}
+
+// Set stores a successful command result in the cache with appropriate TTL,
+// unless the cache was invalidated since generation was read.
+func (cm *CommandCacheManager) Set(command string, args []string, result []byte, generation uint64) {
 	if cm == nil {
 		return
 	}
@@ -80,9 +92,12 @@ func (cm *CommandCacheManager) Set(command string, args []string, result []byte,
 	cm.cache.mutex.Lock()
 	defer cm.cache.mutex.Unlock()
 
+	if cm.cache.generation != generation {
+		return
+	}
+
 	cm.cache.entries[key] = &cacheEntry{
 		result:    result,
-		error:     err,
 		expiresAt: time.Now().Add(ttl),
 	}
 
@@ -102,6 +117,7 @@ func (cm *CommandCacheManager) Invalidate() {
 	defer cm.cache.mutex.Unlock()
 
 	cm.cache.entries = make(map[string]*cacheEntry)
+	cm.cache.generation++
 	cm.logger.Debug("Cache invalidated")
 }
 
@@ -119,6 +135,8 @@ func (cm *CommandCacheManager) generateCacheKey(command string, args []string) s
 	hasher := sha256.New()
 	hasher.Write([]byte(command))
 	for _, arg := range args {
+		// Separate arguments so ["ab", "c"] and ["a", "bc"] differ.
+		hasher.Write([]byte{0})
 		hasher.Write([]byte(arg))
 	}
 	return hex.EncodeToString(hasher.Sum(nil))[:16] // First 16 chars

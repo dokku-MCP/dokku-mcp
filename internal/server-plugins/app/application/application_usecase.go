@@ -2,8 +2,10 @@ package usecases
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	domain "github.com/dokku-mcp/dokku-mcp/internal/server-plugins/app/domain"
 	"github.com/dokku-mcp/dokku-mcp/internal/shared"
@@ -94,22 +96,23 @@ type DeployApplicationCommand struct {
 	RunImage   string
 }
 
-// DeployApplication orchestrates application deployment
-func (uc *ApplicationUseCase) DeployApplication(ctx context.Context, cmd DeployApplicationCommand) error {
+// DeployApplication orchestrates application deployment. The build runs
+// asynchronously; the returned result identifies the tracked deployment.
+func (uc *ApplicationUseCase) DeployApplication(ctx context.Context, cmd DeployApplicationCommand) (*shared.DeploymentResult, error) {
 	uc.logger.Info("Deploying application",
 		"app_name", cmd.Name,
-		"repo_url", cmd.RepoURL,
+		"repo_url", shared.RedactURLCredentials(cmd.RepoURL),
 		"git_ref", cmd.GitRef)
 
 	// Get application
 	appName, err := domain.NewApplicationName(cmd.Name)
 	if err != nil {
-		return fmt.Errorf("invalid application name: %w", err)
+		return nil, fmt.Errorf("invalid application name: %w", err)
 	}
 
 	app, err := uc.applicationRepo.GetByName(ctx, appName)
 	if err != nil {
-		return fmt.Errorf("application not found: %w", err)
+		return nil, fmt.Errorf("application not found: %w", err)
 	}
 
 	// Create Git reference for validation
@@ -118,7 +121,7 @@ func (uc *ApplicationUseCase) DeployApplication(ctx context.Context, cmd DeployA
 		var err error
 		gitRef, err = shared.NewGitRef(cmd.GitRef)
 		if err != nil {
-			return fmt.Errorf("invalid Git reference: %w", err)
+			return nil, fmt.Errorf("invalid Git reference: %w", err)
 		}
 	}
 
@@ -129,7 +132,7 @@ func (uc *ApplicationUseCase) DeployApplication(ctx context.Context, cmd DeployA
 		for _, validationError := range validationResult.Errors {
 			errorMessages = append(errorMessages, validationError.Message)
 		}
-		return fmt.Errorf("deployment validation failed: %v", errorMessages)
+		return nil, fmt.Errorf("deployment validation failed: %v", errorMessages)
 	}
 
 	// Log warnings if any
@@ -146,13 +149,13 @@ func (uc *ApplicationUseCase) DeployApplication(ctx context.Context, cmd DeployA
 	if cmd.BuildImage != "" {
 		buildImage, err = shared.NewDockerImage(cmd.BuildImage)
 		if err != nil {
-			return fmt.Errorf("invalid build image: %w", err)
+			return nil, fmt.Errorf("invalid build image: %w", err)
 		}
 	}
 	if cmd.RunImage != "" {
 		runImage, err = shared.NewDockerImage(cmd.RunImage)
 		if err != nil {
-			return fmt.Errorf("invalid run image: %w", err)
+			return nil, fmt.Errorf("invalid run image: %w", err)
 		}
 	}
 
@@ -175,7 +178,7 @@ func (uc *ApplicationUseCase) DeployApplication(ctx context.Context, cmd DeployA
 		if saveErr := uc.applicationRepo.Save(ctx, app); saveErr != nil {
 			uc.logger.Error("failed to save app state after deployment failure", "error", saveErr)
 		}
-		return fmt.Errorf("deployment failed: %w", err)
+		return nil, fmt.Errorf("deployment failed: %w", err)
 	}
 
 	// Update domain entity
@@ -183,7 +186,7 @@ func (uc *ApplicationUseCase) DeployApplication(ctx context.Context, cmd DeployA
 		BuildImage: buildImage,
 		RunImage:   runImage,
 	}); err != nil {
-		return fmt.Errorf("failed to update application state: %w", err)
+		return nil, fmt.Errorf("failed to update application state: %w", err)
 	}
 
 	// Save changes
@@ -192,10 +195,10 @@ func (uc *ApplicationUseCase) DeployApplication(ctx context.Context, cmd DeployA
 			"error", err)
 	}
 
-	uc.logger.Info("Deployment completed successfully",
+	uc.logger.Info("Deployment started",
 		"app_name", cmd.Name,
 		"deployment_id", deploymentResult.ID)
-	return nil
+	return deploymentResult, nil
 }
 
 // ScaleApplicationCommand represents the data for scaling an application
@@ -271,6 +274,8 @@ func (uc *ApplicationUseCase) ScaleApplication(ctx context.Context, cmd ScaleApp
 type SetConfigCommand struct {
 	Name   string
 	Config map[string]string
+	// Restart restarts the application so that it picks up the new values.
+	Restart bool
 }
 
 // SetApplicationConfig orchestrates application configuration
@@ -290,11 +295,8 @@ func (uc *ApplicationUseCase) SetApplicationConfig(ctx context.Context, cmd SetC
 		return fmt.Errorf("application not found: %w", err)
 	}
 
-	// Apply configuration
-	for key, value := range cmd.Config {
-		if err := app.SetEnvironmentVariable(key, value); err != nil {
-			return fmt.Errorf("unable to set variable %s: %w", key, err)
-		}
+	if err := app.Configure(cmd.Config, cmd.Restart); err != nil {
+		return err
 	}
 
 	// Save changes
@@ -339,4 +341,126 @@ func (uc *ApplicationUseCase) GetApplicationByName(ctx context.Context, name str
 	uc.logger.Debug("Application retrieved successfully",
 		"app_name", name)
 	return app, nil
+}
+
+// GetApplicationLogs returns the last lines of an application's runtime logs.
+func (uc *ApplicationUseCase) GetApplicationLogs(ctx context.Context, name string, lines int) (string, error) {
+	appName, err := uc.existingApp(ctx, name)
+	if err != nil {
+		return "", err
+	}
+	return uc.applicationRepo.GetLogs(ctx, appName, lines)
+}
+
+// ChangeProcessState restarts, stops or starts all processes of an application.
+func (uc *ApplicationUseCase) ChangeProcessState(ctx context.Context, name string, action domain.ProcessAction) error {
+	appName, err := uc.existingApp(ctx, name)
+	if err != nil {
+		return err
+	}
+	uc.logger.Info("Changing application process state", "app_name", name, "action", action)
+	return uc.applicationRepo.SetProcessState(ctx, appName, action)
+}
+
+// GetFailedDeployLogs returns the logs of the containers of the last failed deploy.
+func (uc *ApplicationUseCase) GetFailedDeployLogs(ctx context.Context, name string) (string, error) {
+	appName, err := uc.existingApp(ctx, name)
+	if err != nil {
+		return "", err
+	}
+	return uc.applicationRepo.GetFailedDeployLogs(ctx, appName)
+}
+
+// RollbackApplicationCommand redeploys an earlier Git reference.
+type RollbackApplicationCommand struct {
+	Name   string
+	GitRef string
+	// RepoURL defaults to the repository of the last git:sync deployment.
+	RepoURL string
+}
+
+// ErrUnknownDeploySource is returned when a rollback cannot infer the
+// repository the application was deployed from.
+var ErrUnknownDeploySource = errors.New("cannot determine the repository the application was deployed from; pass repo_url")
+
+// RollbackApplication redeploys an earlier Git reference. Dokku keeps no
+// release history, so a rollback is a deployment of a known-good ref from
+// the same repository.
+func (uc *ApplicationUseCase) RollbackApplication(ctx context.Context, cmd RollbackApplicationCommand) (*shared.DeploymentResult, error) {
+	repoURL := cmd.RepoURL
+	if repoURL == "" {
+		appName, err := uc.existingApp(ctx, cmd.Name)
+		if err != nil {
+			return nil, err
+		}
+		source, err := uc.applicationRepo.GetDeploySource(ctx, appName)
+		if err != nil {
+			return nil, err
+		}
+		repoURL = source.RepoURL()
+		if repoURL == "" {
+			return nil, ErrUnknownDeploySource
+		}
+	}
+	uc.logger.Info("Rolling back application", "app_name", cmd.Name, "git_ref", cmd.GitRef, "repo_url", shared.RedactURLCredentials(repoURL))
+	return uc.DeployApplication(ctx, DeployApplicationCommand{Name: cmd.Name, RepoURL: repoURL, GitRef: cmd.GitRef})
+}
+
+// existingApp validates a name and checks that the application exists.
+func (uc *ApplicationUseCase) existingApp(ctx context.Context, name string) (*domain.ApplicationName, error) {
+	appName, err := domain.NewApplicationName(name)
+	if err != nil {
+		return nil, fmt.Errorf("invalid application name: %w", err)
+	}
+	exists, err := uc.applicationRepo.Exists(ctx, appName)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, domain.ErrApplicationNotFound
+	}
+	return appName, nil
+}
+
+// FollowLogsResult holds the lines collected while following logs.
+type FollowLogsResult struct {
+	Lines     []string
+	Truncated bool
+	Elapsed   time.Duration
+}
+
+// FollowLogs collects new log lines for up to duration or maxLines lines,
+// calling onLine for each line as it arrives.
+func (uc *ApplicationUseCase) FollowLogs(ctx context.Context, name string, duration time.Duration, maxLines int, onLine func(string)) (*FollowLogsResult, error) {
+	appName, err := uc.existingApp(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	start := time.Now()
+	ctx, cancel := context.WithTimeout(ctx, duration)
+	defer cancel()
+
+	lines, errs, err := uc.applicationRepo.FollowLogs(ctx, appName)
+	if err != nil {
+		return nil, err
+	}
+	result := &FollowLogsResult{Lines: []string{}}
+	for line := range lines {
+		result.Lines = append(result.Lines, line)
+		if onLine != nil {
+			onLine(line)
+		}
+		if len(result.Lines) >= maxLines {
+			result.Truncated = true
+			cancel()
+			break
+		}
+	}
+	result.Elapsed = time.Since(start)
+	if !result.Truncated {
+		if err := <-errs; err != nil {
+			return nil, err
+		}
+	}
+	return result, nil
 }

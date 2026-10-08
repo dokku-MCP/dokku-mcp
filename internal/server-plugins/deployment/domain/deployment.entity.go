@@ -206,3 +206,20 @@ func NewDeploymentWithID(id, appName, gitRef string) (*Deployment, error) {
 		createdAt: time.Now(),
 	}, nil
 }
+
+// snapshot returns an independent copy of the deployment, safe to read
+// while the tracker keeps updating the original.
+func (d *Deployment) snapshot() *Deployment {
+	cp := *d
+	cp.startedAt = copyTime(d.startedAt)
+	cp.completedAt = copyTime(d.completedAt)
+	return &cp
+}
+
+func copyTime(t *time.Time) *time.Time {
+	if t == nil {
+		return nil
+	}
+	v := *t
+	return &v
+}

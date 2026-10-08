@@ -37,7 +37,14 @@ func (f *fakeClient) GetCapabilities() *dokku_client.DokkuCapabilities {
 }
 func (f *fakeClient) GetSSHConnectionManager() *dokku_client.SSHConnectionManager { return nil }
 func (f *fakeClient) SetBlacklist(commands []string)                              {}
-func (f *fakeClient) ValidateCommand(command string, args []string) error         { return nil }
+func (f *fakeClient) SetAllowlist(patterns []string)                              {}
+func (f *fakeClient) StreamLogs(ctx context.Context, appName string) (<-chan dokku_client.LogLine, <-chan error, error) {
+	return nil, nil, nil
+}
+func (f *fakeClient) ExecuteCommandWithStdin(ctx context.Context, command string, args []string, stdin string) ([]byte, error) {
+	return nil, nil
+}
+func (f *fakeClient) ValidateCommand(command string, args []string) error { return nil }
 
 func TestStatusCheckerNotFoundReturnsFailed(t *testing.T) {
 	dsc := NewDeploymentStatusChecker(&fakeClient{})

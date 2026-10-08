@@ -71,6 +71,18 @@ security:
     # - "postgres:"      # Blocks all postgres commands
     # - ":destroy"       # Blocks any service destroy command
 
+  # Optional allow-list (least privilege). When non-empty, ONLY matching
+  # commands may run; the blacklist still applies on top of it.
+  # Patterns: exact name ("apps:list"), prefix ending in ':' or '*'
+  # ("postgres:", "apps:*"), or "*" for everything.
+  allowlist: []
+    # - "apps:"
+    # - "config:"
+    # - "ps:"
+    # - "git:sync"
+    # - "logs"
+    # - "version"
+
 # Logs configuration
 logs:
   runtime:

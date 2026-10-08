@@ -6,8 +6,7 @@ on:
     branches: [ main ]
 
 env:
-  GO_VERSION: '1.25'
-  GINKGO_VERSION: 'v2.17.3'
+  GO_VERSION: '1.26'
 
 jobs:
   toolchain:
@@ -15,16 +14,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version: ${{ env.GO_VERSION }}
 
       - name: Restore Go tools cache
         id: cache-tools
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/go/bin
           key: ${{ runner.os }}-go-bin-${{ env.GO_VERSION }}-${{ hashFiles('Makefile') }}
@@ -39,15 +38,15 @@ jobs:
     needs: [toolchain]
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version: ${{ env.GO_VERSION }}
 
       - name: Cache Go modules
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/go-build
@@ -65,14 +64,14 @@ jobs:
       # Cross-compiles the exact release matrix defined in .goreleaser.yaml,
       # so CI catches any platform-specific build breakage before a release.
       - name: Build all release platforms
-        uses: goreleaser/goreleaser-action@v6
+        uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
           version: '~> v2'
           args: build --snapshot --clean
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: binaries
           path: dist/
@@ -89,15 +88,15 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version: ${{ env.GO_VERSION }}
 
       - name: Cache Go modules
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/go-build
@@ -111,7 +110,7 @@ jobs:
 
       - name: Restore Go tools cache
         id: cache-tools
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/go/bin
           key: ${{ runner.os }}-go-bin-${{ env.GO_VERSION }}-${{ hashFiles('Makefile') }}
@@ -165,15 +164,15 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version: ${{ env.GO_VERSION }}
 
       - name: Cache Go modules
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/go-build
@@ -187,7 +186,7 @@ jobs:
 
       - name: Restore Go tools cache
         id: cache-tools-tests
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/go/bin
           key: ${{ runner.os }}-go-bin-${{ env.GO_VERSION }}-${{ hashFiles('Makefile') }}
@@ -206,7 +205,7 @@ jobs:
 
       - name: Upload coverage artifact
         if: matrix.test-type == 'standard'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-report
           path: coverage.out
@@ -218,10 +217,10 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version: ${{ env.GO_VERSION }}
 

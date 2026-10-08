@@ -10,6 +10,7 @@ import (
 	"github.com/dokku-mcp/dokku-mcp/internal/server"
 	serverDomain "github.com/dokku-mcp/dokku-mcp/internal/server-plugin/domain"
 	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/domain/application"
+	domaindomain "github.com/dokku-mcp/dokku-mcp/internal/server-plugins/domain/domain"
 	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/domain/infrastructure"
 	"github.com/mark3labs/mcp-go/mcp"
 )
@@ -66,7 +67,109 @@ func (p *DomainServerPlugin) GetTools(ctx context.Context) ([]serverDomain.Tool,
 			Builder:     p.buildAddGlobalDomainTool,
 			Handler:     p.handleAddGlobalDomain,
 		},
+		{
+			Name:        "get_app_domains",
+			Description: "List the domains of an application",
+			Builder:     buildGetAppDomainsTool,
+			Handler:     p.handleGetAppDomains,
+		},
+		{
+			Name:        "add_app_domain",
+			Description: "Add a domain to an application",
+			Builder:     buildAddAppDomainTool,
+			Handler:     p.handleAddAppDomain,
+		},
+		{
+			Name:        "remove_app_domain",
+			Description: "Remove a domain from an application",
+			Builder:     buildRemoveAppDomainTool,
+			Handler:     p.handleRemoveAppDomain,
+		},
 	}, nil
+}
+
+func buildGetAppDomainsTool() mcp.Tool {
+	return mcp.NewTool(
+		"get_app_domains",
+		mcp.WithTitleAnnotation("Get application domains"),
+		mcp.WithDescription("List the domains (vhosts) an application answers on, plus the global domains"),
+		mcp.WithString("app_name", mcp.Required(), mcp.Description("Name of the application")),
+		mcp.WithOutputSchema[domaindomain.AppDomains](),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithOpenWorldHintAnnotation(false),
+	)
+}
+
+func buildAddAppDomainTool() mcp.Tool {
+	return mcp.NewTool(
+		"add_app_domain",
+		mcp.WithTitleAnnotation("Add application domain"),
+		mcp.WithDescription("Add a domain to an application. Point the domain's DNS at the Dokku host, "+
+			"then use enable_letsencrypt for HTTPS"),
+		mcp.WithString("app_name", mcp.Required(), mcp.Description("Name of the application")),
+		mcp.WithString("domain_name", mcp.Required(), mcp.Description("Domain to add, e.g. www.example.com")),
+		mcp.WithReadOnlyHintAnnotation(false),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithIdempotentHintAnnotation(true),
+		mcp.WithOpenWorldHintAnnotation(false),
+	)
+}
+
+func buildRemoveAppDomainTool() mcp.Tool {
+	return mcp.NewTool(
+		"remove_app_domain",
+		mcp.WithTitleAnnotation("Remove application domain"),
+		mcp.WithDescription("Stop serving an application on a domain"),
+		mcp.WithString("app_name", mcp.Required(), mcp.Description("Name of the application")),
+		mcp.WithString("domain_name", mcp.Required(), mcp.Description("Domain to remove")),
+		mcp.WithReadOnlyHintAnnotation(false),
+		mcp.WithDestructiveHintAnnotation(true),
+		mcp.WithIdempotentHintAnnotation(true),
+		mcp.WithOpenWorldHintAnnotation(false),
+	)
+}
+
+func (p *DomainServerPlugin) handleGetAppDomains(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	appName, err := req.RequireString("app_name")
+	if err != nil {
+		return mcp.NewToolResultError("app_name is required"), nil
+	}
+	domains, err := p.domainService.GetAppDomains(ctx, appName)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to get domains: %v", err)), nil
+	}
+	return mcp.NewToolResultStructuredOnly(domains), nil
+}
+
+func (p *DomainServerPlugin) handleAddAppDomain(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	appName, err := req.RequireString("app_name")
+	if err != nil {
+		return mcp.NewToolResultError("app_name is required"), nil
+	}
+	domainName, err := req.RequireString("domain_name")
+	if err != nil {
+		return mcp.NewToolResultError("domain_name is required"), nil
+	}
+	if err := p.domainService.AddAppDomain(ctx, appName, domainName); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to add domain: %v", err)), nil
+	}
+	return mcp.NewToolResultText(fmt.Sprintf("Domain '%s' added to '%s'", domainName, appName)), nil
+}
+
+func (p *DomainServerPlugin) handleRemoveAppDomain(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	appName, err := req.RequireString("app_name")
+	if err != nil {
+		return mcp.NewToolResultError("app_name is required"), nil
+	}
+	domainName, err := req.RequireString("domain_name")
+	if err != nil {
+		return mcp.NewToolResultError("domain_name is required"), nil
+	}
+	if err := p.domainService.RemoveAppDomain(ctx, appName, domainName); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to remove domain: %v", err)), nil
+	}
+	return mcp.NewToolResultText(fmt.Sprintf("Domain '%s' removed from '%s'", domainName, appName)), nil
 }
 
 func (p *DomainServerPlugin) handleDomainsReportResource(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
@@ -90,7 +193,11 @@ func (p *DomainServerPlugin) handleDomainsReportResource(ctx context.Context, re
 func (p *DomainServerPlugin) buildListGlobalDomainsTool() mcp.Tool {
 	return mcp.NewTool(
 		"list_global_domains",
+		mcp.WithTitleAnnotation("List global domains"),
 		mcp.WithDescription("List all global domains configured in Dokku"),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithOpenWorldHintAnnotation(false),
 	)
 }
 
@@ -114,11 +221,16 @@ func (p *DomainServerPlugin) handleListGlobalDomains(ctx context.Context, req mc
 func (p *DomainServerPlugin) buildAddGlobalDomainTool() mcp.Tool {
 	return mcp.NewTool(
 		"add_global_domain",
+		mcp.WithTitleAnnotation("Add global domain"),
 		mcp.WithDescription("Add a global domain to Dokku"),
 		mcp.WithString("domain_name",
 			mcp.Required(),
 			mcp.Description("The domain name to add"),
 		),
+		mcp.WithReadOnlyHintAnnotation(false),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithIdempotentHintAnnotation(true),
+		mcp.WithOpenWorldHintAnnotation(false),
 	)
 }
 

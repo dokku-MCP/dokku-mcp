@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strings"
 	"time"
 
@@ -228,11 +229,13 @@ func (a *DokkuCoreAdapter) ListSSHKeys(ctx context.Context) ([]domain.SSHKey, er
 	return a.parseSSHKeys(string(output)), nil
 }
 
+// AddSSHKey adds a public key; ssh-keys:add reads the key from stdin.
 func (a *DokkuCoreAdapter) AddSSHKey(ctx context.Context, name string, keyContent string) error {
-	// Note: Dokku SSH key addition typically requires piping input
-	// For now, we'll return an error suggesting the user add keys manually
-	// This could be enhanced by writing to a temporary file and using that file path
-	return fmt.Errorf("SSH key addition via MCP not yet supported - please add keys manually via 'dokku ssh-keys:add %s'", name)
+	_, err := a.client.ExecuteCommandWithStdin(ctx, domain.CommandSSHKeysAdd.String(), []string{name}, strings.TrimSpace(keyContent)+"\n")
+	if err != nil {
+		return fmt.Errorf("failed to add SSH key %s: %w", name, err)
+	}
+	return nil
 }
 
 func (a *DokkuCoreAdapter) RemoveSSHKey(ctx context.Context, name string) error {
@@ -266,19 +269,48 @@ func (a *DokkuCoreAdapter) ListRegistries(ctx context.Context) ([]domain.Registr
 	return []domain.RegistryCredential{}, nil
 }
 
-func (a *DokkuCoreAdapter) LoginRegistry(ctx context.Context, registry, username, password string) error {
-	// Note: Registry login typically requires password input
-	// For now, we'll return an error suggesting manual login
-	// This could be enhanced by using environment variables or credential files
-	return fmt.Errorf("registry login via MCP not yet supported - please login manually via 'dokku registry:login %s %s'", registry, username)
+// appOrGlobal returns the target argument shared by registry commands.
+func appOrGlobal(appName string) string {
+	if appName == "" {
+		return "--global"
+	}
+	return appName
 }
 
-func (a *DokkuCoreAdapter) LogoutRegistry(ctx context.Context, registry string) error {
-	_, err := a.executeCommand(ctx, domain.CommandRegistryLogout, []string{registry})
+// LoginRegistry stores registry credentials. The password is sent on stdin
+// so it never appears in the remote command line or process list.
+func (a *DokkuCoreAdapter) LoginRegistry(ctx context.Context, appName, registry, username, password string) error {
+	args := []string{"--password-stdin", appOrGlobal(appName), registry, username}
+	_, err := a.client.ExecuteCommandWithStdin(ctx, domain.CommandRegistryLogin.String(), args, password+"\n")
+	if err != nil {
+		return fmt.Errorf("failed to log in to registry %s: %w", registry, err)
+	}
+	return nil
+}
+
+func (a *DokkuCoreAdapter) LogoutRegistry(ctx context.Context, appName, registry string) error {
+	_, err := a.executeCommand(ctx, domain.CommandRegistryLogout, []string{appOrGlobal(appName), registry})
 	if err != nil {
 		return fmt.Errorf("failed to logout from registry %s: %w", registry, err)
 	}
 	return nil
+}
+
+func (a *DokkuCoreAdapter) GetRegistryReport(ctx context.Context, appName string) (map[string]string, error) {
+	output, err := a.executeCommand(ctx, domain.CommandRegistryReport, []string{appOrGlobal(appName)})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get registry report: %w", err)
+	}
+	report := make(map[string]string)
+	for _, line := range dokkuApi.ParseTrimmedLines(string(output), true) {
+		if strings.HasPrefix(line, "=") {
+			continue
+		}
+		if key, value, ok := dokkuApi.ParseColonKeyValueLine(line); ok && key != "" {
+			report[key] = value
+		}
+	}
+	return report, nil
 }
 
 func (a *DokkuCoreAdapter) GetRegistryStatus(ctx context.Context, registry string) (*domain.RegistryCredential, error) {
@@ -380,28 +412,22 @@ func (a *DokkuCoreAdapter) parsePluginList(output string) []domain.DokkuPlugin {
 	return plugins
 }
 
+// sshKeyNamePattern extracts NAME="..." from ssh-keys:list output lines such as
+// `SHA256:abc NAME="admin" SSHCOMMAND_ALLOWED_KEYS="none"`.
+var sshKeyNamePattern = regexp.MustCompile(`NAME="([^"]*)"`)
+
 func (a *DokkuCoreAdapter) parseSSHKeys(output string) []domain.SSHKey {
-	var keys []domain.SSHKey
-	lines := dokkuApi.ParseTrimmedLines(output, true)
-
-	for _, line := range lines {
+	keys := []domain.SSHKey{}
+	for _, line := range dokkuApi.ParseTrimmedLines(output, true) {
 		fields := strings.Fields(line)
-		if len(fields) >= 2 {
-			key := domain.SSHKey{
-				Name:        fields[0],
-				Fingerprint: "",
-				KeyType:     "",
-				Comment:     "",
-				AddedAt:     time.Now(),
-			}
-
-			if len(fields) > 1 {
-				key.Fingerprint = fields[1]
-			}
-
-			keys = append(keys, key)
+		if len(fields) == 0 || strings.HasPrefix(line, "=") || strings.HasPrefix(line, "!") {
+			continue
 		}
+		key := domain.SSHKey{Fingerprint: fields[0]}
+		if m := sshKeyNamePattern.FindStringSubmatch(line); m != nil {
+			key.Name = m[1]
+		}
+		keys = append(keys, key)
 	}
-
 	return keys
 }

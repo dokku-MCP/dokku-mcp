@@ -23,9 +23,9 @@ else
     echo -e "${GREEN}✅ goimports already installed${NC}"
 fi
 
-if ! command -v golangci-lint >/dev/null 2>&1; then
+if ! command -v golangci-lint >/dev/null 2>&1 || ! golangci-lint version 2>/dev/null | grep -q 'version 2\.'; then
     echo -e "${YELLOW}📦 Installing golangci-lint...${NC}"
-    go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+    go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
     echo -e "${GREEN}✅ golangci-lint installed${NC}"
 else
     echo -e "${GREEN}✅ golangci-lint already installed${NC}"
