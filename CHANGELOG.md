@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.5.0] - 2026-10-08
+
 ### Added
 - **Deployments**: `deploy_app` returns a `deployment_id`; new `get_deployment_status` and `list_deployments` tools report the real build outcome and the tail of the build log. `rollback_app` redeploys an earlier ref from the last deployed repository.
 - **Lifecycle and diagnostics**: `restart_app`, `stop_app`, `start_app`, `get_failed_deploy_logs`, and `follow_runtime_logs` (live logs streamed as MCP progress notifications).
