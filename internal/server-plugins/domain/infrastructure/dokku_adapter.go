@@ -62,6 +62,54 @@ func (a *DokkuDomainAdapter) ListGlobalDomains(ctx context.Context) ([]domain.Gl
 	return domains, nil
 }
 
+// GetAppDomains retrieves the domains of one application
+func (a *DokkuDomainAdapter) GetAppDomains(ctx context.Context, appName string) (*domain.AppDomains, error) {
+	output, err := a.executeCommand(ctx, domain.CommandDomainsReport, []string{appName})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get domains of %s: %w", appName, err)
+	}
+	return parseAppDomainsReport(appName, string(output)), nil
+}
+
+// parseAppDomainsReport parses `domains:report <app>` output such as
+// "Domains app enabled: true" and "Domains app vhosts: a.example.com b.example.com".
+func parseAppDomainsReport(appName, output string) *domain.AppDomains {
+	result := &domain.AppDomains{AppName: appName, Domains: []string{}, GlobalDomains: []string{}}
+	for _, line := range dokkuApi.ParseTrimmedLines(output, true) {
+		key, value, ok := dokkuApi.ParseColonKeyValueLine(line)
+		if !ok {
+			continue
+		}
+		switch strings.ToLower(key) {
+		case "domains app enabled":
+			result.Enabled = value == "true"
+		case "domains app vhosts":
+			result.Domains = strings.Fields(value)
+		case "domains global vhosts":
+			result.GlobalDomains = strings.Fields(value)
+		}
+	}
+	return result
+}
+
+// AddAppDomain adds a domain to an application
+func (a *DokkuDomainAdapter) AddAppDomain(ctx context.Context, appName, domainName string) error {
+	_, err := a.executeCommand(ctx, domain.CommandDomainsAdd, []string{appName, domainName})
+	if err != nil {
+		return fmt.Errorf("failed to add domain %s to %s: %w", domainName, appName, err)
+	}
+	return nil
+}
+
+// RemoveAppDomain removes a domain from an application
+func (a *DokkuDomainAdapter) RemoveAppDomain(ctx context.Context, appName, domainName string) error {
+	_, err := a.executeCommand(ctx, domain.CommandDomainsRemove, []string{appName, domainName})
+	if err != nil {
+		return fmt.Errorf("failed to remove domain %s from %s: %w", domainName, appName, err)
+	}
+	return nil
+}
+
 // AddGlobalDomain adds a global domain
 func (a *DokkuDomainAdapter) AddGlobalDomain(ctx context.Context, domainName string) error {
 	_, err := a.executeCommand(ctx, domain.CommandDomainsAddGlobal, []string{domainName})

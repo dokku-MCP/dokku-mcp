@@ -12,4 +12,7 @@ type DomainRepository interface {
 	SetGlobalDomains(ctx context.Context, domains []string) error
 	ClearGlobalDomains(ctx context.Context) error
 	GetDomainsReport(ctx context.Context) (*DomainsReport, error)
+	GetAppDomains(ctx context.Context, appName string) (*AppDomains, error)
+	AddAppDomain(ctx context.Context, appName, domain string) error
+	RemoveAppDomain(ctx context.Context, appName, domain string) error
 }

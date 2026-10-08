@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"log/slog"
 
+	appdomain "github.com/dokku-mcp/dokku-mcp/internal/server-plugins/app/domain"
+	"github.com/dokku-mcp/dokku-mcp/internal/shared"
+
 	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/domain/domain"
 )
 
@@ -72,12 +75,48 @@ func (s *DomainService) GetDomainsReport(ctx context.Context) (*domain.DomainsRe
 	return s.domainRepo.GetDomainsReport(ctx)
 }
 
-func (s *DomainService) validateDomainName(domain string) error {
-	if domain == "" {
-		return fmt.Errorf("domain name cannot be empty")
+// GetAppDomains returns the domains of an application
+func (s *DomainService) GetAppDomains(ctx context.Context, appName string) (*domain.AppDomains, error) {
+	if err := validateAppName(appName); err != nil {
+		return nil, err
 	}
-	if len(domain) > 253 {
-		return fmt.Errorf("domain name too long (max 253 characters)")
+	return s.domainRepo.GetAppDomains(ctx, appName)
+}
+
+// AddAppDomain adds a domain to an application
+func (s *DomainService) AddAppDomain(ctx context.Context, appName, domainName string) error {
+	s.logger.Info("Adding app domain", "app", appName, "domain", domainName)
+	if err := validateAppName(appName); err != nil {
+		return err
+	}
+	if err := s.validateDomainName(domainName); err != nil {
+		return fmt.Errorf("invalid domain name: %w", err)
+	}
+	return s.domainRepo.AddAppDomain(ctx, appName, domainName)
+}
+
+// RemoveAppDomain removes a domain from an application
+func (s *DomainService) RemoveAppDomain(ctx context.Context, appName, domainName string) error {
+	s.logger.Info("Removing app domain", "app", appName, "domain", domainName)
+	if err := validateAppName(appName); err != nil {
+		return err
+	}
+	if err := s.validateDomainName(domainName); err != nil {
+		return fmt.Errorf("invalid domain name: %w", err)
+	}
+	return s.domainRepo.RemoveAppDomain(ctx, appName, domainName)
+}
+
+func validateAppName(appName string) error {
+	if _, err := appdomain.NewApplicationName(appName); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *DomainService) validateDomainName(domain string) error {
+	if _, err := shared.NewDomainName(domain); err != nil {
+		return err
 	}
 	return nil
 }

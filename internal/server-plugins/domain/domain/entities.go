@@ -32,3 +32,11 @@ type DomainsReportSection struct {
 	SSLHostname  string   `json:"ssl_hostname,omitempty"`
 	LetsEncrypt  bool     `json:"letsencrypt"`
 }
+
+// AppDomains describes the virtual hosts of one application.
+type AppDomains struct {
+	AppName       string   `json:"app_name"`
+	Enabled       bool     `json:"enabled" jsonschema:"Whether domains (vhosts) are enabled for the app"`
+	Domains       []string `json:"domains"`
+	GlobalDomains []string `json:"global_domains"`
+}

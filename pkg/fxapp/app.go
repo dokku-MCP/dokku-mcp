@@ -8,6 +8,7 @@ import (
 	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/core"
 	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/deployment"
 	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/domain"
+	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/letsencrypt"
 	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/onboarding"
 	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/services"
 	"github.com/dokku-mcp/dokku-mcp/pkg/config"
@@ -45,5 +46,6 @@ func New() *fx.App {
 		onboarding.Module,
 		app.Module,
 		services.Module,
+		letsencrypt.Module,
 	)
 }

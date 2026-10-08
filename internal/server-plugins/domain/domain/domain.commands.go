@@ -5,6 +5,8 @@ type DomainCommand string
 
 const (
 	CommandDomainsReport       DomainCommand = "domains:report"
+	CommandDomainsAdd          DomainCommand = "domains:add"
+	CommandDomainsRemove       DomainCommand = "domains:remove"
 	CommandDomainsAddGlobal    DomainCommand = "domains:add-global"
 	CommandDomainsRemoveGlobal DomainCommand = "domains:remove-global"
 	CommandDomainsSetGlobal    DomainCommand = "domains:set-global"
@@ -15,7 +17,7 @@ const (
 // IsValid checks if the command is a valid domain command
 func (c DomainCommand) IsValid() bool {
 	switch c {
-	case CommandDomainsReport, CommandDomainsAddGlobal, CommandDomainsRemoveGlobal,
+	case CommandDomainsReport, CommandDomainsAdd, CommandDomainsRemove, CommandDomainsAddGlobal, CommandDomainsRemoveGlobal,
 		CommandDomainsSetGlobal, CommandDomainsClearGlobal, CommandLetsEncryptSet:
 		return true
 	default:
@@ -32,6 +34,8 @@ func (c DomainCommand) String() string {
 func GetAllowedCommands() []DomainCommand {
 	return []DomainCommand{
 		CommandDomainsReport,
+		CommandDomainsAdd,
+		CommandDomainsRemove,
 		CommandDomainsAddGlobal,
 		CommandDomainsRemoveGlobal,
 		CommandDomainsSetGlobal,
