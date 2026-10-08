@@ -28,6 +28,7 @@ var _ = Describe("Command policy", func() {
 		Entry("list", "apps:list", true),
 		Entry("show", "config:show", true),
 		Entry("version", "version", true),
+		Entry("service links", "postgres:links", true),
 		Entry("logs are always fresh", "logs", false),
 		Entry("create", "apps:create", false),
 		Entry("config set", "config:set", false),

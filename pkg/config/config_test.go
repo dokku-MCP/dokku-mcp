@@ -1,7 +1,9 @@
 package config
 
 import (
+	"os"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/spf13/viper"
@@ -13,6 +15,13 @@ func loadWithEnv(t *testing.T, env map[string]string) *ServerConfig {
 	t.Cleanup(viper.Reset)
 	t.Chdir(t.TempDir()) // no config.yaml in the working directory
 	t.Setenv("HOME", t.TempDir())
+	// Clear DOKKU_MCP_* variables inherited from the shell or CI.
+	for _, kv := range os.Environ() {
+		if name, _, _ := strings.Cut(kv, "="); strings.HasPrefix(name, "DOKKU_MCP_") {
+			t.Setenv(name, "")
+			_ = os.Unsetenv(name)
+		}
+	}
 	for k, v := range env {
 		t.Setenv(k, v)
 	}
@@ -21,6 +30,17 @@ func loadWithEnv(t *testing.T, env map[string]string) *ServerConfig {
 		t.Fatalf("LoadConfig: %v", err)
 	}
 	return cfg
+}
+
+func TestLoadConfigRejectsInvalidAllowlistPattern(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	t.Chdir(t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("DOKKU_MCP_SECURITY_ALLOWLIST", "apps:,config set")
+	if _, err := LoadConfig(); err == nil || !strings.Contains(err.Error(), "allowlist") {
+		t.Fatalf("expected an allowlist error, got %v", err)
+	}
 }
 
 func TestLoadConfigDefaults(t *testing.T) {

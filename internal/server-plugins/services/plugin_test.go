@@ -190,11 +190,23 @@ func TestRedactCredentials(t *testing.T) {
 		"redis://:pass@host:6379":                    "redis://:***@host:6379",
 		"mysql://mysql:p%40ss@dokku-mysql-db:3306/x": "mysql://mysql:***@dokku-mysql-db:3306/x",
 		"postgres://host:5432/db":                    "postgres://host:5432/db",
+		"postgres://user:p@ss@host:5432/db":          "postgres://user:***@host:5432/db",
 		"no url here":                                "no url here",
 	}
 	for in, want := range cases {
 		if got := RedactCredentials(in); got != want {
 			t.Errorf("RedactCredentials(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestGetServiceInfoIgnoresNoLinksNotice(t *testing.T) {
+	client, plugin := newPlugin(t, "postgres")
+	client.Respond("postgres:info", "Status: running\n")
+	client.Respond("postgres:links", " !     There are no apps linked to db\n")
+
+	info := plugintest.Structured[ServiceInfo](t, plugintest.CallTool(t, plugin, "get_service_info", plugintest.Args{"service_type": "postgres", "name": "db"}))
+	if len(info.LinkedApps) != 0 {
+		t.Fatalf("linked apps = %v", info.LinkedApps)
 	}
 }

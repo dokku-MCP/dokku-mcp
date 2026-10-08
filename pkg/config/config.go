@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -252,6 +253,9 @@ func LoadConfig() (*ServerConfig, error) {
 	return config, nil
 }
 
+// allowlistPattern matches the command patterns accepted by security.allowlist.
+var allowlistPattern = regexp.MustCompile(`^(\*|[a-z0-9][a-z0-9:-]{0,63}\*?)$`)
+
 func validateConfig(config *ServerConfig) error {
 	if config.Port <= 0 || config.Port > 65535 {
 		return fmt.Errorf("the port must be between 1 and 65535")
@@ -276,6 +280,12 @@ func validateConfig(config *ServerConfig) error {
 
 	if config.SSH.User == "" {
 		return fmt.Errorf("the SSH user cannot be empty")
+	}
+
+	for _, pattern := range config.Security.Allowlist {
+		if !allowlistPattern.MatchString(pattern) {
+			return fmt.Errorf("invalid security.allowlist pattern %q: use a command name (\"apps:list\"), a prefix ending in ':' or '*' (\"postgres:\", \"apps:*\"), or \"*\"", pattern)
+		}
 	}
 
 	validLogLevels := map[string]bool{

@@ -214,10 +214,11 @@ func appNameArg(req mcp.CallToolRequest) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("app_name is required")
 	}
-	if _, err := appdomain.NewApplicationName(appName); err != nil {
+	normalized, err := appdomain.NewApplicationName(appName)
+	if err != nil {
 		return "", err
 	}
-	return appName, nil
+	return normalized.Value(), nil
 }
 
 func textResult(summary, output string) *mcp.CallToolResult {
@@ -277,11 +278,7 @@ func (p *ServicesServerPlugin) handleGetServiceInfo(ctx context.Context, req mcp
 	}
 	links, err := p.adapter.Links(ctx, serviceType, name)
 	if err != nil {
-		p.logger.Warn("Failed to list service links", "service", name, "error", err)
-		links = nil
-	}
-	if links == nil {
-		links = []string{}
+		return mcp.NewToolResultError(err.Error()), nil
 	}
 	return mcp.NewToolResultStructuredOnly(ServiceInfo{ServiceType: serviceType, Name: name, Info: info, LinkedApps: links}), nil
 }

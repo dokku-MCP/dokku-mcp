@@ -23,6 +23,10 @@ var _ = Describe("ApplicationCommand", func() {
 					app.CommandPsScale,
 					app.CommandPsReport,
 					app.CommandLogs,
+					app.CommandPsRestart,
+					app.CommandPsStop,
+					app.CommandPsStart,
+					app.CommandLogsFailed,
 				}
 
 				for _, cmd := range validCommands {
@@ -71,6 +75,10 @@ var _ = Describe("ApplicationCommand", func() {
 				app.CommandPsScale,
 				app.CommandPsReport,
 				app.CommandLogs,
+				app.CommandPsRestart,
+				app.CommandPsStop,
+				app.CommandPsStart,
+				app.CommandLogsFailed,
 			))
 		})
 	})

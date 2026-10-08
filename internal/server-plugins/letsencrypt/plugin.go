@@ -115,10 +115,11 @@ func requireAppName(req mcp.CallToolRequest) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("app_name is required")
 	}
-	if _, err := appdomain.NewApplicationName(appName); err != nil {
+	normalized, err := appdomain.NewApplicationName(appName)
+	if err != nil {
 		return "", err
 	}
-	return appName, nil
+	return normalized.Value(), nil
 }
 
 func validateEmail(email string) error {
@@ -154,9 +155,11 @@ func (p *LetsEncryptServerPlugin) handleStatus(ctx context.Context, req mcp.Call
 			status.Report[key] = value
 		}
 	}
-	if active, err := p.run(ctx, "letsencrypt:active", appName); err == nil {
-		status.Active = strings.TrimSpace(active) == "true"
+	active, err := p.run(ctx, "letsencrypt:active", appName)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
 	}
+	status.Active = strings.TrimSpace(active) == "true"
 	return mcp.NewToolResultStructuredOnly(status), nil
 }
 

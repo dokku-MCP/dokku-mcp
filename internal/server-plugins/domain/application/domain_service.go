@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	appdomain "github.com/dokku-mcp/dokku-mcp/internal/server-plugins/app/domain"
 	"github.com/dokku-mcp/dokku-mcp/internal/shared"
@@ -77,7 +78,8 @@ func (s *DomainService) GetDomainsReport(ctx context.Context) (*domain.DomainsRe
 
 // GetAppDomains returns the domains of an application
 func (s *DomainService) GetAppDomains(ctx context.Context, appName string) (*domain.AppDomains, error) {
-	if err := validateAppName(appName); err != nil {
+	appName, err := normalizeAppName(appName)
+	if err != nil {
 		return nil, err
 	}
 	return s.domainRepo.GetAppDomains(ctx, appName)
@@ -86,7 +88,8 @@ func (s *DomainService) GetAppDomains(ctx context.Context, appName string) (*dom
 // AddAppDomain adds a domain to an application
 func (s *DomainService) AddAppDomain(ctx context.Context, appName, domainName string) error {
 	s.logger.Info("Adding app domain", "app", appName, "domain", domainName)
-	if err := validateAppName(appName); err != nil {
+	appName, err := normalizeAppName(appName)
+	if err != nil {
 		return err
 	}
 	if err := s.validateDomainName(domainName); err != nil {
@@ -98,7 +101,8 @@ func (s *DomainService) AddAppDomain(ctx context.Context, appName, domainName st
 // RemoveAppDomain removes a domain from an application
 func (s *DomainService) RemoveAppDomain(ctx context.Context, appName, domainName string) error {
 	s.logger.Info("Removing app domain", "app", appName, "domain", domainName)
-	if err := validateAppName(appName); err != nil {
+	appName, err := normalizeAppName(appName)
+	if err != nil {
 		return err
 	}
 	if err := s.validateDomainName(domainName); err != nil {
@@ -107,14 +111,22 @@ func (s *DomainService) RemoveAppDomain(ctx context.Context, appName, domainName
 	return s.domainRepo.RemoveAppDomain(ctx, appName, domainName)
 }
 
-func validateAppName(appName string) error {
-	if _, err := appdomain.NewApplicationName(appName); err != nil {
-		return err
+// normalizeAppName validates an application name and returns its canonical
+// (trimmed, lowercase) form.
+func normalizeAppName(appName string) (string, error) {
+	name, err := appdomain.NewApplicationName(appName)
+	if err != nil {
+		return "", err
 	}
-	return nil
+	return name.Value(), nil
 }
 
 func (s *DomainService) validateDomainName(domain string) error {
+	// Dokku's SSH command glob-expands arguments, so a wildcard vhost such as
+	// *.example.com cannot be sent safely; say so instead of a generic error.
+	if strings.HasPrefix(domain, "*.") {
+		return fmt.Errorf("wildcard domains cannot be managed over Dokku's SSH interface; run `dokku domains:add-global '%s'` on the server", domain)
+	}
 	if _, err := shared.NewDomainName(domain); err != nil {
 		return err
 	}

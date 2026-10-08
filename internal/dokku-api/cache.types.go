@@ -51,5 +51,8 @@ type cacheEntry struct {
 // commandCache stores cached command results (internal to cache manager)
 type commandCache struct {
 	entries map[string]*cacheEntry
-	mutex   sync.RWMutex
+	// generation increases on every invalidation, so a read that started
+	// before a write cannot store its now-stale result afterwards.
+	generation uint64
+	mutex      sync.RWMutex
 }

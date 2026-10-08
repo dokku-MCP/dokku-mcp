@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -158,7 +159,8 @@ func newDeploymentView(d *deployment_domain.Deployment, withLogs bool) Deploymen
 	if withLogs {
 		logs := d.BuildLogs()
 		if len(logs) > maxBuildLogTail {
-			logs = "..." + logs[len(logs)-maxBuildLogTail:]
+			// The cut may fall inside a multi-byte character.
+			logs = "..." + strings.ToValidUTF8(logs[len(logs)-maxBuildLogTail:], "")
 		}
 		view.BuildLogTail = logs
 	}
@@ -200,14 +202,26 @@ func buildListDeploymentsTool() mcp.Tool {
 	)
 }
 
+// deploymentIDPattern matches the IDs the tracker generates.
+var deploymentIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,100}$`)
+
+func validDeploymentID(id string) bool {
+	return deploymentIDPattern.MatchString(id)
+}
+
 func (p *DeploymentServerPlugin) handleGetDeploymentStatus(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	deploymentID, err := req.RequireString("deployment_id")
 	if err != nil {
 		return mcp.NewToolResultError("deployment_id is required"), nil
 	}
 
+	if !validDeploymentID(deploymentID) {
+		return mcp.NewToolResultError("invalid deployment_id"), nil
+	}
+
 	deployment, err := p.tracker.GetByID(deploymentID)
 	if err != nil {
+		p.logger.Debug("Deployment status requested for unknown deployment", "deployment_id", deploymentID, "error", err)
 		return mcp.NewToolResultError(fmt.Sprintf("Deployment '%s' not found. It may have expired; use get_app_status to check the application", deploymentID)), nil
 	}
 
@@ -216,6 +230,9 @@ func (p *DeploymentServerPlugin) handleGetDeploymentStatus(ctx context.Context, 
 
 func (p *DeploymentServerPlugin) handleListDeployments(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	appName := req.GetString("app_name", "")
+	if len(appName) > 63 {
+		return mcp.NewToolResultError("invalid app_name"), nil
+	}
 
 	var deployments []*deployment_domain.Deployment
 	if req.GetBool("active_only", false) {

@@ -81,7 +81,7 @@ func (p *AppsServerPlugin) GetResources(ctx context.Context) ([]domain.Resource,
 			URI:         fmt.Sprintf("dokku://app/%s/logs", app.Name().Value()),
 			Name:        fmt.Sprintf("Runtime Logs: %s", app.Name().Value()),
 			Description: fmt.Sprintf("Application runtime logs for %s", app.Name().Value()),
-			MIMEType:    "application/json",
+			MIMEType:    "text/plain",
 			Handler:     p.handleRuntimeLogsResource,
 		})
 	}
@@ -176,7 +176,7 @@ const (
 // FollowedLogs is the structured result of follow_runtime_logs.
 type FollowedLogs struct {
 	AppName   string   `json:"app_name"`
-	Seconds   int      `json:"seconds" jsonschema:"How long the logs were followed"`
+	Seconds   int      `json:"seconds" jsonschema:"How long the logs were actually followed, in whole seconds"`
 	Lines     []string `json:"lines"`
 	Truncated bool     `json:"truncated" jsonschema:"True when max_lines was reached before the time ran out"`
 }
@@ -212,13 +212,13 @@ func (p *AppsServerPlugin) handleFollowRuntimeLogs(ctx context.Context, req mcp.
 	seconds := max(1, min(req.GetInt("seconds", defaultFollowSeconds), maxFollowSeconds))
 	maxLines := max(1, min(req.GetInt("max_lines", maxFollowLines), maxFollowLines))
 
-	result, err := p.applicationUseCase.FollowLogs(ctx, appName, time.Duration(seconds)*time.Second, maxLines, progressReporter(ctx, req))
+	result, err := p.applicationUseCase.FollowLogs(ctx, appName, time.Duration(seconds)*time.Second, maxLines, p.progressReporter(ctx, req))
 	if err != nil {
 		return appErrorResult(appName, "follow logs of", err), nil
 	}
 	return mcp.NewToolResultStructuredOnly(FollowedLogs{
 		AppName:   appName,
-		Seconds:   seconds,
+		Seconds:   int(result.Elapsed.Round(time.Second) / time.Second),
 		Lines:     result.Lines,
 		Truncated: result.Truncated,
 	}), nil
@@ -227,7 +227,7 @@ func (p *AppsServerPlugin) handleFollowRuntimeLogs(ctx context.Context, req mcp.
 // progressReporter returns a callback that forwards each line to the client
 // as a progress notification, or nil when the client did not ask for
 // progress.
-func progressReporter(ctx context.Context, req mcp.CallToolRequest) func(string) {
+func (p *AppsServerPlugin) progressReporter(ctx context.Context, req mcp.CallToolRequest) func(string) {
 	if req.Params.Meta == nil || req.Params.Meta.ProgressToken == nil {
 		return nil
 	}
@@ -239,11 +239,15 @@ func progressReporter(ctx context.Context, req mcp.CallToolRequest) func(string)
 	count := 0
 	return func(line string) {
 		count++
-		_ = srv.SendNotificationToClient(ctx, string(mcp.MethodNotificationProgress), map[string]any{ // NOTE: mcp-go notification params are untyped JSON. This is a valid exception
+		err := srv.SendNotificationToClient(ctx, string(mcp.MethodNotificationProgress), map[string]any{ // NOTE: mcp-go notification params are untyped JSON. This is a valid exception
 			"progressToken": token,
 			"progress":      count,
 			"message":       line,
 		})
+		if err != nil {
+			// The lines are still returned in the result; only the live copy is lost.
+			p.logger.Debug("Failed to send log progress notification", "error", err)
+		}
 	}
 }
 

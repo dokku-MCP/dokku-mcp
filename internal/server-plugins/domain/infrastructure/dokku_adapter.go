@@ -84,12 +84,20 @@ func parseAppDomainsReport(appName, output string) *domain.AppDomains {
 		case "domains app enabled":
 			result.Enabled = value == "true"
 		case "domains app vhosts":
-			result.Domains = strings.Fields(value)
+			result.Domains = vhostList(value)
 		case "domains global vhosts":
-			result.GlobalDomains = strings.Fields(value)
+			result.GlobalDomains = vhostList(value)
 		}
 	}
 	return result
+}
+
+// vhostList splits a vhost field, treating Dokku's "none" sentinel as empty.
+func vhostList(value string) []string {
+	if value == "" || value == "none" {
+		return []string{}
+	}
+	return strings.Fields(value)
 }
 
 // AddAppDomain adds a domain to an application

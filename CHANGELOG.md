@@ -36,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [v0.4.3] - 2026-07-02
 
 ### Fixed
-- Release pipeline fixes for v0.4.2 and v0.4.3: MCP registry namespace and description, goreleaser-action v7, `golang.org/x/net` v0.55.0.
+- Release pipeline fixes: MCP registry namespace and description, goreleaser-action v7, `golang.org/x/net` v0.55.0.
 
 ## [v0.4.1] - 2026-07-02
 

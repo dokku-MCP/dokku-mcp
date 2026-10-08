@@ -4,6 +4,7 @@ package dokkutest
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 
@@ -30,9 +31,11 @@ type Handler func(args []string) ([]byte, error)
 // Arguments are validated with the production rules, so a test fails if
 // code under test builds an argument the real client would reject.
 type FakeClient struct {
-	mu       sync.Mutex
-	handlers map[string]Handler
-	calls    []Call
+	mu        sync.Mutex
+	handlers  map[string]Handler
+	calls     []Call
+	blacklist []string
+	allowlist []string
 }
 
 var _ dokkuApi.DokkuClient = (*FakeClient)(nil)
@@ -78,7 +81,10 @@ func (f *FakeClient) CallsTo(command string) []Call {
 	return out
 }
 
-func (f *FakeClient) execute(command string, args []string, stdin string) ([]byte, error) {
+func (f *FakeClient) execute(ctx context.Context, command string, args []string, stdin string) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err := f.ValidateCommand(command, args); err != nil {
 		return nil, fmt.Errorf("invalid command: %w", err)
 	}
@@ -92,18 +98,21 @@ func (f *FakeClient) execute(command string, args []string, stdin string) ([]byt
 	return handler(args)
 }
 
-func (f *FakeClient) ExecuteCommand(_ context.Context, command string, args []string) ([]byte, error) {
-	return f.execute(command, args, "")
+func (f *FakeClient) ExecuteCommand(ctx context.Context, command string, args []string) ([]byte, error) {
+	return f.execute(ctx, command, args, "")
 }
 
-func (f *FakeClient) ExecuteCommandWithStdin(_ context.Context, command string, args []string, stdin string) ([]byte, error) {
-	return f.execute(command, args, stdin)
+func (f *FakeClient) ExecuteCommandWithStdin(ctx context.Context, command string, args []string, stdin string) ([]byte, error) {
+	if len(stdin) > dokkuApi.MaxStdinBytes {
+		return nil, fmt.Errorf("stdin payload exceeds %d bytes", dokkuApi.MaxStdinBytes)
+	}
+	return f.execute(ctx, command, args, stdin)
 }
 
 // StreamLogs replays the output of the "logs" handler line by line, as if
 // following `logs <app> -t`, then ends the stream.
 func (f *FakeClient) StreamLogs(ctx context.Context, appName string) (<-chan dokkuApi.LogLine, <-chan error, error) {
-	out, err := f.execute("logs", []string{appName, "-t"}, "")
+	out, err := f.execute(ctx, "logs", []string{appName, "-t"}, "")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -167,13 +176,34 @@ func (f *FakeClient) GetCapabilities() *dokkuApi.DokkuCapabilities {
 
 func (f *FakeClient) GetSSHConnectionManager() *dokkuApi.SSHConnectionManager { return nil }
 
-func (f *FakeClient) SetBlacklist([]string) {}
+func (f *FakeClient) SetBlacklist(patterns []string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.blacklist = patterns
+}
 
-func (f *FakeClient) SetAllowlist([]string) {}
+func (f *FakeClient) SetAllowlist(patterns []string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.allowlist = patterns
+}
 
+// ValidateCommand applies the same blacklist, allowlist and argument rules
+// as the production client.
 func (f *FakeClient) ValidateCommand(command string, args []string) error {
 	if command == "" {
 		return fmt.Errorf("command name cannot be empty")
+	}
+	f.mu.Lock()
+	blacklist, allowlist := f.blacklist, f.allowlist
+	f.mu.Unlock()
+	for _, pattern := range blacklist {
+		if pattern != "" && strings.Contains(command, pattern) {
+			return fmt.Errorf("command is blacklisted (matches pattern '%s'): %s", pattern, command)
+		}
+	}
+	if len(allowlist) > 0 && !slices.ContainsFunc(allowlist, func(p string) bool { return dokkuApi.MatchesCommandPattern(command, p) }) {
+		return fmt.Errorf("command is not in the allowlist: %s", command)
 	}
 	for i, arg := range args {
 		if err := dokkuApi.ValidateArg(arg); err != nil {

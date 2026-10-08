@@ -14,8 +14,12 @@ import (
 
 var (
 	sshKeyNameRegex = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)
-	// publicKeyRegex accepts a single OpenSSH public key line.
-	publicKeyRegex    = regexp.MustCompile(`^(ssh-(rsa|ed25519|dss)|ecdsa-sha2-nistp(256|384|521)|sk-(ssh-ed25519|ecdsa-sha2-nistp256)@openssh\.com) [A-Za-z0-9+/]+={0,3}( [^\r\n]*)?$`)
+	// publicKeyRegex accepts a single OpenSSH public key line, including
+	// certificate keys (*-cert-v01@openssh.com) issued by an SSH CA.
+	publicKeyRegex = regexp.MustCompile(`^(` +
+		`(ssh-(rsa|ed25519|dss)|ecdsa-sha2-nistp(256|384|521)|sk-(ssh-ed25519|ecdsa-sha2-nistp256)@openssh\.com)` +
+		`|(ssh-(rsa|ed25519|dss)|rsa-sha2-(256|512)|ecdsa-sha2-nistp(256|384|521)|sk-(ssh-ed25519|ecdsa-sha2-nistp256))-cert-v01@openssh\.com` +
+		`) [A-Za-z0-9+/]+={0,3}( [^\r\n]*)?$`)
 	registryHostRegex = regexp.MustCompile(`^[A-Za-z0-9.-]+(:[0-9]+)?$`)
 )
 
@@ -138,10 +142,11 @@ func optionalAppName(req mcp.CallToolRequest) (string, error) {
 	if appName == "" {
 		return "", nil
 	}
-	if _, err := appdomain.NewApplicationName(appName); err != nil {
+	normalized, err := appdomain.NewApplicationName(appName)
+	if err != nil {
 		return "", err
 	}
-	return appName, nil
+	return normalized.Value(), nil
 }
 
 func registryServerArg(req mcp.CallToolRequest) (string, error) {

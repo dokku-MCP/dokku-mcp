@@ -47,6 +47,9 @@ func TestFollowRuntimeLogsStreamsProgress(t *testing.T) {
 		}
 		mu.Lock()
 		defer mu.Unlock()
+		if token := n.Params.AdditionalFields["progressToken"]; token != "follow-1" {
+			t.Errorf("progress notification has token %v, want follow-1", token)
+		}
 		if msg, ok := n.Params.AdditionalFields["message"].(string); ok {
 			messages = append(messages, msg)
 		}

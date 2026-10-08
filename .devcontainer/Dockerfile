@@ -9,7 +9,7 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     ssh \
     && apt-get clean -y && rm -rf /var/lib/apt/lists/*
 
-RUN go install github.com/air-verse/air@latest \
+RUN go install github.com/air-verse/air@v1.62.0 \
     && go install github.com/onsi/ginkgo/v2/ginkgo@latest \
     && go install golang.org/x/tools/cmd/goimports@latest \
     && go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest \

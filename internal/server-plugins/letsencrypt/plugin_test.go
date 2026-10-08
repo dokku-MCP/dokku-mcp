@@ -98,3 +98,39 @@ func TestStatus(t *testing.T) {
 		t.Fatalf("unexpected status: %+v", status)
 	}
 }
+
+func TestEnableReportsRenewalFailure(t *testing.T) {
+	client, plugin := newPlugin(t)
+	client.Fail("letsencrypt:cron-job", errors.New("exit status 1"))
+
+	result := plugintest.CallTool(t, plugin, "enable_letsencrypt", plugintest.Args{"app_name": "web"})
+	plugintest.RequireSuccess(t, result)
+	if !strings.Contains(plugintest.Text(result), "Warning: the renewal cron job could not be installed") {
+		t.Fatalf("expected a renewal warning, got %s", plugintest.Text(result))
+	}
+}
+
+func TestDisable(t *testing.T) {
+	client, plugin := newPlugin(t)
+	plugintest.RequireSuccess(t, plugintest.CallTool(t, plugin, "disable_letsencrypt", plugintest.Args{"app_name": "web"}))
+	if got := commands(client); len(got) != 1 || got[0] != "letsencrypt:disable web" {
+		t.Fatalf("commands = %v", got)
+	}
+
+	client.Fail("letsencrypt:disable", errors.New("exit status 1"))
+	plugintest.RequireError(t, plugintest.CallTool(t, plugin, "disable_letsencrypt", plugintest.Args{"app_name": "web"}), "letsencrypt:disable failed")
+}
+
+func TestStatusFailsWhenActiveCheckFails(t *testing.T) {
+	client, plugin := newPlugin(t)
+	client.Fail("letsencrypt:active", errors.New("exit status 1"))
+	plugintest.RequireError(t, plugintest.CallTool(t, plugin, "get_letsencrypt_status", plugintest.Args{"app_name": "web"}), "letsencrypt:active failed")
+}
+
+func TestAppNamesAreNormalized(t *testing.T) {
+	client, plugin := newPlugin(t)
+	plugintest.RequireSuccess(t, plugintest.CallTool(t, plugin, "disable_letsencrypt", plugintest.Args{"app_name": " WEB "}))
+	if got := commands(client); len(got) != 1 || got[0] != "letsencrypt:disable web" {
+		t.Fatalf("commands = %v", got)
+	}
+}

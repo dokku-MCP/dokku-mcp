@@ -207,9 +207,19 @@ func NewDeploymentWithID(id, appName, gitRef string) (*Deployment, error) {
 	}, nil
 }
 
-// snapshot returns a copy of the deployment. Time pointers are shared but
-// never mutated in place, so the copy is safe to read concurrently.
+// snapshot returns an independent copy of the deployment, safe to read
+// while the tracker keeps updating the original.
 func (d *Deployment) snapshot() *Deployment {
 	cp := *d
+	cp.startedAt = copyTime(d.startedAt)
+	cp.completedAt = copyTime(d.completedAt)
 	return &cp
+}
+
+func copyTime(t *time.Time) *time.Time {
+	if t == nil {
+		return nil
+	}
+	v := *t
+	return &v
 }

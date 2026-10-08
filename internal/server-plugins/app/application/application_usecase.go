@@ -439,6 +439,7 @@ func (uc *ApplicationUseCase) existingApp(ctx context.Context, name string) (*do
 type FollowLogsResult struct {
 	Lines     []string
 	Truncated bool
+	Elapsed   time.Duration
 }
 
 // FollowLogs collects new log lines for up to duration or maxLines lines,
@@ -448,23 +449,30 @@ func (uc *ApplicationUseCase) FollowLogs(ctx context.Context, name string, durat
 	if err != nil {
 		return nil, err
 	}
+	start := time.Now()
 	ctx, cancel := context.WithTimeout(ctx, duration)
 	defer cancel()
 
-	lines, err := uc.applicationRepo.FollowLogs(ctx, appName)
+	lines, errs, err := uc.applicationRepo.FollowLogs(ctx, appName)
 	if err != nil {
 		return nil, err
 	}
 	result := &FollowLogsResult{Lines: []string{}}
 	for line := range lines {
+		result.Lines = append(result.Lines, line)
+		if onLine != nil {
+			onLine(line)
+		}
 		if len(result.Lines) >= maxLines {
 			result.Truncated = true
 			cancel()
 			break
 		}
-		result.Lines = append(result.Lines, line)
-		if onLine != nil {
-			onLine(line)
+	}
+	result.Elapsed = time.Since(start)
+	if !result.Truncated {
+		if err := <-errs; err != nil {
+			return nil, err
 		}
 	}
 	return result, nil

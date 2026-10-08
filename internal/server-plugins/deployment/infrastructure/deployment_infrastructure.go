@@ -115,13 +115,18 @@ func (s *deploymentInfrastructure) PerformGitDeploy(ctx context.Context, deploym
 // to polling Dokku for the outcome.
 const rebuildTimeout = 30 * time.Minute
 
+// connectionLostMessage explains a deployment whose build session dropped.
+const connectionLostMessage = "lost the connection to Dokku during the build, so its outcome is unknown; " +
+	"check get_app_status and get_failed_deploy_logs, and redeploy if needed"
+
 // maxBuildLogBytes caps the build output kept in memory per deployment.
 const maxBuildLogBytes = 1 << 20
 
 // performAsyncRebuild builds the synced code in the background. The exit
 // status of ps:rebuild decides the outcome and its output becomes the build
-// log. Polling Dokku is only a fallback when the SSH session is lost, since
-// a running previous release would otherwise look like a successful deploy.
+// log. When the SSH session is lost the outcome is reported as unknown:
+// polling the app's status cannot tell the new release from the previous
+// one, which keeps running until the new build is promoted.
 func (s *deploymentInfrastructure) performAsyncRebuild(deploymentID, appName, gitRef string) {
 	s.logger.Info("Starting tracked async rebuild",
 		"deployment_id", deploymentID,
@@ -143,13 +148,9 @@ func (s *deploymentInfrastructure) performAsyncRebuild(deploymentID, appName, gi
 			s.logger.Warn("Rebuild aborted (app removed during deploy)", "deployment_id", deploymentID, "app_name", appName)
 			s.updateStatus(deploymentID, domain.DeploymentStatusFailed, "application no longer exists")
 		case isConnectionLost(ctx, err):
-			s.logger.Info("Lost the rebuild session; polling Dokku for the outcome",
+			s.logger.Warn("Lost the rebuild session; build outcome unknown",
 				"deployment_id", deploymentID, "app_name", appName, "error", err)
-			if s.poller != nil {
-				s.poller.StartPolling(context.Background(), deploymentID, appName)
-			} else {
-				s.updateStatus(deploymentID, domain.DeploymentStatusFailed, "lost connection during build: "+err.Error())
-			}
+			s.updateStatus(deploymentID, domain.DeploymentStatusFailed, connectionLostMessage)
 		default:
 			s.logger.Error("Rebuild failed", "deployment_id", deploymentID, "app_name", appName, "error", err)
 			s.updateStatus(deploymentID, domain.DeploymentStatusFailed, "build failed: "+err.Error())

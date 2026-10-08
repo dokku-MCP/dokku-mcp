@@ -2,6 +2,7 @@ package dokkuApi_test
 
 import (
 	"log/slog"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -129,6 +130,8 @@ var _ = Describe("DokkuClient", func() {
 				Entry("backslash", `a\b`),
 				Entry("leading hash", "#comment"),
 				Entry("leading tilde", "~root"),
+				Entry("tilde after equals", "HOME=~"),
+				Entry("too long", strings.Repeat("a", dokkuApi.MaxArgBytes+1)),
 				Entry("empty", ""),
 			)
 

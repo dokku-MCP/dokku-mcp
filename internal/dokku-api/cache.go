@@ -68,8 +68,20 @@ func (cm *CommandCacheManager) Get(command string, args []string) ([]byte, bool)
 	return entry.result, true
 }
 
-// Set stores a successful command result in the cache with appropriate TTL
-func (cm *CommandCacheManager) Set(command string, args []string, result []byte) {
+// Generation returns the current cache generation. Pass it to Set to drop
+// results computed before an invalidation.
+func (cm *CommandCacheManager) Generation() uint64 {
+	if cm == nil {
+		return 0
+	}
+	cm.cache.mutex.RLock()
+	defer cm.cache.mutex.RUnlock()
+	return cm.cache.generation
+}
+
+// Set stores a successful command result in the cache with appropriate TTL,
+// unless the cache was invalidated since generation was read.
+func (cm *CommandCacheManager) Set(command string, args []string, result []byte, generation uint64) {
 	if cm == nil {
 		return
 	}
@@ -79,6 +91,10 @@ func (cm *CommandCacheManager) Set(command string, args []string, result []byte)
 
 	cm.cache.mutex.Lock()
 	defer cm.cache.mutex.Unlock()
+
+	if cm.cache.generation != generation {
+		return
+	}
 
 	cm.cache.entries[key] = &cacheEntry{
 		result:    result,
@@ -101,6 +117,7 @@ func (cm *CommandCacheManager) Invalidate() {
 	defer cm.cache.mutex.Unlock()
 
 	cm.cache.entries = make(map[string]*cacheEntry)
+	cm.cache.generation++
 	cm.logger.Debug("Cache invalidated")
 }
 
@@ -118,6 +135,8 @@ func (cm *CommandCacheManager) generateCacheKey(command string, args []string) s
 	hasher := sha256.New()
 	hasher.Write([]byte(command))
 	for _, arg := range args {
+		// Separate arguments so ["ab", "c"] and ["a", "bc"] differ.
+		hasher.Write([]byte{0})
 		hasher.Write([]byte(arg))
 	}
 	return hex.EncodeToString(hasher.Sum(nil))[:16] // First 16 chars

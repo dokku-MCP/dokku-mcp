@@ -96,3 +96,9 @@ func TestRegistryLogoutAndReport(t *testing.T) {
 		t.Fatalf("unexpected report: %+v", report)
 	}
 }
+
+func TestAddSSHKeyAcceptsCertificateKeys(t *testing.T) {
+	_, plugin := newPlugin(t)
+	cert := "ssh-ed25519-cert-v01@openssh.com AAAAIHNzaC1lZDI1NTE5LWNlcnQtdjAxQG9wZW5zc2guY29t alice@ca"
+	plugintest.RequireSuccess(t, plugintest.CallTool(t, plugin, "add_ssh_key", plugintest.Args{"name": "alice", "public_key": cert}))
+}

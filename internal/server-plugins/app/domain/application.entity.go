@@ -223,6 +223,12 @@ func (a *Application) Configure(vars map[string]string, restart bool) error {
 	if len(vars) == 0 {
 		return fmt.Errorf("at least one environment variable is required")
 	}
+	// Validate every key first so a bad key leaves the aggregate unchanged.
+	for key := range vars {
+		if _, err := shared.NewEnvVarKey(key); err != nil {
+			return fmt.Errorf("unable to set variable %s: %w", key, err)
+		}
+	}
 	for key, value := range vars {
 		if err := a.SetEnvironmentVariable(key, value); err != nil {
 			return fmt.Errorf("unable to set variable %s: %w", key, err)

@@ -128,9 +128,10 @@ func (c *client) ExecuteCommand(ctx context.Context, commandName string, args []
 		return result, nil
 	}
 
+	generation := c.cacheManager.Generation()
 	result, err := c.executeCommandDirect(ctx, commandName, args)
 	if err == nil {
-		c.cacheManager.Set(commandName, args, result)
+		c.cacheManager.Set(commandName, args, result, generation)
 	}
 	return result, err
 }
@@ -145,6 +146,9 @@ func (c *client) executeCommandDirect(ctx context.Context, commandName string, a
 func (c *client) ExecuteCommandWithStdin(ctx context.Context, commandName string, args []string, stdin string) ([]byte, error) {
 	if err := c.ValidateCommand(commandName, args); err != nil {
 		return nil, fmt.Errorf("invalid command: %w", err)
+	}
+	if len(stdin) > MaxStdinBytes {
+		return nil, fmt.Errorf("stdin payload exceeds %d bytes", MaxStdinBytes)
 	}
 	defer c.cacheManager.Invalidate()
 	return c.executeCommandWithInput(ctx, commandName, args, strings.NewReader(stdin))

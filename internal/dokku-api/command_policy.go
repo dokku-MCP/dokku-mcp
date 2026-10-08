@@ -21,17 +21,27 @@ func isSafeArgRune(r rune) bool {
 }
 
 // isSafeInnerArgRune reports whether r may appear in a Dokku argument except
-// as its first character, where the shell would give it a special meaning
-// (comment or home-directory expansion).
+// as its first character, where the shell would start a comment. '~' is
+// never allowed: shells also expand it after '=' and ':'.
 func isSafeInnerArgRune(r rune) bool {
-	return r == '#' || r == '~'
+	return r == '#'
 }
+
+// MaxArgBytes bounds a single argument. Encoded config values are the
+// largest legitimate arguments.
+const MaxArgBytes = 64 << 10
+
+// MaxStdinBytes bounds payloads sent on stdin (SSH keys, registry passwords).
+const MaxStdinBytes = 64 << 10
 
 // ValidateArg checks that a single argument survives the trip through the
 // remote shell unchanged.
 func ValidateArg(arg string) error {
 	if arg == "" {
 		return fmt.Errorf("argument must not be empty")
+	}
+	if len(arg) > MaxArgBytes {
+		return fmt.Errorf("argument exceeds %d bytes", MaxArgBytes)
 	}
 	for i, r := range arg {
 		if isSafeArgRune(r) || (i > 0 && isSafeInnerArgRune(r)) {
@@ -78,7 +88,7 @@ func MatchesCommandPattern(commandName, pattern string) bool {
 
 // cacheableSuffixes lists the subcommand suffixes of read-only Dokku
 // commands whose output is safe to cache briefly.
-var cacheableSuffixes = []string{":report", ":list", ":show", ":exists", ":info", ":get", ":keys"}
+var cacheableSuffixes = []string{":report", ":list", ":show", ":exists", ":info", ":get", ":keys", ":links", ":app-links"}
 
 // IsCacheableCommand reports whether a command is a read-only query whose
 // result may be served from cache. Logs and events are excluded because

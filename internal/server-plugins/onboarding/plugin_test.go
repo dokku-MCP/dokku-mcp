@@ -69,10 +69,19 @@ func TestIntentMapReferencesRealTools(t *testing.T) {
 
 func TestQuickstartReferencesRealTools(t *testing.T) {
 	params := allToolParams(t)
-	for _, m := range regexp.MustCompile("`([a-z]+(?:_[a-z]+)+)`").FindAllStringSubmatch(quickstartMarkdown, -1) {
-		name := m[1]
-		if _, ok := params[name]; !ok && !strings.HasPrefix(name, "app_doctor") {
-			t.Errorf("quickstart mentions unknown tool %q", name)
+	identifier := regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+	for _, m := range regexp.MustCompile("`([^`]+)`").FindAllStringSubmatch(quickstartMarkdown, -1) {
+		ref := m[1]
+		// Resource URIs and the app_doctor prompt are not tools.
+		if strings.Contains(ref, "://") || ref == "app_doctor" {
+			continue
+		}
+		if !identifier.MatchString(ref) {
+			t.Errorf("quickstart has an unexpected code span %q; only tool names, resource URIs and prompts are checked", ref)
+			continue
+		}
+		if _, ok := params[ref]; !ok {
+			t.Errorf("quickstart mentions unknown tool %q", ref)
 		}
 	}
 }

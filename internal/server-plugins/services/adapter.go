@@ -19,10 +19,11 @@ var SupportedTypes = []string{
 
 var (
 	serviceNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
-	aliasPattern       = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
+	aliasPattern       = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,62}$`)
 	imageVersionRegex  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 	// credentialsInURL matches the password part of scheme://user:password@host.
-	credentialsInURL = regexp.MustCompile(`(://[^:/@\s]*:)[^@\s]+@`)
+	// The password match is greedy so passwords containing '@' are fully masked.
+	credentialsInURL = regexp.MustCompile(`(://[^:/@\s]*:)\S+@`)
 )
 
 // ValidateServiceType checks that a type is one of the supported datastores.
@@ -223,7 +224,15 @@ func (a *Adapter) Links(ctx context.Context, serviceType, name string) ([]string
 	if err != nil {
 		return nil, err
 	}
-	return dokkuApi.ParseLinesSkipHeaders(out), nil
+	links := []string{}
+	for _, line := range dokkuApi.ParseLinesSkipHeaders(out) {
+		// Skip notices such as " !     There are no apps linked to db".
+		if strings.HasPrefix(line, "!") || strings.Contains(line, " ") {
+			continue
+		}
+		links = append(links, line)
+	}
+	return links, nil
 }
 
 // Logs returns the most recent log lines of a service container.
