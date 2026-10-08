@@ -149,6 +149,10 @@ sudo mv dokku-mcp /usr/local/bin/
 
 Compressed archives (`dokku-mcp-<os>-<arch>.tar.gz`) are also published with each release.
 
+### MCP Bundle
+
+Each release also ships `dokku-mcp.mcpb`, an [MCP Bundle](https://github.com/modelcontextprotocol/mcpb) for macOS and Linux that MCP clients such as Claude Desktop install in one step, asking for the Dokku host, SSH user, port and key. The server is listed in the [official MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.dokku-MCP/dokku-mcp`.
+
 ### Verify Installation
 
 ```bash

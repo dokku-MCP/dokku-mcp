@@ -13,8 +13,7 @@ on:
 
 permissions:
   contents: write
-  # Required by GoReleaser to publish the MCP server manifest to the
-  # official MCP Registry via GitHub OIDC (see mcp section in .goreleaser.yaml).
+  # GitHub OIDC login to the official MCP Registry (mcp-registry.yml).
   id-token: write
 
 env:
@@ -66,11 +65,22 @@ jobs:
         uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
-          # MCP Registry publication requires GoReleaser >= 2.13
           version: '~> v2'
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  mcp-registry:
+    name: Publish to MCP Registry
+    needs: goreleaser
+    # Prereleases (v1.0.0-rc1, ...) are not listed in the registry.
+    if: ${{ !contains(needs.goreleaser.outputs.version, '-') }}
+    permissions:
+      contents: write
+      id-token: write
+    uses: ./.github/workflows/mcp-registry.yml
+    with:
+      tag: ${{ needs.goreleaser.outputs.version }}
 
   update-docs:
     name: Update Documentation

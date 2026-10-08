@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Publishing to the official MCP Registry failed because the package had no `fileSha256`. Releases now ship `dokku-mcp.mcpb`, an MCP Bundle with binaries for macOS and Linux, and publish it with `mcp-publisher`.
+
 ## [v0.5.0] - 2026-10-08
 
 ### Added

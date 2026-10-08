@@ -1,0 +1,102 @@
+name: Publish to MCP Registry
+
+# Builds the MCP Bundle (.mcpb) from a release's binaries, attaches it to the
+# release and publishes server.json to the official MCP Registry
+# (registry.modelcontextprotocol.io). The registry needs the bundle's SHA-256,
+# which GoReleaser's mcp publisher cannot provide, so this runs after it.
+#
+# Called by release.yml for every release; run it by hand to (re)publish an
+# existing release.
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Release tag to publish (e.g., v1.0.0)'
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to publish (e.g., v1.0.0). The release must already exist.'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  # GitHub OIDC login to the MCP Registry.
+  id-token: write
+
+env:
+  MCP_PUBLISHER_VERSION: v1.8.1
+
+jobs:
+  publish:
+    name: Build bundle & publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Download release binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          gh release download "$TAG" --dir dist \
+            --pattern 'dokku-mcp-darwin-amd64' --pattern 'dokku-mcp-darwin-arm64' \
+            --pattern 'dokku-mcp-linux-amd64' --pattern 'dokku-mcp-linux-arm64' \
+            --pattern 'dokku-mcp-linux-arm'
+
+      - name: Build and attach the MCP Bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          scripts/build-mcpb.sh "$TAG" dist dist/dokku-mcp.mcpb
+          gh release upload "$TAG" dist/dokku-mcp.mcpb --clobber
+
+      - name: Write server.json
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          # The namespace must match the GitHub owner exactly, including case:
+          # the OIDC token grants publishing to io.github.dokku-MCP/* only.
+          jq -n \
+            --arg version "${TAG#v}" \
+            --arg url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/dokku-mcp.mcpb" \
+            --arg sha "$(sha256sum dist/dokku-mcp.mcpb | cut -d' ' -f1)" \
+            '{
+              "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+              name: "io.github.dokku-MCP/dokku-mcp",
+              title: "Dokku MCP Server",
+              description: "MCP server for Dokku: let LLMs create, deploy, scale, configure and inspect Dokku apps.",
+              websiteUrl: "https://github.com/dokku-MCP/dokku-mcp",
+              repository: { url: "https://github.com/dokku-MCP/dokku-mcp", source: "github", id: "1004593421" },
+              version: $version,
+              packages: [{
+                registryType: "mcpb",
+                identifier: $url,
+                fileSha256: $sha,
+                transport: { type: "stdio" },
+                environmentVariables: [
+                  { name: "DOKKU_MCP_SSH_HOST", description: "Hostname or IP address of the Dokku server", isRequired: true },
+                  { name: "DOKKU_MCP_SSH_USER", description: "SSH user for Dokku commands", default: "dokku" },
+                  { name: "DOKKU_MCP_SSH_PORT", description: "SSH port of the Dokku server", default: "22" },
+                  { name: "DOKKU_MCP_SSH_KEY_PATH", description: "Private key path; empty uses ssh-agent or ~/.ssh" }
+                ]
+              }]
+            }' > server.json
+          cat server.json
+
+      - name: Install mcp-publisher
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz" \
+            | tar xz mcp-publisher
+
+      - name: Publish to the MCP Registry
+        run: |
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish
