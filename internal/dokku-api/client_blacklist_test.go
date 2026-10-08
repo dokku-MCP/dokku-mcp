@@ -152,6 +152,19 @@ var _ = Describe("DokkuClient", func() {
 		})
 	})
 
+	Describe("Command size", func() {
+		It("rejects command lines larger than MaxCommandBytes", func() {
+			arg := strings.Repeat("a", dokkuApi.MaxArgBytes)
+			args := []string{}
+			for range dokkuApi.MaxCommandBytes/dokkuApi.MaxArgBytes + 1 {
+				args = append(args, arg)
+			}
+			err := client.ValidateCommand("config:set", args)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("command line exceeds"))
+		})
+	})
+
 	Describe("Allowlist functionality", func() {
 		It("allows everything not blacklisted when empty", func() {
 			client.SetAllowlist(nil)

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/dokku-mcp/dokku-mcp/internal/shared"
 )
 
 // Dokku's SSH forced command expands $SSH_ORIGINAL_COMMAND unquoted, so the
@@ -31,6 +33,11 @@ func isSafeInnerArgRune(r rune) bool {
 // MaxArgBytes bounds a single argument. Encoded config values are the
 // largest legitimate arguments.
 const MaxArgBytes = 64 << 10
+
+// MaxCommandBytes bounds the whole remote command line, well below the
+// remote host's ARG_MAX, so a request with many arguments fails early with a
+// clear error instead of inside ssh.
+const MaxCommandBytes = 256 << 10
 
 // MaxStdinBytes bounds payloads sent on stdin (SSH keys, registry passwords).
 const MaxStdinBytes = 64 << 10
@@ -123,17 +130,16 @@ func isReadOnlyCommand(commandName string) bool {
 var secretValueCommands = []string{"config:set"}
 
 // RedactArgs returns a copy of args that is safe to log: for commands that
-// take KEY=value secrets, every value is replaced with "***".
+// take KEY=value secrets every value is replaced with "***", and passwords
+// embedded in URLs (e.g. a git:sync repository) are masked for all commands.
 func RedactArgs(commandName string, args []string) []string {
-	if !slices.Contains(secretValueCommands, commandName) {
-		return args
-	}
+	secretValues := slices.Contains(secretValueCommands, commandName)
 	redacted := make([]string, len(args))
 	for i, arg := range args {
-		if key, _, ok := strings.Cut(arg, "="); ok && !strings.HasPrefix(arg, "-") {
+		if key, _, ok := strings.Cut(arg, "="); ok && secretValues && !strings.HasPrefix(arg, "-") {
 			arg = key + "=***"
 		}
-		redacted[i] = arg
+		redacted[i] = shared.RedactURLCredentials(arg)
 	}
 	return redacted
 }

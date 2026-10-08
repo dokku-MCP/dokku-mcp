@@ -361,3 +361,16 @@ func TestFollowRuntimeLogsUnknownApp(t *testing.T) {
 	f := newFixture(t)
 	plugintest.RequireError(t, plugintest.CallTool(t, f.apps, "follow_runtime_logs", plugintest.Args{"app_name": "ghost"}), "not found")
 }
+
+func TestExistsFailureIsNotReportedAsMissing(t *testing.T) {
+	f := newFixture(t)
+	f.client.Fail("apps:exists", errors.New("exit status 255: ssh: connect to host dokku port 22: Connection refused"))
+
+	result := plugintest.CallTool(t, f.apps, "restart_app", plugintest.Args{"app_name": "myapp"})
+	if !result.IsError || strings.Contains(plugintest.Text(result), "not found") {
+		t.Fatalf("expected a connectivity error, got: %s", plugintest.Text(result))
+	}
+	if calls := f.client.CallsTo("ps:restart"); len(calls) != 0 {
+		t.Fatalf("must not restart when existence is unknown: %v", calls)
+	}
+}

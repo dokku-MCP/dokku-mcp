@@ -11,6 +11,7 @@ import (
 
 	dokku_client "github.com/dokku-mcp/dokku-mcp/internal/dokku-api"
 	"github.com/dokku-mcp/dokku-mcp/internal/server-plugins/deployment/domain"
+	"github.com/dokku-mcp/dokku-mcp/internal/shared"
 )
 
 // deploymentInfrastructure implements the simplified DeploymentInfrastructure interface
@@ -67,7 +68,7 @@ func (s *deploymentInfrastructure) PerformGitDeploy(ctx context.Context, deploym
 	s.logger.Debug("Performing git deployment",
 		"deployment_id", deploymentID,
 		"app_name", appName,
-		"repo_url", repoURL,
+		"repo_url", shared.RedactURLCredentials(repoURL),
 		"git_ref", gitRef)
 
 	// Check for concurrent deployment

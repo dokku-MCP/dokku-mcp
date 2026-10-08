@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/dokku-mcp/dokku-mcp/internal/shared"
+
 	dokkuApi "github.com/dokku-mcp/dokku-mcp/internal/dokku-api"
 )
 
@@ -21,9 +23,6 @@ var (
 	serviceNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
 	aliasPattern       = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,62}$`)
 	imageVersionRegex  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
-	// credentialsInURL matches the password part of scheme://user:password@host.
-	// The password match is greedy so passwords containing '@' are fully masked.
-	credentialsInURL = regexp.MustCompile(`(://[^:/@\s]*:)\S+@`)
 )
 
 // ValidateServiceType checks that a type is one of the supported datastores.
@@ -44,7 +43,7 @@ func ValidateServiceName(name string) error {
 
 // RedactCredentials masks passwords embedded in connection URLs.
 func RedactCredentials(value string) string {
-	return credentialsInURL.ReplaceAllString(value, "${1}***@")
+	return shared.RedactURLCredentials(value)
 }
 
 // PluginLister reports which Dokku plugins are enabled.

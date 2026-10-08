@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	appdomain "github.com/dokku-mcp/dokku-mcp/internal/server-plugins/app/domain"
+
 	"github.com/dokku-mcp/dokku-mcp/internal/server-plugin/domain"
 	deployment_domain "github.com/dokku-mcp/dokku-mcp/internal/server-plugins/deployment/domain"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -230,8 +232,12 @@ func (p *DeploymentServerPlugin) handleGetDeploymentStatus(ctx context.Context, 
 
 func (p *DeploymentServerPlugin) handleListDeployments(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	appName := req.GetString("app_name", "")
-	if len(appName) > 63 {
-		return mcp.NewToolResultError("invalid app_name"), nil
+	if appName != "" {
+		name, err := appdomain.NewApplicationName(appName)
+		if err != nil {
+			return mcp.NewToolResultError("invalid app_name"), nil
+		}
+		appName = name.Value()
 	}
 
 	var deployments []*deployment_domain.Deployment

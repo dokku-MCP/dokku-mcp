@@ -205,10 +205,15 @@ func (f *FakeClient) ValidateCommand(command string, args []string) error {
 	if len(allowlist) > 0 && !slices.ContainsFunc(allowlist, func(p string) bool { return dokkuApi.MatchesCommandPattern(command, p) }) {
 		return fmt.Errorf("command is not in the allowlist: %s", command)
 	}
+	total := len(command)
 	for i, arg := range args {
 		if err := dokkuApi.ValidateArg(arg); err != nil {
 			return fmt.Errorf("argument %d: %w", i, err)
 		}
+		total += 1 + len(arg)
+	}
+	if total > dokkuApi.MaxCommandBytes {
+		return fmt.Errorf("command line exceeds %d bytes; split the request", dokkuApi.MaxCommandBytes)
 	}
 	return nil
 }

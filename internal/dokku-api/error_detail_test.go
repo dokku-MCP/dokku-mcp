@@ -30,3 +30,10 @@ func TestRedactArgs(t *testing.T) {
 		t.Fatalf("non-secret commands must not be redacted: %v", other)
 	}
 }
+
+func TestRedactArgsMasksURLCredentials(t *testing.T) {
+	got := RedactArgs("git:sync", []string{"web", "https://bot:ghp_secret@github.com/acme/web.git", "main"})
+	if got[1] != "https://bot:***@github.com/acme/web.git" {
+		t.Fatalf("RedactArgs = %v", got)
+	}
+}

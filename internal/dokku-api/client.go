@@ -12,6 +12,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/dokku-mcp/dokku-mcp/internal/shared"
 )
 
 // isAppScopedCommand returns true for commands that target a specific app
@@ -37,10 +39,15 @@ func (c *client) ValidateCommand(commandName string, args []string) error {
 		return fmt.Errorf("command is not in the allowlist: %s", commandName)
 	}
 
+	total := len(commandName)
 	for i, arg := range args {
 		if err := ValidateArg(arg); err != nil {
 			return fmt.Errorf("argument %d: %w", i, err)
 		}
+		total += 1 + len(arg)
+	}
+	if total > MaxCommandBytes {
+		return fmt.Errorf("command line exceeds %d bytes; split the request", MaxCommandBytes)
 	}
 
 	c.logger.Debug("Command validated",
@@ -282,6 +289,9 @@ func (c *client) handleCommandError(ctx context.Context, commandName string, arg
 		// config:set echoes the decoded values it was setting; keep them out
 		// of logs and error messages.
 		output = nil
+	} else if len(output) > 0 {
+		// git errors echo the repository URL, credentials included.
+		output = []byte(shared.RedactURLCredentials(string(output)))
 	}
 	if isUnsupportedJSONProbe(args, output, commandName) {
 		c.logger.Debug("JSON format not supported for command (probe)",

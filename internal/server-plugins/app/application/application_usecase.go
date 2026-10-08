@@ -101,7 +101,7 @@ type DeployApplicationCommand struct {
 func (uc *ApplicationUseCase) DeployApplication(ctx context.Context, cmd DeployApplicationCommand) (*shared.DeploymentResult, error) {
 	uc.logger.Info("Deploying application",
 		"app_name", cmd.Name,
-		"repo_url", cmd.RepoURL,
+		"repo_url", shared.RedactURLCredentials(cmd.RepoURL),
 		"git_ref", cmd.GitRef)
 
 	// Get application
@@ -402,7 +402,7 @@ func (uc *ApplicationUseCase) RollbackApplication(ctx context.Context, cmd Rollb
 			return nil, ErrUnknownDeploySource
 		}
 	}
-	uc.logger.Info("Rolling back application", "app_name", cmd.Name, "git_ref", cmd.GitRef, "repo_url", repoURL)
+	uc.logger.Info("Rolling back application", "app_name", cmd.Name, "git_ref", cmd.GitRef, "repo_url", shared.RedactURLCredentials(repoURL))
 	return uc.DeployApplication(ctx, DeployApplicationCommand{Name: cmd.Name, RepoURL: repoURL, GitRef: cmd.GitRef})
 }
 

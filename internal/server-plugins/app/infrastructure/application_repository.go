@@ -2,10 +2,8 @@ package infrastructure
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -74,10 +72,9 @@ func (r *DokkuApplicationRepository) GetByName(ctx context.Context, name *app.Ap
 	// Check if the application exists in Dokku first
 	exists, err := r.Exists(ctx, name)
 	if err != nil {
-		r.logger.Warn("Cannot verify application existence",
-			"error", err,
-			"app_name", name.Value())
-	} else if !exists {
+		return nil, err
+	}
+	if !exists {
 		r.logger.Warn("Application does not exist in Dokku",
 			"app_name", name.Value())
 		return nil, app.ErrApplicationNotFound
@@ -192,24 +189,13 @@ func (r *DokkuApplicationRepository) Exists(ctx context.Context, name *app.Appli
 	if err == nil {
 		return true, nil
 	}
-	if isTransportError(err) {
-		return false, fmt.Errorf("cannot reach Dokku to check application %s: %w", name.Value(), err)
+	// Only Dokku's own "App ... does not exist" answer means the app is
+	// missing; transport, permission or other failures must not be read as
+	// "missing" (Save would then try apps:create).
+	if dokkuApi.IsNotFoundError(err) {
+		return false, nil
 	}
-	// apps:exists exits non-zero when the application does not exist.
-	return false, nil
-}
-
-// isTransportError reports whether a command never ran on Dokku: ssh could
-// not be started, the context ended, or ssh itself failed (exit status 255).
-func isTransportError(err error) bool {
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return true
-	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
-		return exitErr.ExitCode() == 255
-	}
-	return !dokkuApi.IsNotFoundError(err)
+	return false, fmt.Errorf("cannot check whether application %s exists: %w", name.Value(), err)
 }
 
 // GetLogs returns the last lines of the application's runtime logs
@@ -289,7 +275,7 @@ func (r *DokkuApplicationRepository) GetDeploySource(ctx context.Context, name *
 	if err != nil {
 		return app.DeploySource{}, err
 	}
-	return app.DeploySource{Type: info["App deploy source"], Metadata: info["App deploy source metadata"]}, nil
+	return app.DeploySource{Type: app.DeploySourceType(info["App deploy source"]), Metadata: info["App deploy source metadata"]}, nil
 }
 
 // List retrieves a paginated list of applications

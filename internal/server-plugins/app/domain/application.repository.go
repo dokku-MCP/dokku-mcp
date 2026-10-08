@@ -102,14 +102,24 @@ const (
 // DeploySource describes how an application was last deployed, as reported
 // by apps:report, e.g. Type "git-sync" with Metadata "<repo>#<sha>".
 type DeploySource struct {
-	Type     string
+	Type     DeploySourceType
 	Metadata string
 }
+
+// DeploySourceType is how Dokku received an application's code. Values not
+// listed below (other Dokku plugins) are kept as reported.
+type DeploySourceType string
+
+const (
+	DeploySourceGitSync DeploySourceType = "git-sync"
+	DeploySourceGitPush DeploySourceType = "git-push"
+	DeploySourceImage   DeploySourceType = "docker-image"
+)
 
 // RepoURL returns the repository of a git:sync deployment, or "" for other
 // deploy sources.
 func (d DeploySource) RepoURL() string {
-	if d.Type != "git-sync" || d.Metadata == "" {
+	if d.Type != DeploySourceGitSync || d.Metadata == "" {
 		return ""
 	}
 	if i := strings.LastIndex(d.Metadata, "#"); i > 0 {

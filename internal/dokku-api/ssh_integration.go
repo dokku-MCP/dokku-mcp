@@ -83,7 +83,8 @@ func (m *SSHConnectionManager) PrepareSSHCommand(command string) ([]string, []st
 	// The remote command is logged by the caller, with secrets redacted.
 	loggedArgs := sshArgs
 	if command != "" {
-		loggedArgs = sshArgs[:len(sshArgs)-1]
+		// Drop both "--" and the command appended after it.
+		loggedArgs = sshArgs[:len(sshArgs)-2]
 	}
 	m.logger.Debug("Prepared SSH command",
 		"ssh_args", loggedArgs,
