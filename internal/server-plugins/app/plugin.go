@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
+
+	"github.com/mark3labs/mcp-go/server"
 
 	dokkuApi "github.com/dokku-mcp/dokku-mcp/internal/dokku-api"
 	"github.com/dokku-mcp/dokku-mcp/internal/server-plugin/domain"
@@ -126,6 +129,12 @@ func (p *AppsServerPlugin) GetTools(ctx context.Context) ([]domain.Tool, error) 
 			Handler:     p.handleGetRuntimeLogs,
 		},
 		{
+			Name:        "follow_runtime_logs",
+			Description: "Follow new runtime log lines for a short period",
+			Builder:     buildFollowRuntimeLogsTool,
+			Handler:     p.handleFollowRuntimeLogs,
+		},
+		{
 			Name:        "get_failed_deploy_logs",
 			Description: "Retrieve logs of the last failed deploy",
 			Builder:     buildGetFailedDeployLogsTool,
@@ -156,6 +165,86 @@ func (p *AppsServerPlugin) GetTools(ctx context.Context) ([]domain.Tool, error) 
 			Handler:     p.handleRollbackApp,
 		},
 	}, nil
+}
+
+const (
+	defaultFollowSeconds = 15
+	maxFollowSeconds     = 60
+	maxFollowLines       = 2000
+)
+
+// FollowedLogs is the structured result of follow_runtime_logs.
+type FollowedLogs struct {
+	AppName   string   `json:"app_name"`
+	Seconds   int      `json:"seconds" jsonschema:"How long the logs were followed"`
+	Lines     []string `json:"lines"`
+	Truncated bool     `json:"truncated" jsonschema:"True when max_lines was reached before the time ran out"`
+}
+
+func buildFollowRuntimeLogsTool() mcp.Tool {
+	return mcp.NewTool(
+		"follow_runtime_logs",
+		mcp.WithTitleAnnotation("Follow runtime logs"),
+		mcp.WithDescription("Watch an application's logs live for a few seconds, e.g. while reproducing a request or after a deploy. "+
+			"Lines are also streamed as progress notifications when the client sends a progress token. "+
+			"Use get_runtime_logs for past logs"),
+		mcp.WithString("app_name", mcp.Required(), mcp.Description("Name of the application")),
+		mcp.WithInteger("seconds",
+			mcp.Description(fmt.Sprintf("How long to follow the logs (default %d, max %d)", defaultFollowSeconds, maxFollowSeconds)),
+			mcp.Min(1), mcp.Max(maxFollowSeconds),
+		),
+		mcp.WithInteger("max_lines",
+			mcp.Description(fmt.Sprintf("Stop after this many lines (default and max %d)", maxFollowLines)),
+			mcp.Min(1), mcp.Max(maxFollowLines),
+		),
+		mcp.WithOutputSchema[FollowedLogs](),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithOpenWorldHintAnnotation(false),
+	)
+}
+
+func (p *AppsServerPlugin) handleFollowRuntimeLogs(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	appName, err := req.RequireString("app_name")
+	if err != nil {
+		return mcp.NewToolResultError("Application name is required"), nil
+	}
+	seconds := max(1, min(req.GetInt("seconds", defaultFollowSeconds), maxFollowSeconds))
+	maxLines := max(1, min(req.GetInt("max_lines", maxFollowLines), maxFollowLines))
+
+	result, err := p.applicationUseCase.FollowLogs(ctx, appName, time.Duration(seconds)*time.Second, maxLines, progressReporter(ctx, req))
+	if err != nil {
+		return appErrorResult(appName, "follow logs of", err), nil
+	}
+	return mcp.NewToolResultStructuredOnly(FollowedLogs{
+		AppName:   appName,
+		Seconds:   seconds,
+		Lines:     result.Lines,
+		Truncated: result.Truncated,
+	}), nil
+}
+
+// progressReporter returns a callback that forwards each line to the client
+// as a progress notification, or nil when the client did not ask for
+// progress.
+func progressReporter(ctx context.Context, req mcp.CallToolRequest) func(string) {
+	if req.Params.Meta == nil || req.Params.Meta.ProgressToken == nil {
+		return nil
+	}
+	srv := server.ServerFromContext(ctx)
+	if srv == nil {
+		return nil
+	}
+	token := req.Params.Meta.ProgressToken
+	count := 0
+	return func(line string) {
+		count++
+		_ = srv.SendNotificationToClient(ctx, string(mcp.MethodNotificationProgress), map[string]any{
+			"progressToken": token,
+			"progress":      count,
+			"message":       line,
+		})
+	}
 }
 
 func buildGetFailedDeployLogsTool() mcp.Tool {

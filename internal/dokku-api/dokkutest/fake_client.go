@@ -100,6 +100,29 @@ func (f *FakeClient) ExecuteCommandWithStdin(_ context.Context, command string, 
 	return f.execute(command, args, stdin)
 }
 
+// StreamLogs replays the output of the "logs" handler line by line, as if
+// following `logs <app> -t`, then ends the stream.
+func (f *FakeClient) StreamLogs(ctx context.Context, appName string) (<-chan dokkuApi.LogLine, <-chan error, error) {
+	out, err := f.execute("logs", []string{appName, "-t"}, "")
+	if err != nil {
+		return nil, nil, err
+	}
+	lines := make(chan dokkuApi.LogLine)
+	errs := make(chan error, 1)
+	go func() {
+		defer close(lines)
+		defer close(errs)
+		for line := range strings.Lines(string(out)) {
+			select {
+			case lines <- dokkuApi.LogLine{Message: strings.TrimRight(line, "\r\n")}:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return lines, errs, nil
+}
+
 func (f *FakeClient) GetKeyValueOutput(ctx context.Context, command string, args []string, separator string) (map[string]string, error) {
 	out, err := f.ExecuteCommand(ctx, command, args)
 	if err != nil {

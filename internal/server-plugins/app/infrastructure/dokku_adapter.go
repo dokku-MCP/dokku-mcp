@@ -123,6 +123,11 @@ func (a *DokkuApplicationAdapter) ScaleApplication(ctx context.Context, appName 
 	return nil
 }
 
+// StreamLogs follows an application's logs until ctx is cancelled
+func (a *DokkuApplicationAdapter) StreamLogs(ctx context.Context, appName string) (<-chan dokkuApi.LogLine, <-chan error, error) {
+	return a.client.StreamLogs(ctx, appName)
+}
+
 // GetApplicationLogs retrieves application logs
 func (a *DokkuApplicationAdapter) GetApplicationLogs(ctx context.Context, appName string, lines int) (string, error) {
 	args := []string{appName}

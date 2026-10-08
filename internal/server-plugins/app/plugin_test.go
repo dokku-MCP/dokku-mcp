@@ -323,3 +323,35 @@ func TestDeploymentFailsWithBuildOutput(t *testing.T) {
 		t.Fatalf("unexpected deployment: %+v", view)
 	}
 }
+
+func TestFollowRuntimeLogs(t *testing.T) {
+	f := newFixture(t)
+	f.client.Respond("logs", "line one\nline two\nline three\n")
+
+	result := plugintest.Structured[FollowedLogs](t, plugintest.CallTool(t, f.apps, "follow_runtime_logs", map[string]any{
+		"app_name": "myapp", "seconds": 5,
+	}))
+	if !slices.Equal(result.Lines, []string{"line one", "line two", "line three"}) || result.Truncated {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	if calls := f.client.CallsTo("logs"); len(calls) != 1 || calls[0].String() != "logs myapp -t" {
+		t.Fatalf("unexpected calls: %v", calls)
+	}
+}
+
+func TestFollowRuntimeLogsStopsAtMaxLines(t *testing.T) {
+	f := newFixture(t)
+	f.client.Respond("logs", "1\n2\n3\n4\n")
+
+	result := plugintest.Structured[FollowedLogs](t, plugintest.CallTool(t, f.apps, "follow_runtime_logs", map[string]any{
+		"app_name": "myapp", "max_lines": 2,
+	}))
+	if !slices.Equal(result.Lines, []string{"1", "2"}) || !result.Truncated {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+}
+
+func TestFollowRuntimeLogsUnknownApp(t *testing.T) {
+	f := newFixture(t)
+	plugintest.RequireError(t, plugintest.CallTool(t, f.apps, "follow_runtime_logs", map[string]any{"app_name": "ghost"}), "not found")
+}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	domain "github.com/dokku-mcp/dokku-mcp/internal/server-plugins/app/domain"
 	"github.com/dokku-mcp/dokku-mcp/internal/shared"
@@ -432,4 +433,39 @@ func (uc *ApplicationUseCase) existingApp(ctx context.Context, name string) (*do
 		return nil, domain.ErrApplicationNotFound
 	}
 	return appName, nil
+}
+
+// FollowLogsResult holds the lines collected while following logs.
+type FollowLogsResult struct {
+	Lines     []string
+	Truncated bool
+}
+
+// FollowLogs collects new log lines for up to duration or maxLines lines,
+// calling onLine for each line as it arrives.
+func (uc *ApplicationUseCase) FollowLogs(ctx context.Context, name string, duration time.Duration, maxLines int, onLine func(string)) (*FollowLogsResult, error) {
+	appName, err := uc.existingApp(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, duration)
+	defer cancel()
+
+	lines, err := uc.applicationRepo.FollowLogs(ctx, appName)
+	if err != nil {
+		return nil, err
+	}
+	result := &FollowLogsResult{Lines: []string{}}
+	for line := range lines {
+		if len(result.Lines) >= maxLines {
+			result.Truncated = true
+			cancel()
+			break
+		}
+		result.Lines = append(result.Lines, line)
+		if onLine != nil {
+			onLine(line)
+		}
+	}
+	return result, nil
 }

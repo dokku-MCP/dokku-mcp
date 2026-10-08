@@ -13,6 +13,9 @@ type ApplicationRepository interface {
 	Exists(ctx context.Context, name *ApplicationName) (bool, error)
 	// GetLogs returns the last lines of the application's runtime logs.
 	GetLogs(ctx context.Context, name *ApplicationName, lines int) (string, error)
+	// FollowLogs streams new runtime log lines until ctx is cancelled. The
+	// line channel is closed when the stream ends.
+	FollowLogs(ctx context.Context, name *ApplicationName) (<-chan string, error)
 	// GetFailedDeployLogs returns the logs of containers from the last failed deploy.
 	GetFailedDeployLogs(ctx context.Context, name *ApplicationName) (string, error)
 	// SetProcessState restarts, stops or starts all processes of the application.

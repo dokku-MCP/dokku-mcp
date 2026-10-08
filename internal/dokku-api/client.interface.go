@@ -12,6 +12,11 @@ type StdinExecutor interface {
 	ExecuteCommandWithStdin(ctx context.Context, command string, args []string, stdin string) ([]byte, error)
 }
 
+// LogStreamer follows application logs until the context is cancelled.
+type LogStreamer interface {
+	StreamLogs(ctx context.Context, appName string) (<-chan LogLine, <-chan error, error)
+}
+
 // CommandParser defines parsing capabilities for different output formats
 type CommandParser interface {
 	GetKeyValueOutput(ctx context.Context, command string, args []string, separator string) (map[string]string, error)
@@ -48,6 +53,7 @@ type CommandFilter interface {
 type DokkuClient interface {
 	CommandExecutor
 	StdinExecutor
+	LogStreamer
 	CommandParser
 	StructuredExecutor
 	CapabilityManager

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"time"
 
 	dokkuApi "github.com/dokku-mcp/dokku-mcp/internal/dokku-api"
 	app "github.com/dokku-mcp/dokku-mcp/internal/server-plugins/app/domain"
@@ -196,6 +197,35 @@ func (r *DokkuApplicationRepository) Exists(ctx context.Context, name *app.Appli
 // GetLogs returns the last lines of the application's runtime logs
 func (r *DokkuApplicationRepository) GetLogs(ctx context.Context, name *app.ApplicationName, lines int) (string, error) {
 	return r.dokku.GetApplicationLogs(ctx, name.Value(), lines)
+}
+
+// FollowLogs streams new runtime log lines until ctx is cancelled
+func (r *DokkuApplicationRepository) FollowLogs(ctx context.Context, name *app.ApplicationName) (<-chan string, error) {
+	logLines, errs, err := r.dokku.StreamLogs(ctx, name.Value())
+	if err != nil {
+		return nil, fmt.Errorf("failed to follow logs: %w", err)
+	}
+	out := make(chan string)
+	go func() {
+		defer close(out)
+		for line := range logLines {
+			text := line.Message
+			if line.Container != "" {
+				text = line.Timestamp.Format(time.RFC3339) + " " + line.Container + ": " + line.Message
+			}
+			select {
+			case out <- text:
+			case <-ctx.Done():
+				return
+			}
+		}
+		// The stream ends with an error when ctx stops the command; only
+		// report errors that happened before that.
+		if err := <-errs; err != nil && ctx.Err() == nil {
+			r.logger.Warn("Log stream ended with an error", "app_name", name.Value(), "error", err)
+		}
+	}()
+	return out, nil
 }
 
 // GetFailedDeployLogs returns the logs of containers from the last failed deploy

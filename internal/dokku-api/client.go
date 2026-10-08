@@ -599,8 +599,11 @@ func parseLogLine(line string) LogLine {
 
 	timestamp, err := time.Parse(time.RFC3339Nano, parts[0])
 	if err != nil {
-		// Fall back to current time if parsing fails
-		timestamp = time.Now()
+		// Not a "<timestamp> <container>: <message>" line: keep it whole.
+		return LogLine{
+			Timestamp: time.Now(),
+			Message:   line,
+		}
 	}
 	container := strings.Trim(parts[1], ":")
 
